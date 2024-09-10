@@ -363,7 +363,7 @@ impl eframe::App for TemplateApp {
                 if self.db.is_none() {
                     ui.vertical_centered(|ui| {
 
-                        large_button(ui, "ODB", ||{
+                        large_button(ui, "Open Database", ||{
                             let tx = self.tx.clone().expect("tx channel exists");
                             tokio::spawn(async move {
                                 let db = open_db().await.unwrap();
@@ -375,15 +375,15 @@ impl eframe::App for TemplateApp {
                         });
 
 
-                        if ui.add_sized([200.0, 50.0], egui::Button::new(RichText::new("Open Database").size(24.0).strong())).clicked() {
-                            let tx = self.tx.clone().expect("tx channel exists");
-                            tokio::spawn(async move {
-                                let db = open_db().await.unwrap();
-                                if let Err(_) = tx.send(db).await {
-                                    eprintln!("Failed to send db");
-                                }
-                            });
-                        }
+                        // if ui.add_sized([200.0, 50.0], egui::Button::new(RichText::new("Open Database").size(24.0).strong())).clicked() {
+                        //     let tx = self.tx.clone().expect("tx channel exists");
+                        //     tokio::spawn(async move {
+                        //         let db = open_db().await.unwrap();
+                        //         if let Err(_) = tx.send(db).await {
+                        //             eprintln!("Failed to send db");
+                        //         }
+                        //     });
+                        // }
                     });
                     return; // Return early if database is not loaded
                 }
@@ -560,9 +560,9 @@ impl eframe::App for TemplateApp {
                                         });
                                 });
 
-                                if ui.button("Select DB").clicked() {
+                                // if ui.button("Select DB").clicked() {
                                         
-                                }
+                                // }
                                 if let Some(rx) = self.c_rx.as_mut() {
                                     if let Ok(db) = rx.try_recv() {
                                         self.c_db = Some(db);
@@ -575,7 +575,11 @@ impl eframe::App for TemplateApp {
                                     ui.add_space(24.0);
                                     ui.label("Filenames from Target Database found in Comparison Database will be Marked for Removal");
                                 });
-                                ui.label(self.compare_db.status.clone());
+                                ui.horizontal(|ui| {
+                                    if self.compare_db.working {ui.spinner();}
+                                    ui.label(self.compare_db.status.clone());
+
+                                });
                                 ui.separator();
 
                             ui.horizontal(|_| {});
@@ -813,9 +817,10 @@ pub fn gather_duplicates(app: &mut TemplateApp) {
                             if let Some(tx) = app.tags.tx.clone() {
                                 println!("if let some");
                                 let tags = app.tags.list.clone();
+                                let p = pool.clone();
                                 tokio::spawn(async move {
                                     println!("tokio spawn tags");
-                                    let results  = gather_filenames_with_tags(&pool, &tags).await;
+                                    let results  = gather_filenames_with_tags(&p, &tags).await;
                                     if let Err(_) = tx.send(results.expect("error on gather tags")).await {
                                         eprintln!("Failed to send db");
                                     }
@@ -830,14 +835,28 @@ pub fn gather_duplicates(app: &mut TemplateApp) {
 
     }
     
+    if app.compare_db.search && app.c_db.is_some() {
+        if let Some(cdb) = &app.c_db {
+            app.compare_db.working = true;
+            app.compare_db.status = format!("Comparing against {}", cdb.name);
+            if app.compare_db.tx.is_none() {println!("compare tx is none");}
+            if let Some(tx) = app.compare_db.tx.clone() {
+                println!("if let some");
+                let p = pool.clone();
+                let c_pool = cdb.pool.clone();
+                tokio::spawn(async move {
+                    println!("tokio spawn compare");
+                    let results  = gather_compare_database_overlaps(&p, &c_pool).await;
+                    if let Err(_) = tx.send(results.expect("error on compare db")).await {
+                        eprintln!("Failed to send db");
+                    }
+                });
 
-    // if let Some(compare_db_path) = config.compare_db {
-    //     let compare_conn = Connection::open(&compare_db_path)?; 
-    //     let ids_from_compare_db = gather_compare_database_overlaps(&conn, &compare_conn)?;
-    //     main.records.extend(ids_from_compare_db);
-    // }
+            }
 
+        }
 
+    }
     
 }
 }
@@ -874,5 +893,21 @@ fn receive_duplicates(app: &mut TemplateApp) {
         } else {
             app.main.status = format!("Marked {} total records for removal.", app.main.records.len());
     
+    }
+    if let Some(rx) = app.compare_db.rx.as_mut() {
+        if let Ok(records) = rx.try_recv() {
+            app.compare_db.records = records;
+            app.compare_db.working = false;
+            app.compare_db.status = format!{"Found {} overlapping records in {}", app.compare_db.records.len(), app.c_db.clone().unwrap().name};
+            app.main.records.extend(app.compare_db.records.clone());
         }
+    }
+    
+        if app.main.records.is_empty() {
+            app.main.status = format!("No records marked for removal.");
+           
+        } else {
+            app.main.status = format!("Marked {} total records for removal.", app.main.records.len());
+    
+    }
 }

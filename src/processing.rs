@@ -116,7 +116,7 @@ pub async fn gather_duplicate_filenames_in_database(
     Ok(file_records)
 }
 
-    pub async fn gather_filenames_with_tags(pool: &SqlitePool, tags: &Vec<String>) -> Result<HashSet<FileRecord>, sqlx::Error>  {
+pub async fn gather_filenames_with_tags(pool: &SqlitePool, tags: &Vec<String>) -> Result<HashSet<FileRecord>, sqlx::Error>  {
         // tags.status = format!("Searching for filenames containing tags");
         println!("Tokio Start");
         let mut file_records = HashSet::new();
@@ -144,10 +144,61 @@ pub async fn gather_duplicate_filenames_in_database(
         println!("Found Tags");
         Ok(file_records)
         // tags.status = format!("{} total records containing tags marked for deletion", tags.records.len());
-    }
+}
+
+pub async fn gather_compare_database_overlaps(
+        target_pool: &SqlitePool,
+        compare_pool: &SqlitePool
+    ) -> Result<HashSet<FileRecord>, sqlx::Error> {
+        let compare_records = fetch_filerecords_from_database(compare_pool).await?;
+        let filenames_to_check = extract_filenames_set_from_records(&compare_records);
+        
+        let mut matching_records = fetch_filerecords_from_database(target_pool).await?;
+        println!(
+            "Comparing filenames between databases"
+        );
+        
+        matching_records.retain(|record| filenames_to_check.contains(&record.filename));
+    
+        if matching_records.is_empty() {
+            println!("NO OVERLAPPING FILE RECORDS FOUND!");
+        } else {
+            println!(
+                "Found {} overlapping file records.",
+                matching_records.len()
+            );
+        }
+    
+        Ok(matching_records.into_iter().collect())
+}
+
+pub async fn fetch_filerecords_from_database(pool: &SqlitePool) -> Result<HashSet<FileRecord>, sqlx::Error> {
+    println!("Gathering records from database");
+    let mut file_records = HashSet::new();
+
+    // Define the SQL query
+    let rows = sqlx::query("SELECT rowid, filename, duration FROM justinmetadata")
+        .fetch_all(pool)
+        .await?;
+
+        for row in rows {
+            let id: u32 = row.get(0);
+            let file_record = FileRecord {
+                id: id as usize,
+                filename: row.get(1),
+                duration: row.try_get(2).unwrap_or("".to_string()),  // Handle possible NULL in duration
+            };
+            file_records.insert(file_record);
+        }
+    Ok(file_records)
+}
+
+fn extract_filenames_set_from_records(file_records: &HashSet<FileRecord>) -> HashSet<String> {
+    file_records.iter().map(|record| record.filename.clone()).collect()
+}
 
 
-pub fn remove_duplicates() {}
+pub async fn remove_duplicates() {}
 
 pub async fn open_db() -> Option<Database> {
     if let Some(path) = rfd::FileDialog::new().pick_file() {
