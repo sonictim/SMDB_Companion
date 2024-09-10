@@ -1,17 +1,17 @@
 #![allow(non_snake_case)]
 use sqlx::{sqlite::SqlitePool, Row};
-use tokio;
+// use tokio;
 use std::collections::HashSet;
 // use std::collections::HashMap;
-use std::env;
-use std::fs::{self, File};
-use std::io::{self, BufRead, Write};
-use std::path::Path;
-use std::error::Error;
+// use std::env;
+// use std::fs::{self, File};
+// use std::io::{self, BufRead, Write};
+// use std::path::Path;
+// use std::error::Error;
 // use terminal_size::{Width, terminal_size};
 // use sqlx::{sqlite::SqlitePool, Row};
 
-use eframe::egui::{self, Ui, RichText};
+// use eframe::egui::{self, Ui, RichText};
 use crate::app::*;
 
 const TABLE: &str = "justinmetadata";

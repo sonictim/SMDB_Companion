@@ -1,26 +1,21 @@
 // use std::ops::DerefMut;
 // use egui::RadioButton;
-use eframe::egui::{self, FontId, RichText, TextStyle, WidgetText};
-use sqlx::database;
-use sqlx::{sqlite::SqlitePool, Row};
+use eframe::egui::{self, RichText};
+use sqlx::sqlite::SqlitePool;
 use tokio;
-use tokio::runtime::Runtime;
 use tokio::sync::mpsc;
-use std::sync::Arc;
-use std::sync::Mutex;
+// use std::sync::Arc;
+// use std::sync::Mutex;
 
-use eframe::glow::BLUE;
-use egui::{menu::menu_button, ModifierNames};
+// use eframe::glow::BLUE;
+// use egui::{menu::menu_button, ModifierNames};
 // use rusqlite::{Connection, Result};
 use std::collections::HashSet;
-use std::collections::HashMap;
-use std::env;
-use std::fs::{self, File};
-use std::io::{self, BufRead, Write};
-use std::path::Path;
-use std::error::Error;
-// use terminal_size::{Width, terminal_size};
-// use regex::Regex;
+// use std::collections::HashMap;
+// use std::env;
+// use std::fs::{self, File};
+// use std::io::{self, BufRead, Write};
+
 use crate::assets::*;
 use crate::processing::*;
 
@@ -50,21 +45,6 @@ pub struct Config {
 }
 
 impl Config {
-    fn default() -> Self {
-        let (tx, rx) = mpsc::channel(1);
-        Self {
-            search: false,
-            list: Vec::new(),
-            selected: String::new(),
-            status: String::new(),
-            records: HashSet::new(),
-            working: false,
-            tx: Some(tx),
-            rx: Some(rx),
-
-        }
-
-    }
     fn new(on: bool) -> Self {
         let (tx, rx) = mpsc::channel(1);
         println!("Initializing new config with tx: {:?}, rx: {:?}", tx, rx);
@@ -100,7 +80,7 @@ impl Config {
 
 #[derive(Clone)]
 pub struct Database {
-    pub path: String,
+    // pub path: String,
     pub pool: SqlitePool,
     pub name: String,
     pub size: usize,
@@ -113,7 +93,7 @@ impl Database {
         let db_size = get_db_size(&db_pool).await.expect("get db size");
         let db_columns = get_columns(&db_pool).await.expect("get columns");
         Self {
-            path: db_path.clone(),
+            // path: db_path.clone(),
             pool: db_pool,
             name: db_path.split('/').last().expect("Name From Pathname").to_string(),
             size: db_size,
@@ -274,7 +254,7 @@ impl TemplateApp {
         self.db = db;
     }
         
-    fn reset_to_TJFdefaults(&mut self, db: Option<Database>) {
+    fn reset_to_tjf_defaults(&mut self, db: Option<Database>) {
         *self = Self::default();
         self.db = db;
         self.main.list = tjf_order();
@@ -328,7 +308,7 @@ impl eframe::App for TemplateApp {
                         if  ui.input(|i| i.modifiers.alt ) {
                             if ui.button("TJF Defaults").clicked() {
                                 ui.close_menu();
-                                self.reset_to_TJFdefaults(self.db.clone());
+                                self.reset_to_tjf_defaults(self.db.clone());
                             }
                         }
                         ui.separator();
@@ -589,7 +569,7 @@ impl eframe::App for TemplateApp {
                             ui.checkbox(&mut self.dupes_db, "Create Database of Duplicate Records");
                             ui.separator();
 
-                            ui.horizontal( |ui| {});
+                            ui.horizontal( |_ui| {});
                             
                             ui.horizontal(|ui| {
                                 if  ui.input(|i| i.modifiers.alt ) {
