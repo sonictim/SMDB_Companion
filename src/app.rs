@@ -362,12 +362,25 @@ impl eframe::App for TemplateApp {
                 }
                 if self.db.is_none() {
                     ui.vertical_centered(|ui| {
-                        if ui.add_sized([200.0, 50.0], egui::Button::new(RichText::new("Open Database").size(24.0).strong())).clicked() {
+
+                        large_button(ui, "ODB", ||{
                             let tx = self.tx.clone().expect("tx channel exists");
                             tokio::spawn(async move {
                                 let db = open_db().await.unwrap();
                                 if let Err(_) = tx.send(db).await {
                                     // eprintln!("Failed to send db");
+                                }
+                            });
+
+                        });
+
+
+                        if ui.add_sized([200.0, 50.0], egui::Button::new(RichText::new("Open Database").size(24.0).strong())).clicked() {
+                            let tx = self.tx.clone().expect("tx channel exists");
+                            tokio::spawn(async move {
+                                let db = open_db().await.unwrap();
+                                if let Err(_) = tx.send(db).await {
+                                    eprintln!("Failed to send db");
                                 }
                             });
                         }
@@ -537,16 +550,17 @@ impl eframe::App for TemplateApp {
                                 }
 
                                 
-
+                                button(ui, "Select DB", ||{
+                                    let tx = self.c_tx.clone().expect("tx channel exists");
+                                        tokio::spawn(async move {
+                                            let db = open_db().await.unwrap();
+                                            if let Err(_) = tx.send(db).await {
+                                                // eprintln!("Failed to send db");
+                                            }
+                                        });
+                                });
 
                                 if ui.button("Select DB").clicked() {
-                                let tx = self.c_tx.clone().expect("tx channel exists");
-                                    tokio::spawn(async move {
-                                        let db = open_db().await.unwrap();
-                                        if let Err(_) = tx.send(db).await {
-                                            // eprintln!("Failed to send db");
-                                        }
-                                    });
                                         
                                 }
                                 if let Some(rx) = self.c_rx.as_mut() {

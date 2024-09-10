@@ -1,5 +1,8 @@
 use eframe::egui::{self, Ui, RichText};
-use crate::app::*;
+// use sqlx::sqlite::SqlitePool;
+// use tokio;
+// use tokio::sync::mpsc::Sender;
+// use crate::app::*;
 
 // A reusable button component that takes a function (callback) to run when clicked
 pub fn button<F>(ui: &mut Ui, label: &str, action: F)
@@ -20,6 +23,18 @@ where
         action();
     } 
 }
+
+// pub fn spawn_db<F>(tx: Sender<Database>, action: F)
+// where
+//     F: FnOnce(),
+// {
+//     tokio::spawn(async move {
+//         let db = open_db().await.unwrap();
+//         if let Err(_) = tx.send(db).await {
+//             // eprintln!("Failed to send db");
+//         }
+//     });
+// }
 
 
 pub fn combo_box(ui: &mut Ui, label: &str, selected: &mut String, list: &Vec<String>) {
