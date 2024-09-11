@@ -1,17 +1,17 @@
 #![allow(non_snake_case)]
-use sqlx::{sqlite::SqlitePool, Row};
-// use tokio;
+use sqlx::Sqlite;
+use sqlx::{sqlite::SqlitePool, Row, Error};
+use tokio::sync::mpsc;
 use std::collections::HashSet;
-// use std::collections::HashMap;
+use std::collections::HashMap;
 // use std::env;
 // use std::fs::{self, File};
-// use std::io::{self, BufRead, Write};
+use std::io::{self, BufRead, Write};
 // use std::path::Path;
 // use std::error::Error;
-// use terminal_size::{Width, terminal_size};
-// use sqlx::{sqlite::SqlitePool, Row};
 
-// use eframe::egui::{self, Ui, RichText};
+
+use regex::Regex;
 use crate::app::*;
 
 const TABLE: &str = "justinmetadata";
@@ -116,6 +116,62 @@ pub async fn gather_duplicate_filenames_in_database(
     Ok(file_records)
 }
 
+
+pub async fn gather_deep_dive_records(pool: &SqlitePool, progress_sender: mpsc::Sender<ProgressMessage>,) -> Result<HashSet<FileRecord>, sqlx::Error> {
+    let mut file_records = HashSet::new();
+    let mut file_groups: HashMap<String, Vec<FileRecord>> = HashMap::new();
+
+    let query = "SELECT rowid, filename, duration FROM justinmetadata";
+
+    let rows = sqlx::query(query)
+    .fetch_all(pool)
+    .await?;
+
+    let total = rows.len();
+    let mut counter: usize = 1;
+    for row in &rows {
+        let id: u32 = row.get(0);
+        let file_record = FileRecord {
+            id: id as usize,
+            filename: row.get(1),
+            duration: row.try_get(2).unwrap_or("".to_string()),  // Handle possible NULL in duration
+        };
+        
+        let base_filename = get_root_filename(&file_record.filename)
+            .unwrap_or_else(|| file_record.filename.clone());
+
+
+        file_groups
+            .entry(base_filename)
+            .or_insert_with(Vec::new)
+            .push(file_record);
+
+            // let _ = io::stdout().flush();
+            // print!("\r{} / {}", counter, total);
+            let _ = progress_sender.send(ProgressMessage::Update(counter, total)).await;
+            counter += 1;   
+    }
+
+    for (root, records) in file_groups {
+        if records.len() <= 1 {continue;}   
+        let root_found = records.iter().any(|record| record.filename == root);
+        if root_found {
+            file_records.extend(
+                records.into_iter().filter(|record| record.filename != root)
+            );
+        } else {
+            file_records.extend(
+                records.into_iter().skip(1)
+            );
+        }
+    }
+
+    Ok(file_records)
+}
+
+
+
+
 pub async fn gather_filenames_with_tags(pool: &SqlitePool, tags: &Vec<String>) -> Result<HashSet<FileRecord>, sqlx::Error>  {
         // tags.status = format!("Searching for filenames containing tags");
         println!("Tokio Start");
@@ -150,10 +206,10 @@ pub async fn gather_compare_database_overlaps(
         target_pool: &SqlitePool,
         compare_pool: &SqlitePool
     ) -> Result<HashSet<FileRecord>, sqlx::Error> {
-        let compare_records = fetch_filerecords_from_database(compare_pool).await?;
+        let compare_records = fetch_all_filerecords_from_database(compare_pool).await?;
         let filenames_to_check = extract_filenames_set_from_records(&compare_records);
         
-        let mut matching_records = fetch_filerecords_from_database(target_pool).await?;
+        let mut matching_records = fetch_all_filerecords_from_database(target_pool).await?;
         println!(
             "Comparing filenames between databases"
         );
@@ -172,33 +228,87 @@ pub async fn gather_compare_database_overlaps(
         Ok(matching_records.into_iter().collect())
 }
 
-pub async fn fetch_filerecords_from_database(pool: &SqlitePool) -> Result<HashSet<FileRecord>, sqlx::Error> {
-    println!("Gathering records from database");
+pub async fn fetch_filerecords_from_database(pool: &SqlitePool, query: &str) -> Result<HashSet<FileRecord>, sqlx::Error> {
     let mut file_records = HashSet::new();
 
-    // Define the SQL query
-    let rows = sqlx::query("SELECT rowid, filename, duration FROM justinmetadata")
-        .fetch_all(pool)
-        .await?;
+    let rows = sqlx::query(query)
+    .fetch_all(pool)
+    .await?;
 
-        for row in rows {
-            let id: u32 = row.get(0);
-            let file_record = FileRecord {
-                id: id as usize,
-                filename: row.get(1),
-                duration: row.try_get(2).unwrap_or("".to_string()),  // Handle possible NULL in duration
-            };
-            file_records.insert(file_record);
-        }
+    for row in rows {
+        let id: u32 = row.get(0);
+        let file_record = FileRecord {
+            id: id as usize,
+            filename: row.get(1),
+            duration: row.try_get(2).unwrap_or("".to_string()),  // Handle possible NULL in duration
+        };
+        file_records.insert(file_record);
+    }
     Ok(file_records)
+}
+pub async fn fetch_all_filerecords_from_database(pool: &SqlitePool) -> Result<HashSet<FileRecord>, sqlx::Error> {
+    println!("Gathering all records from database");
+    fetch_filerecords_from_database(pool, "SELECT rowid, filename, duration FROM justinmetadata").await
 }
 
 fn extract_filenames_set_from_records(file_records: &HashSet<FileRecord>) -> HashSet<String> {
     file_records.iter().map(|record| record.filename.clone()).collect()
 }
 
+pub async fn delete_file_records(pool: &SqlitePool, records: HashSet<FileRecord>, verbose: bool) -> Result<(), Error> {
+    const BATCH_SIZE: usize = 100;
+    let mut counter = 1;
+    let total = records.len();
+    println!("Removing Records Marked as Duplicates");
 
-pub async fn remove_duplicates() {}
+    let mut tx = pool.begin().await?;
+
+    let mut sorted_records: Vec<_> = records.iter().collect();
+    sorted_records.sort_by(|a, b| b.id.cmp(&a.id));  // Sort by ID in descending order
+
+    for chunk in sorted_records.chunks(BATCH_SIZE) {
+        if verbose {
+            for record in chunk {
+                println!("\rDeleting ID: {}, Filename: {}", record.id, record.filename);
+            }
+        } else {
+            let _ = io::stdout().flush();
+            print!("\r{} / {}", counter, total);
+            counter += BATCH_SIZE;
+        }
+
+        // Create a list of placeholders for the SQL query
+        let placeholders: Vec<String> = chunk.iter()
+            .map(|_| "?".to_string())
+            .collect();
+        let placeholders = placeholders.join(", ");
+        let query = format!("DELETE FROM justinmetadata WHERE rowid IN ({})", placeholders);
+
+
+        // Execute the delete query
+        sqlx::query(&query)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    println!("\r{} / {}", total, total);
+    tx.commit().await?;
+
+    Ok(())
+}
+
+
+
+fn get_root_filename(filename: &str) -> Option<String> {
+    // Use regex to strip off trailing pattern like .1, .M, but preserve file extension
+    let re = Regex::new(r"^(?P<base>.+?)(\.\d+|\.\w+)+(?P<ext>\.\w+)$").unwrap();
+    if let Some(caps) = re.captures(filename) {
+        Some(format!("{}{}", &caps["base"], &caps["ext"]))
+    } else {
+        // If no match, return the original filename
+        Some(filename.to_string())
+    }
+}
 
 pub async fn open_db() -> Option<Database> {
     if let Some(path) = rfd::FileDialog::new().pick_file() {

@@ -4,6 +4,7 @@ use eframe::egui::{self, RichText};
 use sqlx::sqlite::SqlitePool;
 use tokio;
 use tokio::sync::mpsc;
+use tokio::task;
 // use std::sync::Arc;
 // use std::sync::Mutex;
 
@@ -11,6 +12,7 @@ use tokio::sync::mpsc;
 // use egui::{menu::menu_button, ModifierNames};
 // use rusqlite::{Connection, Result};
 use std::collections::HashSet;
+use std::thread::JoinHandle;
 // use std::collections::HashMap;
 // use std::env;
 // use std::fs::{self, File};
@@ -42,12 +44,17 @@ pub struct Config {
     tx: Option<mpsc::Sender<HashSet<FileRecord>>>,
     #[serde(skip)]
     rx: Option<mpsc::Receiver<HashSet<FileRecord>>>,
+    #[serde(skip)]
+    progress_sender: Option<mpsc::Sender<ProgressMessage>>,
+    #[serde(skip)]
+    progress_receiver: Option<mpsc::Receiver<ProgressMessage>>,
 }
 
 impl Config {
     fn new(on: bool) -> Self {
         let (tx, rx) = mpsc::channel(1);
-        println!("Initializing new config with tx: {:?}, rx: {:?}", tx, rx);
+        let (progress_sender, mut progress_receiver) = mpsc::channel(32);
+        // println!("Initializing new config with tx: {:?}, rx: {:?}", tx, rx);
         Self {
             search: on,
             list: Vec::new(),
@@ -57,12 +64,15 @@ impl Config {
             working: false,
             tx: Some(tx),
             rx: Some(rx),
+            progress_sender: Some(progress_sender),
+            progress_receiver: Some(progress_receiver),
 
         }
     }
     fn new_option(on: bool, o: &str) -> Self {
         let (tx, rx) = mpsc::channel(1);
-        println!("Initializing new config with tx: {:?}, rx: {:?}", tx, rx);
+        let (progress_sender, mut progress_receiver) = mpsc::channel(32);
+        // println!("Initializing new config with tx: {:?}, rx: {:?}", tx, rx);
         Self {
             search: on,
             list: Vec::new(),
@@ -72,6 +82,8 @@ impl Config {
             working: false,
             tx: Some(tx),
             rx: Some(rx),
+            progress_sender: Some(progress_sender),
+            progress_receiver: Some(progress_receiver),
 
         }
     }
@@ -109,6 +121,10 @@ pub struct FileRecord {
     pub id: usize,
     pub filename: String,
     pub duration: String,
+}
+
+pub enum ProgressMessage {
+    Update(usize, usize), // (current, total)
 }
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
@@ -524,6 +540,27 @@ impl eframe::App for TemplateApp {
                                     ui.label(self.deep.status.clone());
 
                                 });
+
+                                let mut progress = (0.0, 0.0);
+
+                                if let Some(progress_receiver) = &mut self.deep.progress_receiver {
+                                    // Update progress state based on messages
+                                    while let Ok(message) = progress_receiver.try_recv() {
+                                        if let ProgressMessage::Update(current, total) = message {
+                                            progress = (current as f32, total as f32);
+                                        }
+
+                                }
+                                }
+                                if self.deep.working{
+                                    ui.add( egui::ProgressBar::new(progress.0 / progress.1)
+                                            // .text("progress")
+                                            .desired_height(4.0)
+                                        );
+                                    ui.label(format!("Progress: {} / {}", progress.0, progress.1));
+                                }
+
+                                // Use `progress` to update your UI
                                 ui.separator();
 
                             //TAGS TAGS TAGS TAGS
@@ -589,6 +626,7 @@ impl eframe::App for TemplateApp {
 
                             ui.horizontal( |_ui| {});
                             
+                           
                             ui.horizontal(|ui| {
                                 if  ui.input(|i| i.modifiers.alt ) {
                                     if ui.button("Search and Remove Duplicates").clicked() {}
@@ -604,10 +642,11 @@ impl eframe::App for TemplateApp {
                                     // button(ui, "Remove Duplicates", remove_duplicates);
 
                                     if ui.button("Remove Duplicates").clicked() {
-                                        remove_duplicates();
+                                       remove_duplicates(self);
                                     }
                                 }
                             });
+                         
                             ui.horizontal( |ui| {
                                 if self.main.working {ui.spinner();}
                                 ui.label(self.main.status.clone());
@@ -784,7 +823,7 @@ pub fn gather_duplicates(app: &mut TemplateApp) {
     if app.main.search {
         app.main.status = format!("Searching for Dupicates");
         app.group.working = true;
-        app.group.status = format!("Here we go!");
+        app.group.status = format!("Searching for duplicate filenames");
         if let Some(tx) = app.group.tx.clone() {
             let order = app.main.list.clone();
             let mut group_sort = None;
@@ -802,34 +841,47 @@ pub fn gather_duplicates(app: &mut TemplateApp) {
   
     }
 
-    // if deep.search {
-    //     deep.working = true;
-    //     deep.records = gather_records_with_trailing_numbers(&mut conn, total_records)?;
-    //     main.records.extend(deep.records);
-    //     deep.working = false;
-    // }
+    if app.deep.search {
+        app.deep.working = true;
+        app.deep.status = format!("Performing Deep dive");
+        if app.deep.tx.is_none() {println!("deep is none");}
+            if let Some(tx) = app.deep.tx.clone() {
+                if let Some(sender) = app.deep.progress_sender.clone() {
+
+                    println!("if let some");
+                    let p = pool.clone();
+                    tokio::spawn(async move {
+                        println!("tokio spawn tags");
+                        let results  = gather_deep_dive_records(&p, sender).await;
+                        if let Err(_) = tx.send(results.expect("error on gather tags")).await {
+                            eprintln!("Failed to send db");
+                        }
+                    });
+                };
+
+            }
+    
+    }
 
     if app.tags.search {
         app.main.status = format!("Searching for tags");
         app.tags.working = true;
         app.tags.status = format!{"Searching records with matching tags"};
         if app.tags.tx.is_none() {println!("is none");}
-                            if let Some(tx) = app.tags.tx.clone() {
-                                println!("if let some");
-                                let tags = app.tags.list.clone();
-                                let p = pool.clone();
-                                tokio::spawn(async move {
-                                    println!("tokio spawn tags");
-                                    let results  = gather_filenames_with_tags(&p, &tags).await;
-                                    if let Err(_) = tx.send(results.expect("error on gather tags")).await {
-                                        eprintln!("Failed to send db");
-                                    }
-                                });
+            if let Some(tx) = app.tags.tx.clone() {
+                println!("if let some");
+                let tags = app.tags.list.clone();
+                let p = pool.clone();
+                tokio::spawn(async move {
+                    println!("tokio spawn tags");
+                    let results  = gather_filenames_with_tags(&p, &tags).await;
+                    if let Err(_) = tx.send(results.expect("error on gather tags")).await {
+                        eprintln!("Failed to send db");
+                    }
+                });
 
-                            }
-                            else {
-                                println!("no if let some");
-                            }
+            }
+
                             
                             
 
@@ -870,14 +922,18 @@ fn receive_duplicates(app: &mut TemplateApp) {
             app.main.records.extend(app.group.records.clone());
         }
     }
-    
-        if app.main.records.is_empty() {
-            app.main.status = format!("No records marked for removal.");
-           
-        } else {
-            app.main.status = format!("Marked {} total records for removal.", app.main.records.len());
-    
+
+    if let Some(rx) = app.deep.rx.as_mut() {
+        
+        if let Ok(records) = rx.try_recv() {
+            app.deep.records = records;
+            app.deep.working = false;
+            app.deep.status = format!{"Found {} records with matching tags", app.deep.records.len()};
+            app.main.records.extend(app.deep.records.clone());
         }
+    }
+    
+
     if let Some(rx) = app.tags.rx.as_mut() {
         if let Ok(records) = rx.try_recv() {
             app.tags.records = records;
@@ -887,13 +943,6 @@ fn receive_duplicates(app: &mut TemplateApp) {
         }
     }
     
-        if app.main.records.is_empty() {
-            app.main.status = format!("No records marked for removal.");
-           
-        } else {
-            app.main.status = format!("Marked {} total records for removal.", app.main.records.len());
-    
-    }
     if let Some(rx) = app.compare_db.rx.as_mut() {
         if let Ok(records) = rx.try_recv() {
             app.compare_db.records = records;
@@ -910,4 +959,31 @@ fn receive_duplicates(app: &mut TemplateApp) {
             app.main.status = format!("Marked {} total records for removal.", app.main.records.len());
     
     }
+}
+
+fn remove_duplicates(app: &mut TemplateApp) {
+
+    if let Some(db) = app.db.clone() {
+        app.main.working = true;
+        app.main.status = "Removing Records".to_string();
+        let records = app.main.records.clone();
+        let p = db.pool.clone();
+        // if let Some(tx) = app.main.tx.clone() {
+            tokio::spawn(async move {
+                println!("tokio spawn tags");
+                let results = delete_file_records(&p, records, false).await;
+                // if let Err(_) = tx.send(results.expect("error on gather tags")).await {
+                //     eprintln!("Failed to send db");
+                // }
+               
+            });
+
+        // }
+    }
+        
+
+    
+
+
+
 }
