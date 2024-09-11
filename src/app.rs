@@ -15,7 +15,7 @@ use std::collections::HashSet;
 use std::thread::JoinHandle;
 // use std::collections::HashMap;
 // use std::env;
-// use std::fs::{self, File};
+use std::fs::{self, File};
 // use std::io::{self, BufRead, Write};
 
 use crate::assets::*;
@@ -48,6 +48,8 @@ pub struct Config {
     progress_sender: Option<mpsc::Sender<ProgressMessage>>,
     #[serde(skip)]
     progress_receiver: Option<mpsc::Receiver<ProgressMessage>>,
+    #[serde(skip)]
+    progress: (f32, f32),
 }
 
 impl Config {
@@ -66,6 +68,7 @@ impl Config {
             rx: Some(rx),
             progress_sender: Some(progress_sender),
             progress_receiver: Some(progress_receiver),
+            progress: (0.0, 0.0),
 
         }
     }
@@ -84,6 +87,7 @@ impl Config {
             rx: Some(rx),
             progress_sender: Some(progress_sender),
             progress_receiver: Some(progress_receiver),
+            progress: (0.0, 0.0),
 
         }
     }
@@ -92,7 +96,7 @@ impl Config {
 
 #[derive(Clone)]
 pub struct Database {
-    // pub path: String,
+    pub path: String,
     pub pool: SqlitePool,
     pub name: String,
     pub size: usize,
@@ -101,11 +105,11 @@ pub struct Database {
 
 impl Database {
     pub async fn open(db_path: String) -> Self {
-        let db_pool = SqlitePool::connect(&db_path).await.expect("Pool opens fine");
+        let db_pool = SqlitePool::connect(&db_path).await.expect("Pool did not open");
         let db_size = get_db_size(&db_pool).await.expect("get db size");
         let db_columns = get_columns(&db_pool).await.expect("get columns");
         Self {
-            // path: db_path.clone(),
+            path: db_path.clone(),
             pool: db_pool,
             name: db_path.split('/').last().expect("Name From Pathname").to_string(),
             size: db_size,
@@ -541,23 +545,24 @@ impl eframe::App for TemplateApp {
 
                                 });
 
-                                let mut progress = (0.0, 0.0);
+                                
 
                                 if let Some(progress_receiver) = &mut self.deep.progress_receiver {
                                     // Update progress state based on messages
                                     while let Ok(message) = progress_receiver.try_recv() {
                                         if let ProgressMessage::Update(current, total) = message {
-                                            progress = (current as f32, total as f32);
+                                            self.deep.progress = (current as f32, total as f32);
                                         }
 
                                 }
+
                                 }
                                 if self.deep.working{
-                                    ui.add( egui::ProgressBar::new(progress.0 / progress.1)
+                                    ui.add( egui::ProgressBar::new(self.deep.progress.0 / self.deep.progress.1)
                                             // .text("progress")
                                             .desired_height(4.0)
                                         );
-                                    ui.label(format!("Progress: {} / {}", progress.0, progress.1));
+                                    ui.label(format!("Progress: {} / {}", self.deep.progress.0, self.deep.progress.1));
                                 }
 
                                 // Use `progress` to update your UI
@@ -652,12 +657,29 @@ impl eframe::App for TemplateApp {
                                 ui.label(self.main.status.clone());
 
                             });
-                            if self.main.working{
-                                ui.add( egui::ProgressBar::new(0.0)
-                                        // .text("progress")
-                                        .desired_height(4.0)
-                                    );
+
+                            if let Some(progress_receiver) = &mut self.main.progress_receiver {
+                                // Update progress state based on messages
+                                while let Ok(message) = progress_receiver.try_recv() {
+                                    if let ProgressMessage::Update(current, total) = message {
+                                        self.main.progress = (current as f32, total as f32);
+                                        println!("received progress {} / {}", current, total);
+                                    }
+                                }
+                                
                             }
+                            
+                            
+                            if self.main.working{
+                                ui.add( egui::ProgressBar::new(self.main.progress.0 / self.main.progress.1)
+                                // .text("progress")
+                                .desired_height(4.0)
+                            );
+                            if self.main.progress.1 > 0.0 {
+                                println!("main progress {} / {}", self.main.progress.0, self.main.progress.1);
+                                if self.main.progress.0 == self.main.progress.1 {self.main.working = false;}
+                            }
+                        }
                             receive_duplicates(self);
                             
                         }
@@ -963,27 +985,48 @@ fn receive_duplicates(app: &mut TemplateApp) {
 
 fn remove_duplicates(app: &mut TemplateApp) {
 
-    if let Some(db) = app.db.clone() {
+    if let Some(mut db) = app.db.clone() {
         app.main.working = true;
         app.main.status = "Removing Records".to_string();
         let records = app.main.records.clone();
-        let p = db.pool.clone();
-        // if let Some(tx) = app.main.tx.clone() {
+        let mut p = db.pool.clone();
+        let safe = app.safe;
+        let dupes = app.dupes_db;
+        if app.main.progress_sender.is_none() {println!("main progress sender is none")}
+        if let Some(sender) = app.main.progress_sender.clone() {
             tokio::spawn(async move {
-                println!("tokio spawn tags");
-                let results = delete_file_records(&p, records, false).await;
-                // if let Err(_) = tx.send(results.expect("error on gather tags")).await {
-                //     eprintln!("Failed to send db");
-                // }
-               
-            });
+                println!("Spawn deletion process");
+                if safe {
+                    println!("Creating Thinned Database");
+                    let work_db_path = format!("{}_thinned.sqlite", &db.path.trim_end_matches(".sqlite"));
+                    fs::copy(&db.path, &work_db_path);
+                    p = SqlitePool::connect(&work_db_path).await.expect("Pool did not open");
+                }
+                println!("deleting file records");
+                let results = delete_file_records(&p, &records, sender.clone()).await;
+                match results {
+                    Ok(_) => println!("Deletion completed successfully"),
+                    Err(e) => eprintln!("Error during deletion: {}", e),
+                }
+                if dupes {
+                    print!("creating dupes database");
+                    let results = create_duplicates_db(&db.path, &records, sender.clone()).await;
+                    match results {
+                        Ok(_) => println!("Deletion completed successfully"),
+                        Err(e) => eprintln!("Error during deletion: {}", e),
+                    }
 
-        // }
+                }
+
+
+
+                println!("Exiting tokio spawn");
+               
+                db.size = get_db_size(&p).await.expect("get db size");
+            });
+            
+        }
     }
         
-
-    
-
-
 
 }

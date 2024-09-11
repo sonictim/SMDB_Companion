@@ -5,7 +5,7 @@ use tokio::sync::mpsc;
 use std::collections::HashSet;
 use std::collections::HashMap;
 // use std::env;
-// use std::fs::{self, File};
+use std::fs::{self, File};
 use std::io::{self, BufRead, Write};
 // use std::path::Path;
 // use std::error::Error;
@@ -255,48 +255,82 @@ fn extract_filenames_set_from_records(file_records: &HashSet<FileRecord>) -> Has
     file_records.iter().map(|record| record.filename.clone()).collect()
 }
 
-pub async fn delete_file_records(pool: &SqlitePool, records: HashSet<FileRecord>, verbose: bool) -> Result<(), Error> {
-    const BATCH_SIZE: usize = 100;
-    let mut counter = 1;
-    let total = records.len();
-    println!("Removing Records Marked as Duplicates");
+pub async fn delete_file_records(pool: &SqlitePool, records: &HashSet<FileRecord>, progress_sender: mpsc::Sender<ProgressMessage>) -> Result<(), sqlx::Error> {
+    const CHUNK_SIZE: usize = 12321;
+    // Extract IDs from records
+    let ids: Vec<i64> = records.into_iter().map(|record| record.id as i64).collect();
 
-    let mut tx = pool.begin().await?;
-
-    let mut sorted_records: Vec<_> = records.iter().collect();
-    sorted_records.sort_by(|a, b| b.id.cmp(&a.id));  // Sort by ID in descending order
-
-    for chunk in sorted_records.chunks(BATCH_SIZE) {
-        if verbose {
-            for record in chunk {
-                println!("\rDeleting ID: {}, Filename: {}", record.id, record.filename);
-            }
-        } else {
-            let _ = io::stdout().flush();
-            print!("\r{} / {}", counter, total);
-            counter += BATCH_SIZE;
-        }
-
-        // Create a list of placeholders for the SQL query
-        let placeholders: Vec<String> = chunk.iter()
-            .map(|_| "?".to_string())
-            .collect();
-        let placeholders = placeholders.join(", ");
-        let query = format!("DELETE FROM justinmetadata WHERE rowid IN ({})", placeholders);
-
-
-        // Execute the delete query
-        sqlx::query(&query)
-            .execute(&mut *tx)
-            .await?;
+    // Check if we have any IDs to process
+    if ids.is_empty() {
+        return Ok(());
     }
 
-    println!("\r{} / {}", total, total);
-    tx.commit().await?;
+    let mut counter = 0;
+    let total = records.len();
+
+    // Process IDs in chunks
+    for chunk in ids.chunks(CHUNK_SIZE) {
+        // Construct the SQL query with placeholders for the chunk
+        let query = format!(
+            "DELETE FROM justinmetadata WHERE rowid IN ({})",
+            chunk.iter()
+                .map(|_| "?")
+                .collect::<Vec<&str>>()
+                .join(", ")
+        );
+
+        // Prepare the query with bound parameters
+        let mut query = sqlx::query(&query);
+        for &id in chunk {
+            query = query.bind(id);
+        }
+
+        // Execute the deletion
+        match query.execute(pool).await {
+            Ok(_) => {
+                counter += CHUNK_SIZE;
+                if counter >= total { counter = total; }
+                let _ = progress_sender.send(ProgressMessage::Update(counter, total)).await;
+                println!("Processed {} / {}", counter, total);
+            },
+            Err(e) => {
+                eprintln!("Failed to execute query: {}", e);
+                return Err(e);
+            }
+        }
+    }
+    println!("done inside delete function");
+    sqlx::query("VACUUM").execute(pool).await; // Execute VACUUM on the database
+    println!("VACUUM done inside delete function");
+
 
     Ok(())
 }
 
+// pub async fn vacuum_db(pool: &SqlitePool) -> Result<(), sqlx::Error> { 
+//     // println!("Cleaning up Database {}", get_connection_source_filepath(&conn));
+//     Ok(())
+// }
+
+
+pub async fn create_duplicates_db(source_db_path: &str, dupe_records_to_keep: &HashSet<FileRecord>, progress_sender: mpsc::Sender<ProgressMessage>) -> Result<(), sqlx::Error> {
+    println!("Generating Duplicates Only Database.  This can take awhile.");
+    let duplicate_db_path = format!("{}_dupes.sqlite", &source_db_path.trim_end_matches(".sqlite"));
+    fs::copy(&source_db_path, &duplicate_db_path).unwrap();
+    let mut dupe_conn = SqlitePool::connect(&duplicate_db_path).await.expect("Pool did not open");
+    
+    if let Ok(mut dupe_records_to_delete) = fetch_all_filerecords_from_database(&dupe_conn).await {
+
+        dupe_records_to_delete.retain(|record| !dupe_records_to_keep.contains(record));
+        
+        delete_file_records(&mut dupe_conn, &dupe_records_to_delete, progress_sender).await;
+        // vacuum_db(&dupe_conn).await;
+    }
+
+    // println!("{} records moved to {}", get_db_size(&dupe_conn), duplicate_db_path);
+
+    Ok(())
+}
 
 
 fn get_root_filename(filename: &str) -> Option<String> {
