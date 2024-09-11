@@ -1,35 +1,18 @@
-// use std::ops::DerefMut;
-// use egui::RadioButton;
 use eframe::egui::{self, RichText};
 use sqlx::sqlite::SqlitePool;
 use tokio;
 use tokio::sync::mpsc;
-use tokio::task;
-// use std::sync::Arc;
-// use std::sync::Mutex;
-
-// use eframe::glow::BLUE;
-// use egui::{menu::menu_button, ModifierNames};
-// use rusqlite::{Connection, Result};
 use std::collections::HashSet;
-use std::thread::JoinHandle;
-// use std::collections::HashMap;
-// use std::env;
-use std::fs::{self, File};
-// use std::io::{self, BufRead, Write};
-
+use std::fs::{self};
+use serde::Deserialize;
 use crate::assets::*;
 use crate::processing::*;
 
-
-
-use serde::Deserialize;
-
-#[derive(Default, serde::Deserialize, serde::Serialize)]
+#[derive( serde::Deserialize, serde::Serialize)]
 #[serde(default)] 
 pub struct Config {
     pub search: bool,
-    #[serde(skip)]
+    // #[serde(skip)]
     // pub db: Database,
     // pub option: Option<String>,
     pub list: Vec<String>,
@@ -51,11 +34,31 @@ pub struct Config {
     #[serde(skip)]
     progress: (f32, f32),
 }
+impl Default for Config {
+    fn default() -> Self {
+        let (tx, rx) = mpsc::channel(1);
+        let (progress_sender, progress_receiver) = mpsc::channel(32);
+        Self {
+            search: false,
+            list: Vec::new(),
+            selected: String::new(),
+            status: String::new(),
+            records: HashSet::new(),
+            working: false,
+            tx: Some(tx),
+            rx: Some(rx),
+            progress_sender: Some(progress_sender),
+            progress_receiver: Some(progress_receiver),
+            progress: (0.0, 0.0),
+
+        }
+    }
+}
 
 impl Config {
     fn new(on: bool) -> Self {
         let (tx, rx) = mpsc::channel(1);
-        let (progress_sender, mut progress_receiver) = mpsc::channel(32);
+        let (progress_sender, progress_receiver) = mpsc::channel(32);
         // println!("Initializing new config with tx: {:?}, rx: {:?}", tx, rx);
         Self {
             search: on,
@@ -74,7 +77,7 @@ impl Config {
     }
     fn new_option(on: bool, o: &str) -> Self {
         let (tx, rx) = mpsc::channel(1);
-        let (progress_sender, mut progress_receiver) = mpsc::channel(32);
+        let (progress_sender, progress_receiver) = mpsc::channel(32);
         // println!("Initializing new config with tx: {:?}, rx: {:?}", tx, rx);
         Self {
             search: on,
