@@ -4,6 +4,7 @@ use tokio;
 use tokio::sync::mpsc;
 use std::collections::HashSet;
 use std::fs::{self};
+use std::thread::JoinHandle;
 use serde::Deserialize;
 use crate::assets::*;
 use crate::processing::*;
@@ -33,6 +34,8 @@ pub struct Config {
     progress_receiver: Option<mpsc::Receiver<ProgressMessage>>,
     #[serde(skip)]
     progress: (f32, f32),
+    #[serde(skip)]
+    handle: Option<tokio::task::JoinHandle<()>>,
 }
 impl Default for Config {
     fn default() -> Self {
@@ -50,6 +53,7 @@ impl Default for Config {
             progress_sender: Some(progress_sender),
             progress_receiver: Some(progress_receiver),
             progress: (0.0, 0.0),
+            handle: None,
 
         }
     }
@@ -72,6 +76,7 @@ impl Config {
             progress_sender: Some(progress_sender),
             progress_receiver: Some(progress_receiver),
             progress: (0.0, 0.0),
+            handle: None,
 
         }
     }
@@ -91,6 +96,7 @@ impl Config {
             progress_sender: Some(progress_sender),
             progress_receiver: Some(progress_receiver),
             progress: (0.0, 0.0),
+            handle: None,
 
         }
     }
@@ -172,7 +178,7 @@ pub struct TemplateApp {
     group_null: bool,
     tags: Config,
     deep: Config,
-    compare_db: Config,
+    compare: Config,
 
     #[serde(skip)] // This how you opt-out of serialization of a field
     safe: bool,
@@ -236,7 +242,7 @@ impl Default for TemplateApp {
      
             tags: Config::new_option(false, "-"),
             deep: Config::new(false),
-            compare_db: Config::new(false),
+            compare: Config::new(false),
 
             safe: true,
             dupes_db: false,
@@ -511,7 +517,7 @@ impl eframe::App for TemplateApp {
                                 
                         }
                         Panel::Duplicates => {
-                            ui.heading("Search for Duplicate Records");
+                            ui.heading(RichText::new("Search for Duplicate Records").strong());
                 
                             ui.checkbox(&mut self.main.search, "Basic Duplicate Filename Search");
                                 
@@ -531,8 +537,10 @@ impl eframe::App for TemplateApp {
                                     // ui.checkbox(&mut self.group_null, "Process records without defined group together, or skip?");
                                 });
                                 ui.horizontal( |ui| {
-                                    if self.group.working {ui.spinner();}
-                                    ui.label(self.group.status.clone());
+                                    if self.group.working { ui.spinner();}
+                                    else {ui.add_space(24.0);}
+                                    ui.label(RichText::new(self.group.status.clone()).strong());
+                                    
 
                                 });
                                 ui.separator();
@@ -544,7 +552,8 @@ impl eframe::App for TemplateApp {
                                 });
                                 ui.horizontal( |ui| {
                                     if self.deep.working {ui.spinner();}
-                                    ui.label(self.deep.status.clone());
+                                    else {ui.add_space(24.0)}
+                                    ui.label(RichText::new(self.deep.status.clone()).strong());
 
                                 });
 
@@ -582,14 +591,15 @@ impl eframe::App for TemplateApp {
                                 
                                 ui.horizontal(|ui| {
                                     if self.tags.working {ui.spinner();}
-                                    ui.label(self.tags.status.clone());
+                                    else {ui.add_space(24.0);}
+                                    ui.label(RichText::new(self.tags.status.clone()).strong());
 
                                 });
                                 ui.separator();
 
                             //COMPARE COMPARE COMPARE COMPARE
                             ui.horizontal(|ui| {
-                                ui.checkbox(&mut self.compare_db.search, "Compare against database: ");
+                                ui.checkbox(&mut self.compare.search, "Compare against database: ");
                                 if let Some(cdb) = &self.c_db {
                                     ui.label(&cdb.name);
                                 }
@@ -621,8 +631,9 @@ impl eframe::App for TemplateApp {
                                     ui.label("Filenames from Target Database found in Comparison Database will be Marked for Removal");
                                 });
                                 ui.horizontal(|ui| {
-                                    if self.compare_db.working {ui.spinner();}
-                                    ui.label(self.compare_db.status.clone());
+                                    if self.compare.working {ui.spinner();}
+                                    else {ui.add_space(24.0)}
+                                    ui.label(RichText::new(self.compare.status.clone()).strong());
 
                                 });
                                 ui.separator();
@@ -645,7 +656,9 @@ impl eframe::App for TemplateApp {
                                     }
 
                                 }
-                                if self.main.records.len() > 0 {
+
+                                if self.main.records.len() > 0 && !handles_active(self) {
+                                    
 
                                     // button(ui, "Remove Duplicates", remove_duplicates);
 
@@ -653,11 +666,16 @@ impl eframe::App for TemplateApp {
                                        remove_duplicates(self);
                                     }
                                 }
+                                if handles_active(self) {
+                                    button(ui, "Cancel", ||abort_all(self));
+
+                                }
+
                             });
                          
                             ui.horizontal( |ui| {
                                 if self.main.working {ui.spinner();}
-                                ui.label(self.main.status.clone());
+                                ui.label(RichText::new(self.main.status.clone()).strong());
 
                             });
 
@@ -837,8 +855,6 @@ pub fn order_toolbar(ui: &mut egui::Ui, app: &mut TemplateApp) {
 pub fn gather_duplicates(app: &mut TemplateApp) {
     app.main.records.clear();
     if let Some(db) = app.db.clone() {
-
-  
     
     let pool = db.pool;
 
@@ -855,13 +871,14 @@ pub fn gather_duplicates(app: &mut TemplateApp) {
             if app.group.search {group_sort = Some(app.group.selected.clone())}
             let group_null = app.group_null;
             let p = pool.clone();
-            tokio::spawn(async move {
+            let handle = tokio::spawn(async move {
                 println!("tokio spawn main");
                 let results  = gather_duplicate_filenames_in_database(&p, order, &group_sort, group_null, true).await;
                 if let Err(_) = tx.send(results.expect("error on gather tags")).await {
                     eprintln!("Failed to send db");
                 }
             });
+            app.group.handle = Some(handle);
         }
   
     }
@@ -875,13 +892,14 @@ pub fn gather_duplicates(app: &mut TemplateApp) {
 
                     println!("if let some");
                     let p = pool.clone();
-                    tokio::spawn(async move {
+                    let handle = tokio::spawn(async move {
                         println!("tokio spawn tags");
                         let results  = gather_deep_dive_records(&p, sender).await;
                         if let Err(_) = tx.send(results.expect("error on gather tags")).await {
                             eprintln!("Failed to send db");
                         }
                     });
+                    app.deep.handle = Some(handle);
                 };
 
             }
@@ -897,13 +915,14 @@ pub fn gather_duplicates(app: &mut TemplateApp) {
                 println!("if let some");
                 let tags = app.tags.list.clone();
                 let p = pool.clone();
-                tokio::spawn(async move {
+                let handle = tokio::spawn(async move {
                     println!("tokio spawn tags");
                     let results  = gather_filenames_with_tags(&p, &tags).await;
                     if let Err(_) = tx.send(results.expect("error on gather tags")).await {
                         eprintln!("Failed to send db");
                     }
                 });
+                app.tags.handle = Some(handle);
 
             }
 
@@ -912,22 +931,23 @@ pub fn gather_duplicates(app: &mut TemplateApp) {
 
     }
     
-    if app.compare_db.search && app.c_db.is_some() {
+    if app.compare.search && app.c_db.is_some() {
         if let Some(cdb) = &app.c_db {
-            app.compare_db.working = true;
-            app.compare_db.status = format!("Comparing against {}", cdb.name);
-            if app.compare_db.tx.is_none() {println!("compare tx is none");}
-            if let Some(tx) = app.compare_db.tx.clone() {
+            app.compare.working = true;
+            app.compare.status = format!("Comparing against {}", cdb.name);
+            if app.compare.tx.is_none() {println!("compare tx is none");}
+            if let Some(tx) = app.compare.tx.clone() {
                 println!("if let some");
                 let p = pool.clone();
                 let c_pool = cdb.pool.clone();
-                tokio::spawn(async move {
+                let handle = tokio::spawn(async move {
                     println!("tokio spawn compare");
                     let results  = gather_compare_database_overlaps(&p, &c_pool).await;
                     if let Err(_) = tx.send(results.expect("error on compare db")).await {
                         eprintln!("Failed to send db");
                     }
                 });
+                app.compare.handle = Some(handle);
 
             }
 
@@ -942,8 +962,9 @@ fn receive_duplicates(app: &mut TemplateApp) {
     if let Some(rx) = app.group.rx.as_mut() {
         if let Ok(records) = rx.try_recv() {
             app.group.records = records;
+            app.group.handle = None;
             app.group.working = false;
-            app.group.status = format!{"Found {} duplicate records", app.group.records.len()};
+            app.group.status = format!{"Found {} duplicate filenames", app.group.records.len()};
             app.main.records.extend(app.group.records.clone());
         }
     }
@@ -952,8 +973,9 @@ fn receive_duplicates(app: &mut TemplateApp) {
         
         if let Ok(records) = rx.try_recv() {
             app.deep.records = records;
+            app.deep.handle = None;
             app.deep.working = false;
-            app.deep.status = format!{"Found {} records with matching tags", app.deep.records.len()};
+            app.deep.status = format!{"Found {} records with similar filenames", app.deep.records.len()};
             app.main.records.extend(app.deep.records.clone());
         }
     }
@@ -962,18 +984,20 @@ fn receive_duplicates(app: &mut TemplateApp) {
     if let Some(rx) = app.tags.rx.as_mut() {
         if let Ok(records) = rx.try_recv() {
             app.tags.records = records;
+            app.tags.handle = None;
             app.tags.working = false;
             app.tags.status = format!{"Found {} records with matching tags", app.tags.records.len()};
             app.main.records.extend(app.tags.records.clone());
         }
     }
     
-    if let Some(rx) = app.compare_db.rx.as_mut() {
+    if let Some(rx) = app.compare.rx.as_mut() {
         if let Ok(records) = rx.try_recv() {
-            app.compare_db.records = records;
-            app.compare_db.working = false;
-            app.compare_db.status = format!{"Found {} overlapping records in {}", app.compare_db.records.len(), app.c_db.clone().unwrap().name};
-            app.main.records.extend(app.compare_db.records.clone());
+            app.compare.records = records;
+            app.compare.handle = None;
+            app.compare.working = false;
+            app.compare.status = format!{"Found {} overlapping records in {}", app.compare.records.len(), app.c_db.clone().unwrap().name};
+            app.main.records.extend(app.compare.records.clone());
         }
     }
     
@@ -997,7 +1021,7 @@ fn remove_duplicates(app: &mut TemplateApp) {
         let dupes = app.dupes_db;
         if app.main.progress_sender.is_none() {println!("main progress sender is none")}
         if let Some(sender) = app.main.progress_sender.clone() {
-            tokio::spawn(async move {
+            let handle = tokio::spawn(async move {
                 println!("Spawn deletion process");
                 if safe {
                     println!("Creating Thinned Database");
@@ -1027,9 +1051,54 @@ fn remove_duplicates(app: &mut TemplateApp) {
                
                 db.size = get_db_size(&p).await.expect("get db size");
             });
+            app.main.handle = Some(handle);
             
         }
+        
     }
         
 
+}
+
+
+
+fn abort_all(app: &mut TemplateApp) {
+
+    if let Some(handle) = &app.main.handle {
+        handle.abort();
+    }
+    app.main.handle = None;
+    app.main.working = false;
+
+    if let Some(handle) = &app.group.handle {
+        handle.abort();
+    }
+    app.group.handle = None;
+    app.group.working = false;
+
+    if let Some(handle) = &app.deep.handle {
+        handle.abort();
+    }
+    app.deep.handle = None;
+    app.deep.working = false;
+
+    if let Some(handle) = &app.tags.handle {
+        handle.abort();
+    }
+    app.tags.handle = None;
+    app.tags.working = false;
+
+    if let Some(handle) = &app.compare.handle {
+        handle.abort();
+    }
+    app.compare.handle = None;
+    app.compare.working = false;
+}
+
+fn handles_active(app: &TemplateApp) -> bool {
+    app.main.handle.is_some() || 
+    app.group.handle.is_some() || 
+    app.deep.handle.is_some() || 
+    app.tags.handle.is_some() || 
+    app.compare.handle.is_some()
 }
