@@ -16,6 +16,39 @@ use crate::app::*;
 
 const TABLE: &str = "justinmetadata";
 
+// pub fn wrap_async<F, T>(pool: &SqlitePool, config: &mut Config, label: &str, action: F)
+pub fn wrap_async<F, T>(config: &mut Config, label: &str, action: F)
+where
+    // F: FnOnce(&SqlitePool, mpsc::Sender<ProgressMessage>) -> T + Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
+    T: std::future::Future<Output = Result<HashSet<FileRecord>, sqlx::Error>> + Send + 'static,
+{
+
+        config.working = true;
+        config.status = label.to_string();
+        let records = config.records.clone();
+        if let Some(tx) = config.tx.clone() {
+            // if let Some(sender) = config.progress_sender.clone() {
+                // let pool = pool.clone();
+
+                let handle = tokio::spawn(async move {
+                    println!("Inside Async Task");
+                    
+
+                    
+                    // let _results  = action(&pool, sender).await;
+                    let _results  = action().await;
+                    if let Err(_) = tx.send(records).await {
+                        eprintln!("Failed to send db");
+                    }
+                });
+                config.handle = Some(handle);
+            // }
+
+        }
+    
+}
+
 pub async fn smreplace_get(pool: &SqlitePool, find: &mut String, column: &mut String ) -> Result<usize, sqlx::Error>  {
     
     let search_query = format!("SELECT COUNT(rowid) FROM {} WHERE {} LIKE ?", TABLE, column);
@@ -39,13 +72,21 @@ pub async fn smreplace_process(pool: &SqlitePool, find: &mut String, replace: &m
 
 }
 
+
+
 pub async fn gather_duplicate_filenames_in_database(
-    pool: &SqlitePool, 
-    order: Vec<String>, 
-    group_sort: &Option<String>, 
+    pool: SqlitePool,
+    config: Config, 
+    // order: Vec<String>, 
+    // group_sort: Option<String>, 
     group_null: bool, 
-    verbose: bool
 ) -> Result<HashSet<FileRecord>, sqlx::Error> {
+
+
+    let verbose = false;
+    let order = config.list;
+    let mut group_sort = None;
+    if config.search {group_sort = Some(config.selected)}
     
     let mut file_records = HashSet::new();
 
@@ -95,7 +136,7 @@ pub async fn gather_duplicate_filenames_in_database(
 
     // Execute the query and fetch the results
     let rows = sqlx::query(&sql)
-        .fetch_all(pool)
+        .fetch_all(&pool)
         .await?;
     
     // Iterate through the rows and insert them into the hashset
@@ -117,14 +158,15 @@ pub async fn gather_duplicate_filenames_in_database(
 }
 
 
-pub async fn gather_deep_dive_records(pool: &SqlitePool, progress_sender: mpsc::Sender<ProgressMessage>,) -> Result<HashSet<FileRecord>, sqlx::Error> {
+pub async fn gather_deep_dive_records(pool: SqlitePool, progress_sender: mpsc::Sender<ProgressMessage>,) -> Result<HashSet<FileRecord>, sqlx::Error> {
+    
     let mut file_records = HashSet::new();
     let mut file_groups: HashMap<String, Vec<FileRecord>> = HashMap::new();
 
     let query = "SELECT rowid, filename, duration FROM justinmetadata";
 
     let rows = sqlx::query(query)
-    .fetch_all(pool)
+    .fetch_all(&pool)
     .await?;
 
     let total = rows.len();
@@ -172,7 +214,7 @@ pub async fn gather_deep_dive_records(pool: &SqlitePool, progress_sender: mpsc::
 
 
 
-pub async fn gather_filenames_with_tags(pool: &SqlitePool, tags: &Vec<String>) -> Result<HashSet<FileRecord>, sqlx::Error>  {
+pub async fn gather_filenames_with_tags(pool: SqlitePool, tags: Vec<String>) -> Result<HashSet<FileRecord>, sqlx::Error>  {
         // tags.status = format!("Searching for filenames containing tags");
         println!("Tokio Start");
         let mut file_records = HashSet::new();
@@ -183,7 +225,7 @@ pub async fn gather_filenames_with_tags(pool: &SqlitePool, tags: &Vec<String>) -
             // Execute the query and fetch rows
             let rows = sqlx::query(query)
                 .bind(tag.clone())
-                .fetch_all(pool)
+                .fetch_all(&pool)
                 .await?;
     
             // Collect file records from the query result

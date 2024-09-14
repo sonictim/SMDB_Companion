@@ -1,4 +1,5 @@
 use eframe::egui::{self, Ui, RichText};
+// use sqlx::SqlitePool;
 // use sqlx::sqlite::SqlitePool;
 // use tokio;
 // use tokio::sync::mpsc::Sender;
@@ -13,6 +14,9 @@ where
         action(); // Call the passed function when the button is clicked
     }
 }
+
+
+
 
 
 pub fn large_button<F>(ui: &mut Ui, label: &str, action: F)

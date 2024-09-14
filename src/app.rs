@@ -9,7 +9,7 @@ use serde::Deserialize;
 use crate::assets::*;
 use crate::processing::*;
 
-#[derive( serde::Deserialize, serde::Serialize)]
+#[derive( serde::Deserialize, serde::Serialize,)]
 #[serde(default)] 
 pub struct Config {
     pub search: bool,
@@ -25,17 +25,38 @@ pub struct Config {
     #[serde(skip)]
     pub working: bool,
     #[serde(skip)]
-    tx: Option<mpsc::Sender<HashSet<FileRecord>>>,
+    pub tx: Option<mpsc::Sender<HashSet<FileRecord>>>,
     #[serde(skip)]
-    rx: Option<mpsc::Receiver<HashSet<FileRecord>>>,
+    pub rx: Option<mpsc::Receiver<HashSet<FileRecord>>>,
     #[serde(skip)]
-    progress_sender: Option<mpsc::Sender<ProgressMessage>>,
+    pub progress_sender: Option<mpsc::Sender<ProgressMessage>>,
     #[serde(skip)]
-    progress_receiver: Option<mpsc::Receiver<ProgressMessage>>,
+    pub progress_receiver: Option<mpsc::Receiver<ProgressMessage>>,
     #[serde(skip)]
-    progress: (f32, f32),
+    pub progress: (f32, f32),
     #[serde(skip)]
-    handle: Option<tokio::task::JoinHandle<()>>,
+    pub handle: Option<tokio::task::JoinHandle<()>>,
+}
+
+impl Clone for Config {
+    fn clone(&self) -> Self {
+        let (tx, rx) = mpsc::channel(1);
+        let (progress_sender, progress_receiver) = mpsc::channel(32);
+        Config {
+            search: self.search,
+            list: self.list.clone(),
+            selected: self.selected.clone(),
+            status: self.status.clone(),
+            records: self.records.clone(),
+            working: self.working,
+            tx: Some(tx),
+            rx: Some(rx),
+            progress_sender: Some(progress_sender),
+            progress_receiver: Some(progress_receiver),
+            progress: self.progress,
+            handle: None,  // JoinHandle does not implement Clone
+        }
+    }
 }
 impl Default for Config {
     fn default() -> Self {
@@ -856,75 +877,94 @@ pub fn gather_duplicates(app: &mut TemplateApp) {
     app.main.records.clear();
     if let Some(db) = app.db.clone() {
     
-    let pool = db.pool;
+    let pool = db.pool.clone();
 
     //  app.main.status = format!("Opening {}", db.name);
     // let mut conn = Connection::open(&source_db_path).unwrap(); 
 
     if app.main.search {
-        app.main.status = format!("Searching for Dupicates");
-        app.group.working = true;
-        app.group.status = format!("Searching for duplicate filenames");
-        if let Some(tx) = app.group.tx.clone() {
-            let order = app.main.list.clone();
-            let mut group_sort = None;
-            if app.group.search {group_sort = Some(app.group.selected.clone())}
-            let group_null = app.group_null;
-            let p = pool.clone();
-            let handle = tokio::spawn(async move {
-                println!("tokio spawn main");
-                let results  = gather_duplicate_filenames_in_database(&p, order, &group_sort, group_null, true).await;
-                if let Err(_) = tx.send(results.expect("error on gather tags")).await {
-                    eprintln!("Failed to send db");
-                }
-            });
-            app.group.handle = Some(handle);
-        }
+        let pool = pool.clone();
+        let config = app.group.clone();
+        let null = app.group_null;
+        wrap_async(
+            &mut app.group, 
+            "Searching For Duplicate Filenames", 
+            move || gather_duplicate_filenames_in_database(pool, config, null)
+        )
+        // app.main.status = format!("Searching for Dupicates");
+        // app.group.working = true;
+        // app.group.status = format!("Searching for duplicate filenames");
+        // if let Some(tx) = app.group.tx.clone() {
+        //     let p = pool.clone();
+        //     let handle = tokio::spawn(async move {
+        //         println!("tokio spawn main");
+        //         let results  = gather_duplicate_filenames_in_database(&p, order, &group_sort, group_null, true).await;
+        //         if let Err(_) = tx.send(results.expect("error on gather tags")).await {
+        //             eprintln!("Failed to send db");
+        //         }
+        //     });
+        //     app.group.handle = Some(handle);
+        // }
   
     }
 
     if app.deep.search {
-        app.deep.working = true;
-        app.deep.status = format!("Performing Deep dive");
-        if app.deep.tx.is_none() {println!("deep is none");}
-            if let Some(tx) = app.deep.tx.clone() {
-                if let Some(sender) = app.deep.progress_sender.clone() {
+        if let Some(sender) = app.deep.progress_sender.clone() {
+            let pool = pool.clone();
+            wrap_async(
+                &mut app.deep, 
+                "Performing async Deep Dive", 
+                move || gather_deep_dive_records(pool, sender))
+        }
+        // app.deep.working = true;
+        // app.deep.status = format!("Performing Deep dive");
+        // if app.deep.tx.is_none() {println!("deep is none");}
+        //     if let Some(tx) = app.deep.tx.clone() {
+        //         if let Some(sender) = app.deep.progress_sender.clone() {
 
-                    println!("if let some");
-                    let p = pool.clone();
-                    let handle = tokio::spawn(async move {
-                        println!("tokio spawn tags");
-                        let results  = gather_deep_dive_records(&p, sender).await;
-                        if let Err(_) = tx.send(results.expect("error on gather tags")).await {
-                            eprintln!("Failed to send db");
-                        }
-                    });
-                    app.deep.handle = Some(handle);
-                };
+        //             println!("if let some");
+        //             let p = pool.clone();
+        //             let handle = tokio::spawn(async move {
+        //                 println!("tokio spawn tags");
+        //                 let results  = gather_deep_dive_records(&p, sender).await;
+        //                 if let Err(_) = tx.send(results.expect("error on gather tags")).await {
+        //                     eprintln!("Failed to send db");
+        //                 }
+        //             });
+        //             app.deep.handle = Some(handle);
+        //         };
 
-            }
+        //     }
     
     }
 
     if app.tags.search {
-        app.main.status = format!("Searching for tags");
-        app.tags.working = true;
-        app.tags.status = format!{"Searching records with matching tags"};
-        if app.tags.tx.is_none() {println!("is none");}
-            if let Some(tx) = app.tags.tx.clone() {
-                println!("if let some");
-                let tags = app.tags.list.clone();
-                let p = pool.clone();
-                let handle = tokio::spawn(async move {
-                    println!("tokio spawn tags");
-                    let results  = gather_filenames_with_tags(&p, &tags).await;
-                    if let Err(_) = tx.send(results.expect("error on gather tags")).await {
-                        eprintln!("Failed to send db");
-                    }
-                });
-                app.tags.handle = Some(handle);
 
-            }
+        let pool = pool.clone();
+        let tags = app.tags.list.clone();
+        wrap_async(
+            &mut app.tags,
+             "Async Tags Search", 
+             move || gather_filenames_with_tags(pool, tags)
+        );
+        // app.main.status = format!("Searching for tags");
+        // app.tags.working = true;
+        // app.tags.status = format!{"Searching records with matching tags"};
+        // if app.tags.tx.is_none() {println!("is none");}
+        //     if let Some(tx) = app.tags.tx.clone() {
+        //         println!("if let some");
+        //         let tags = app.tags.list.clone();
+        //         let p = pool.clone();
+        //         let handle = tokio::spawn(async move {
+        //             println!("tokio spawn tags");
+        //             let results  = gather_filenames_with_tags(p, &tags).await;
+        //             if let Err(_) = tx.send(results.expect("error on gather tags")).await {
+        //                 eprintln!("Failed to send db");
+        //             }
+        //         });
+        //         app.tags.handle = Some(handle);
+
+        //     }
 
                             
                             
