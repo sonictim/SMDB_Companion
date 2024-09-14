@@ -1066,7 +1066,7 @@ fn remove_duplicates(app: &mut TemplateApp) {
                 if safe {
                     println!("Creating Thinned Database");
                     let work_db_path = format!("{}_thinned.sqlite", &db.path.trim_end_matches(".sqlite"));
-                    fs::copy(&db.path, &work_db_path);
+                    let _result = fs::copy(&db.path, &work_db_path);
                     p = SqlitePool::connect(&work_db_path).await.expect("Pool did not open");
                 }
                 println!("deleting file records");
