@@ -1,14 +1,8 @@
 #![allow(non_snake_case)]
-use sqlx::Sqlite;
-use sqlx::{sqlite::SqlitePool, Row, Error};
+use sqlx::{sqlite::SqlitePool, Row};
 use tokio::sync::mpsc;
 use std::collections::HashSet;
 use std::collections::HashMap;
-// use std::env;
-use std::fs::{self, File};
-use std::io::{self, BufRead, Write};
-// use std::path::Path;
-// use std::error::Error;
 
 
 use regex::Regex;
@@ -26,7 +20,7 @@ where
 
         config.working = true;
         config.status = label.to_string();
-        let records = config.records.clone();
+        // let records = config.records.clone();
         if let Some(tx) = config.tx.clone() {
             // if let Some(sender) = config.progress_sender.clone() {
                 // let pool = pool.clone();
@@ -37,8 +31,12 @@ where
 
                     
                     // let _results  = action(&pool, sender).await;
-                    let _results  = action().await;
-                    if let Err(_) = tx.send(records).await {
+                    let results  = action().await;
+                    // match results {
+                    //     Ok(_) => println!("Tokio OK!"),
+                    //     Err(e) => println!("Error: {:#?}", e),
+                    // }
+                    if let Err(_) = tx.send(results.expect("Tokio Results Error HashSet")).await {
                         eprintln!("Failed to send db");
                     }
                 });
@@ -73,20 +71,19 @@ pub async fn smreplace_process(pool: &SqlitePool, find: &mut String, replace: &m
 }
 
 
-
 pub async fn gather_duplicate_filenames_in_database(
     pool: SqlitePool,
-    config: Config, 
-    // order: Vec<String>, 
-    // group_sort: Option<String>, 
+    // config: Config, 
+    order: Vec<String>, 
+    group_sort: Option<String>, 
     group_null: bool, 
 ) -> Result<HashSet<FileRecord>, sqlx::Error> {
 
 
-    let verbose = false;
-    let order = config.list;
-    let mut group_sort = None;
-    if config.search {group_sort = Some(config.selected)}
+    let verbose = true;
+    // let order = config.list;
+    // let mut group_sort = None;
+    // if config.search {group_sort = Some(config.selected)}
     
     let mut file_records = HashSet::new();
 
@@ -126,12 +123,12 @@ pub async fn gather_duplicate_filenames_in_database(
                     PARTITION BY {}
                     ORDER BY {}
                 ) as rn
-            FROM justinmetadata
+            FROM {}
             {}
         )
         SELECT id, filename, duration FROM ranked WHERE rn > 1
         ",
-        partition_by, order_clause, where_clause
+        partition_by, order_clause, TABLE, where_clause
     );
 
     // Execute the query and fetch the results
@@ -153,17 +150,19 @@ pub async fn gather_duplicate_filenames_in_database(
     if verbose {
         println!("Marked {} duplicate records for deletion.", file_records.len());
     }
-
+    
     Ok(file_records)
 }
 
 
-pub async fn gather_deep_dive_records(pool: SqlitePool, progress_sender: mpsc::Sender<ProgressMessage>,) -> Result<HashSet<FileRecord>, sqlx::Error> {
+
+
+pub async fn gather_deep_dive_records(pool: SqlitePool, progress_sender: mpsc::Sender<ProgressMessage>, _status_sender: mpsc::Sender<String>,) -> Result<HashSet<FileRecord>, sqlx::Error> {
     
     let mut file_records = HashSet::new();
     let mut file_groups: HashMap<String, Vec<FileRecord>> = HashMap::new();
 
-    let query = "SELECT rowid, filename, duration FROM justinmetadata";
+    let query = &format!("SELECT rowid, filename, duration FROM {}", TABLE);
 
     let rows = sqlx::query(query)
     .fetch_all(&pool)
@@ -191,6 +190,7 @@ pub async fn gather_deep_dive_records(pool: SqlitePool, progress_sender: mpsc::S
             // let _ = io::stdout().flush();
             // print!("\r{} / {}", counter, total);
             let _ = progress_sender.send(ProgressMessage::Update(counter, total)).await;
+            // let _ = status_sender.send(format!("Progress: {} / {}", counter, total)).await;
             counter += 1;   
     }
 
@@ -220,7 +220,7 @@ pub async fn gather_filenames_with_tags(pool: SqlitePool, tags: Vec<String>) -> 
         let mut file_records = HashSet::new();
 
         for tag in tags {
-            let query = "SELECT rowid, filename, duration FROM justinmetadata WHERE filename LIKE '%' || ? || '%'";
+            let query = &format!("SELECT rowid, filename, duration FROM {} WHERE filename LIKE '%' || ? || '%'", TABLE);
     
             // Execute the query and fetch rows
             let rows = sqlx::query(query)
@@ -290,19 +290,18 @@ pub async fn fetch_filerecords_from_database(pool: &SqlitePool, query: &str) -> 
 }
 pub async fn fetch_all_filerecords_from_database(pool: &SqlitePool) -> Result<HashSet<FileRecord>, sqlx::Error> {
     println!("Gathering all records from database");
-    fetch_filerecords_from_database(pool, "SELECT rowid, filename, duration FROM justinmetadata").await
+    fetch_filerecords_from_database(pool, &format!("SELECT rowid, filename, duration FROM {}", TABLE)).await
 }
 
 fn extract_filenames_set_from_records(file_records: &HashSet<FileRecord>) -> HashSet<String> {
     file_records.iter().map(|record| record.filename.clone()).collect()
 }
 
-pub async fn delete_file_records(pool: &SqlitePool, records: &HashSet<FileRecord>, progress_sender: mpsc::Sender<ProgressMessage>) -> Result<(), sqlx::Error> {
+pub async fn delete_file_records(pool: &SqlitePool, records: &HashSet<FileRecord>, progress_sender: mpsc::Sender<ProgressMessage>, status_sender: mpsc::Sender<String>) -> Result<(), sqlx::Error> {
     const CHUNK_SIZE: usize = 12321;
-    // Extract IDs from records
+
     let ids: Vec<i64> = records.into_iter().map(|record| record.id as i64).collect();
 
-    // Check if we have any IDs to process
     if ids.is_empty() {
         return Ok(());
     }
@@ -310,11 +309,10 @@ pub async fn delete_file_records(pool: &SqlitePool, records: &HashSet<FileRecord
     let mut counter = 0;
     let total = records.len();
 
-    // Process IDs in chunks
     for chunk in ids.chunks(CHUNK_SIZE) {
         // Construct the SQL query with placeholders for the chunk
         let query = format!(
-            "DELETE FROM justinmetadata WHERE rowid IN ({})",
+            "DELETE FROM {} WHERE rowid IN ({})", TABLE, 
             chunk.iter()
                 .map(|_| "?")
                 .collect::<Vec<&str>>()
@@ -327,13 +325,13 @@ pub async fn delete_file_records(pool: &SqlitePool, records: &HashSet<FileRecord
             query = query.bind(id);
         }
 
-        // Execute the deletion
         match query.execute(pool).await {
             Ok(_) => {
                 counter += CHUNK_SIZE;
                 if counter >= total { counter = total; }
                 let _ = progress_sender.send(ProgressMessage::Update(counter, total)).await;
-                println!("Processed {} / {}", counter, total);
+                let _ = status_sender.send(format!("Processed {} / {}", counter, total)).await;
+                
             },
             Err(e) => {
                 eprintln!("Failed to execute query: {}", e);
@@ -342,34 +340,27 @@ pub async fn delete_file_records(pool: &SqlitePool, records: &HashSet<FileRecord
         }
     }
     println!("done inside delete function");
-    sqlx::query("VACUUM").execute(pool).await; // Execute VACUUM on the database
+    let _ = status_sender.send("Cleaning Up Database".to_string()).await;
+    let _result = sqlx::query("VACUUM").execute(pool).await; // Execute VACUUM on the database
     println!("VACUUM done inside delete function");
 
 
     Ok(())
 }
 
-// pub async fn vacuum_db(pool: &SqlitePool) -> Result<(), sqlx::Error> { 
-//     // println!("Cleaning up Database {}", get_connection_source_filepath(&conn));
-//     Ok(())
-// }
 
-
-pub async fn create_duplicates_db(source_db_path: &str, dupe_records_to_keep: &HashSet<FileRecord>, progress_sender: mpsc::Sender<ProgressMessage>) -> Result<(), sqlx::Error> {
+pub async fn create_duplicates_db(pool: &SqlitePool, dupe_records_to_keep: &HashSet<FileRecord>, progress_sender: mpsc::Sender<ProgressMessage>, status_sender: mpsc::Sender<String>,) -> Result<(), sqlx::Error> {
     println!("Generating Duplicates Only Database.  This can take awhile.");
-    let duplicate_db_path = format!("{}_dupes.sqlite", &source_db_path.trim_end_matches(".sqlite"));
-    fs::copy(&source_db_path, &duplicate_db_path).unwrap();
-    let mut dupe_conn = SqlitePool::connect(&duplicate_db_path).await.expect("Pool did not open");
+    let _ = status_sender.send("Creating Dupliates Only Database.  This can be slow.".to_string()).await;
     
-    if let Ok(mut dupe_records_to_delete) = fetch_all_filerecords_from_database(&dupe_conn).await {
+    if let Ok(mut dupe_records_to_delete) = fetch_all_filerecords_from_database(pool).await {
 
         dupe_records_to_delete.retain(|record| !dupe_records_to_keep.contains(record));
         
-        delete_file_records(&mut dupe_conn, &dupe_records_to_delete, progress_sender).await;
-        // vacuum_db(&dupe_conn).await;
+        let _result = delete_file_records(pool, &dupe_records_to_delete, progress_sender, status_sender).await;
+
     }
 
-    // println!("{} records moved to {}", get_db_size(&dupe_conn), duplicate_db_path);
 
     Ok(())
 }
@@ -399,7 +390,7 @@ pub async fn open_db() -> Option<Database> {
 }
 
 pub async fn get_db_size(pool: &SqlitePool) -> Result<usize, sqlx::Error> {
-    let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM justinmetadata")
+    let count: (i64,) = sqlx::query_as(&format!("SELECT COUNT(*) FROM {}", TABLE))
         .fetch_one(pool)
         .await?;
 
@@ -408,7 +399,7 @@ pub async fn get_db_size(pool: &SqlitePool) -> Result<usize, sqlx::Error> {
 
 pub async fn get_columns(pool: &SqlitePool) -> Result<Vec<String>, sqlx::Error> {
     // Query for table info using PRAGMA
-    let columns = sqlx::query("PRAGMA table_info(justinmetadata);")
+    let columns = sqlx::query(&format!("PRAGMA table_info({});", TABLE))
         .fetch_all(pool)
         .await?
         .into_iter()
