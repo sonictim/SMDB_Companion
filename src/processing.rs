@@ -1,12 +1,28 @@
 #![allow(non_snake_case)]
 use sqlx::{sqlite::SqlitePool, Row};
 use tokio::sync::mpsc;
-use std::collections::HashSet;
-use std::collections::HashMap;
+use rayon::prelude::*;
+use std::collections::{HashSet, HashMap};
+use futures::stream::{self, StreamExt};
 
 
 use regex::Regex;
 use crate::app::*;
+
+use once_cell::sync::Lazy;
+// use regex::Regex;
+
+static FILENAME_REGEX: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"^(?P<base>.+?)(\.\d+|\.\w+)+(?P<ext>\.\w+)$").unwrap()
+});
+
+fn get_root_filename(filename: &str) -> Option<String> {
+    if let Some(caps) = FILENAME_REGEX.captures(filename) {
+        Some(format!("{}{}", &caps["base"], &caps["ext"]))
+    } else {
+        Some(filename.to_string())
+    }
+}
 
 const TABLE: &str = "justinmetadata";
 
@@ -157,54 +173,74 @@ pub async fn gather_duplicate_filenames_in_database(
 
 
 
-pub async fn gather_deep_dive_records(pool: SqlitePool, progress_sender: mpsc::Sender<ProgressMessage>, _status_sender: mpsc::Sender<String>,) -> Result<HashSet<FileRecord>, sqlx::Error> {
+
+pub async fn gather_deep_dive_records(
+    pool: SqlitePool,
+    progress_sender: mpsc::Sender<ProgressMessage>,
+    status_sender: mpsc::Sender<String>,
+) -> Result<HashSet<FileRecord>, sqlx::Error> {
     
-    let mut file_records = HashSet::new();
     let mut file_groups: HashMap<String, Vec<FileRecord>> = HashMap::new();
 
     let query = &format!("SELECT rowid, filename, duration FROM {}", TABLE);
 
     let rows = sqlx::query(query)
-    .fetch_all(&pool)
-    .await?;
+        .fetch_all(&pool)
+        .await?;
 
     let total = rows.len();
-    let mut counter: usize = 1;
-    for row in &rows {
-        let id: u32 = row.get(0);
-        let file_record = FileRecord {
-            id: id as usize,
-            filename: row.get(1),
-            duration: row.try_get(2).unwrap_or("".to_string()),  // Handle possible NULL in duration
-        };
-        
-        let base_filename = get_root_filename(&file_record.filename)
-            .unwrap_or_else(|| file_record.filename.clone());
+    let mut counter: usize = 0;
+    
+    // let _ = status_sender.send("Starting Parallel iterations".to_string()).await;
 
+    // Use a parallel iterator to process the rows
+    let processed_records: Vec<(String, FileRecord)> = rows
+        .par_iter()  // Use a parallel iterator
+        .map(|row| {
+            let id: u32 = row.get(0);
+            let file_record = FileRecord {
+                id: id as usize,
+                filename: row.get(1),
+                duration: row.try_get(2).unwrap_or("".to_string()),  // Handle possible NULL in duration
+            };
+            
+            let base_filename = get_root_filename(&file_record.filename)
+                .unwrap_or_else(|| file_record.filename.clone());
 
+            (base_filename, file_record)
+        })
+        .collect();  // Collect results into a Vec<(String, FileRecord)>
+    
+    let _ = status_sender.send("Processing Records".to_string()).await;
+    // Now merge the results into the file_groups (sequentially)
+    for (base_filename, file_record) in processed_records {
         file_groups
             .entry(base_filename)
             .or_insert_with(Vec::new)
             .push(file_record);
 
-            // let _ = io::stdout().flush();
-            // print!("\r{} / {}", counter, total);
+        counter += 1;
+
+        // Send progress updates every 100 rows
+        if counter % 100 == 0 {
             let _ = progress_sender.send(ProgressMessage::Update(counter, total)).await;
-            // let _ = status_sender.send(format!("Progress: {} / {}", counter, total)).await;
-            counter += 1;   
+        }
     }
 
+    let _ = status_sender.send("Finishing up".to_string()).await;
+    // Now handle merging the file groups into a HashSet of file_records
+
+    let mut file_records = HashSet::new();
     for (root, records) in file_groups {
-        if records.len() <= 1 {continue;}   
+        if records.len() <= 1 { continue; }
+
         let root_found = records.iter().any(|record| record.filename == root);
         if root_found {
             file_records.extend(
                 records.into_iter().filter(|record| record.filename != root)
             );
         } else {
-            file_records.extend(
-                records.into_iter().skip(1)
-            );
+            file_records.extend(records.into_iter().skip(1));
         }
     }
 
@@ -214,34 +250,50 @@ pub async fn gather_deep_dive_records(pool: SqlitePool, progress_sender: mpsc::S
 
 
 
-pub async fn gather_filenames_with_tags(pool: SqlitePool, tags: Vec<String>) -> Result<HashSet<FileRecord>, sqlx::Error>  {
-        // tags.status = format!("Searching for filenames containing tags");
-        println!("Tokio Start");
-        let mut file_records = HashSet::new();
 
-        for tag in tags {
-            let query = &format!("SELECT rowid, filename, duration FROM {} WHERE filename LIKE '%' || ? || '%'", TABLE);
-    
-            // Execute the query and fetch rows
-            let rows = sqlx::query(query)
-                .bind(tag.clone())
-                .fetch_all(&pool)
-                .await?;
-    
-            // Collect file records from the query result
-            for row in rows {
-                let id: u32 = row.get(0);
-                let file_record = FileRecord {
-                    id: id as usize,
-                    filename: row.get(1),
-                    duration: row.try_get(2).unwrap_or("".to_string()),  // Handle possible NULL in duration
-                };
-                file_records.insert(file_record);
+pub async fn gather_filenames_with_tags(pool: SqlitePool, tags: Vec<String>) -> Result<HashSet<FileRecord>, sqlx::Error> {
+    println!("Tokio Start");
+    let mut file_records = HashSet::new();
+    let max_concurrency = 10;  // Adjust based on your system's capacity and connection pool size
+
+    // Process each tag concurrently with a controlled level of concurrency
+    let results = stream::iter(tags.into_iter())
+        .map(|tag| {
+            let pool = pool.clone();
+            async move {
+                let query = format!("SELECT rowid, filename, duration FROM {} WHERE filename LIKE '%' || ? || '%'", TABLE);
+                sqlx::query(&query)
+                    .bind(tag)
+                    .fetch_all(&pool)
+                    .await  // Return the result (Result<Vec<sqlx::sqlite::SqliteRow>, sqlx::Error>)
+            }
+        })
+        .buffer_unordered(max_concurrency)  // Control the level of concurrency
+        .collect::<Vec<Result<Vec<sqlx::sqlite::SqliteRow>, sqlx::Error>>>()
+        .await;
+
+    // Iterate over the results and insert the file records
+    for result in results {
+        match result {
+            Ok(rows) => {
+                for row in rows {
+                    let id: u32 = row.get(0);
+                    let file_record = FileRecord {
+                        id: id as usize,
+                        filename: row.get(1),
+                        duration: row.try_get(2).unwrap_or("".to_string()),  // Handle possible NULL in duration
+                    };
+                    file_records.insert(file_record);
+                }
+            }
+            Err(err) => {
+                return Err(err);  // Return early if an error occurs
             }
         }
-        println!("Found Tags");
-        Ok(file_records)
-        // tags.status = format!("{} total records containing tags marked for deletion", tags.records.len());
+    }
+
+    println!("Found Tags");
+    Ok(file_records)
 }
 
 pub async fn gather_compare_database_overlaps(
@@ -366,16 +418,16 @@ pub async fn create_duplicates_db(pool: &SqlitePool, dupe_records_to_keep: &Hash
 }
 
 
-fn get_root_filename(filename: &str) -> Option<String> {
-    // Use regex to strip off trailing pattern like .1, .M, but preserve file extension
-    let re = Regex::new(r"^(?P<base>.+?)(\.\d+|\.\w+)+(?P<ext>\.\w+)$").unwrap();
-    if let Some(caps) = re.captures(filename) {
-        Some(format!("{}{}", &caps["base"], &caps["ext"]))
-    } else {
-        // If no match, return the original filename
-        Some(filename.to_string())
-    }
-}
+// fn get_root_filename(filename: &str) -> Option<String> {
+//     // Use regex to strip off trailing pattern like .1, .M, but preserve file extension
+//     let re = Regex::new(r"^(?P<base>.+?)(\.\d+|\.\w+)+(?P<ext>\.\w+)$").unwrap();
+//     if let Some(caps) = re.captures(filename) {
+//         Some(format!("{}{}", &caps["base"], &caps["ext"]))
+//     } else {
+//         // If no match, return the original filename
+//         Some(filename.to_string())
+//     }
+// }
 
 pub async fn open_db() -> Option<Database> {
     if let Some(path) = rfd::FileDialog::new().pick_file() {

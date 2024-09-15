@@ -9,6 +9,7 @@ use serde::Deserialize;
 use crate::assets::*;
 use crate::processing::*;
 
+
 #[derive( serde::Deserialize, serde::Serialize,)]
 #[serde(default)] 
 pub struct Config {
@@ -668,7 +669,7 @@ impl eframe::App for TemplateApp {
                                 if self.main.records.len() > 0 && !handles_active(self) {
                                     
 
-                                    // button(ui, "Remove Duplicates", remove_duplicates);
+                                    self.main.status = format!("{} total records marked for removal", self.main.records.len());
 
                                     if ui.button("Remove Duplicates").clicked() {
                                        remove_duplicates(self);
