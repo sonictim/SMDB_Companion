@@ -4,6 +4,7 @@ use tokio::sync::mpsc;
 use rayon::prelude::*;
 use std::collections::{HashSet, HashMap};
 use futures::stream::{self, StreamExt};
+use futures::future::join_all;
 
 
 use regex::Regex;
@@ -349,7 +350,16 @@ fn extract_filenames_set_from_records(file_records: &HashSet<FileRecord>) -> Has
     file_records.iter().map(|record| record.filename.clone()).collect()
 }
 
-pub async fn delete_file_records(pool: &SqlitePool, records: &HashSet<FileRecord>, progress_sender: mpsc::Sender<ProgressMessage>, status_sender: mpsc::Sender<String>) -> Result<(), sqlx::Error> {
+use std::sync::{Arc};
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+
+pub async fn delete_file_records(
+    pool: &SqlitePool,
+    records: &HashSet<FileRecord>,
+    progress_sender: mpsc::Sender<ProgressMessage>,
+    status_sender: mpsc::Sender<String>
+) -> Result<(), sqlx::Error> {
     const CHUNK_SIZE: usize = 12321;
 
     let ids: Vec<i64> = records.into_iter().map(|record| record.id as i64).collect();
@@ -358,47 +368,58 @@ pub async fn delete_file_records(pool: &SqlitePool, records: &HashSet<FileRecord
         return Ok(());
     }
 
-    let mut counter = 0;
     let total = records.len();
+    let counter = Arc::new(AtomicUsize::new(0)); // Atomic counter for progress tracking
+    let mut tasks = Vec::new();
 
     for chunk in ids.chunks(CHUNK_SIZE) {
-        // Construct the SQL query with placeholders for the chunk
-        let query = format!(
-            "DELETE FROM {} WHERE rowid IN ({})", TABLE, 
-            chunk.iter()
-                .map(|_| "?")
-                .collect::<Vec<&str>>()
-                .join(", ")
-        );
+        let chunk: Vec<i64> = chunk.to_vec(); // Clone the chunk to move it into the async block
+        let pool = pool.clone();
+        let progress_sender = progress_sender.clone();
+        let status_sender = status_sender.clone();
+        let counter = counter.clone(); // Clone the Arc to share between tasks
 
-        // Prepare the query with bound parameters
-        let mut query = sqlx::query(&query);
-        for &id in chunk {
-            query = query.bind(id);
-        }
+        let task = tokio::spawn(async move {
+            // Construct the SQL query with placeholders for the chunk
+            let query = format!(
+                "DELETE FROM {} WHERE rowid IN ({})", 
+                TABLE, 
+                chunk.iter()
+                    .map(|_| "?")
+                    .collect::<Vec<&str>>()
+                    .join(", ")
+            );
 
-        match query.execute(pool).await {
-            Ok(_) => {
-                counter += CHUNK_SIZE;
-                if counter >= total { counter = total; }
-                let _ = progress_sender.send(ProgressMessage::Update(counter, total)).await;
-                let _ = status_sender.send(format!("Processed {} / {}", counter, total)).await;
-                
-            },
-            Err(e) => {
-                eprintln!("Failed to execute query: {}", e);
-                return Err(e);
+            // Prepare the query with bound parameters
+            let mut query = sqlx::query(&query);
+            for id in chunk {
+                query = query.bind(id);
             }
-        }
-    }
-    println!("done inside delete function");
-    let _ = status_sender.send("Cleaning Up Database".to_string()).await;
-    let _result = sqlx::query("VACUUM").execute(pool).await; // Execute VACUUM on the database
-    println!("VACUUM done inside delete function");
 
+            let _result = query.execute(&pool).await;
+
+            // Update the counter atomically and send progress
+            let current_count = counter.fetch_add(CHUNK_SIZE, Ordering::SeqCst) + CHUNK_SIZE;
+            let progress = std::cmp::min(current_count, total); // Ensure we don't exceed total
+
+            let _ = progress_sender.send(ProgressMessage::Update(progress, total)).await;
+            let _ = status_sender.send(format!("Processed {} / {}", progress, total)).await;
+        });
+
+        tasks.push(task);
+    }
+
+    // Await all tasks
+    let _results = join_all(tasks).await;
+
+    // After all deletions, perform the cleanup
+    let _ = status_sender.send("Cleaning Up Database".to_string()).await;
+    let _result = sqlx::query("VACUUM").execute(pool).await;
+    println!("VACUUM done inside delete function");
 
     Ok(())
 }
+
 
 
 pub async fn create_duplicates_db(pool: &SqlitePool, dupe_records_to_keep: &HashSet<FileRecord>, progress_sender: mpsc::Sender<ProgressMessage>, status_sender: mpsc::Sender<String>,) -> Result<(), sqlx::Error> {
@@ -417,17 +438,84 @@ pub async fn create_duplicates_db(pool: &SqlitePool, dupe_records_to_keep: &Hash
     Ok(())
 }
 
+use sqlx::{ Executor, Error};
+use std::fs;
+use std::path::Path;
 
-// fn get_root_filename(filename: &str) -> Option<String> {
-//     // Use regex to strip off trailing pattern like .1, .M, but preserve file extension
-//     let re = Regex::new(r"^(?P<base>.+?)(\.\d+|\.\w+)+(?P<ext>\.\w+)$").unwrap();
-//     if let Some(caps) = re.captures(filename) {
-//         Some(format!("{}{}", &caps["base"], &caps["ext"]))
-//     } else {
-//         // If no match, return the original filename
-//         Some(filename.to_string())
-//     }
-// }
+pub async fn create_duplicates_db2(
+    old_db_path: &str,
+    new_db_path: &str,
+    records: HashSet<FileRecord>,
+) -> Result<(), Error> {
+    // Ensure the new database file does not already exist
+    if Path::new(new_db_path).exists() {
+        fs::remove_file(new_db_path)?;
+    }
+    let record_ids_to_keep: Vec<i64> = records.into_iter().map(|record| record.id as i64).collect();
+    // Create a new database file (SQLite will automatically create it when connected)
+    let new_db_pool = SqlitePool::connect(&format!("sqlite://{}", new_db_path)).await?;
+
+    // Connect to the original database
+    let old_db_pool = SqlitePool::connect(&format!("sqlite://{}", old_db_path)).await?;
+
+    // Begin copying schema from the old database to the new database
+    // Fetch the schema (DDL) from the old database
+    let schema: Vec<(String,)> = sqlx::query_as(
+        r#"
+        SELECT sql 
+        FROM sqlite_master 
+        WHERE type='table' AND name != 'sqlite_sequence';
+        "#,
+    )
+    .fetch_all(&old_db_pool)
+    .await?;
+
+    // Create tables in the new database by executing the schema DDL
+    for (ddl,) in schema {
+        new_db_pool.execute(&ddl).await?;
+    }
+
+    // Copy records from the `justinmetadata` table
+    // Only keep records with IDs in the `record_ids_to_keep`
+    sqlx::query(
+        r#"
+        INSERT INTO justinmetadata 
+        SELECT * 
+        FROM main.justinmetadata 
+        WHERE rowid IN (
+            /* Dynamically build placeholders */
+            ?
+        );
+        "#,
+    )
+    .bind(&record_ids_to_keep) // Bind the list of IDs dynamically
+    .execute(&new_db_pool)
+    .await?;
+
+    // Optionally copy related records from other tables (if needed)
+    // Example: Suppose there is a related table with a foreign key constraint
+    // Here we assume related_table has a foreign key `foreign_key_id` pointing to `justinmetadata`
+    // sqlx::query(
+    //     r#"
+    //     INSERT INTO related_table
+    //     SELECT * 
+    //     FROM main.related_table
+    //     WHERE foreign_key_id IN (
+    //         SELECT rowid 
+    //         FROM justinmetadata
+    //     );
+    //     "#
+    // )
+    // .execute(&new_db_pool)
+    // .await?;
+
+    println!("Records cloned successfully into the new database");
+
+    Ok(())
+}
+
+
+
 
 pub async fn open_db() -> Option<Database> {
     if let Some(path) = rfd::FileDialog::new().pick_file() {

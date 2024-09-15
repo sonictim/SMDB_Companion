@@ -1044,6 +1044,7 @@ fn remove_duplicates(app: &mut TemplateApp) {
 
         if let Some(sender) = app.main.progress_sender.clone() {
             if let Some(sender2) = app.main.status_sender.clone() {
+                
 
                 wrap_async(
                     &mut app.main, 
