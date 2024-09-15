@@ -18,5 +18,5 @@ lipo -create -output $BINARY_NAME target/aarch64-apple-darwin/release/$BINARY_NA
 # Verify the binary
 file $BINARY_NAME
 
-#cp -v $BINARY_NAME ~/Library/Application\ Support/SoundminerV6/Databases/
+cp -v $BINARY_NAME /Users/tfarrell/Library/CloudStorage/GoogleDrive-tim@farrellsound.com/Shared\ drives/PUBLIC/SMDB_Companion/
 #mv $BINARY_NAME Mac\ Universal\ Binary/$BINARY_NAME
