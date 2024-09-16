@@ -3,6 +3,10 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
+
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+
 // When compiling natively:
 #[tokio::main]
 #[cfg(not(target_arch = "wasm32"))]
@@ -21,7 +25,7 @@ async fn main() -> eframe::Result {
         ..Default::default()
     };
     eframe::run_native(
-        "SMDB Companion",
+        format!("SMDB Companion :: v{}", VERSION).as_str(),
         native_options,
         Box::new(|cc| Ok(Box::new(SMDB_Companion::TemplateApp::new(cc)))),
     )

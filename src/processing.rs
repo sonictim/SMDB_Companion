@@ -442,16 +442,22 @@ use sqlx::{ Executor, Error};
 use std::fs;
 use std::path::Path;
 
+
 pub async fn create_duplicates_db2(
     old_db_path: &str,
     new_db_path: &str,
-    records: HashSet<FileRecord>,
+    records: &HashSet<FileRecord>,
 ) -> Result<(), Error> {
+    println!("Starting new create dupes");
     // Ensure the new database file does not already exist
     if Path::new(new_db_path).exists() {
         fs::remove_file(new_db_path)?;
     }
+
     let record_ids_to_keep: Vec<i64> = records.into_iter().map(|record| record.id as i64).collect();
+    let placeholders: Vec<String> = record_ids_to_keep.iter().map(|_| "?".to_string()).collect();
+    let placeholder_str = placeholders.join(",");
+
     // Create a new database file (SQLite will automatically create it when connected)
     let new_db_pool = SqlitePool::connect(&format!("sqlite://{}", new_db_path)).await?;
 
@@ -472,25 +478,28 @@ pub async fn create_duplicates_db2(
 
     // Create tables in the new database by executing the schema DDL
     for (ddl,) in schema {
-        new_db_pool.execute(&ddl).await?;
+        new_db_pool.execute(ddl.as_str()).await?;  // Use `as_str()` to convert `String` to `&str`
     }
 
     // Copy records from the `justinmetadata` table
     // Only keep records with IDs in the `record_ids_to_keep`
-    sqlx::query(
+    let query = format!(
         r#"
         INSERT INTO justinmetadata 
         SELECT * 
         FROM main.justinmetadata 
-        WHERE rowid IN (
-            /* Dynamically build placeholders */
-            ?
-        );
+        WHERE rowid IN ({});
         "#,
-    )
-    .bind(&record_ids_to_keep) // Bind the list of IDs dynamically
-    .execute(&new_db_pool)
-    .await?;
+        placeholder_str
+    );
+
+    let mut query = sqlx::query(&query);
+
+    for id in &record_ids_to_keep {
+        query = query.bind(id);
+    }
+
+    query.execute(&new_db_pool).await?;
 
     // Optionally copy related records from other tables (if needed)
     // Example: Suppose there is a related table with a foreign key constraint
@@ -513,6 +522,7 @@ pub async fn create_duplicates_db2(
 
     Ok(())
 }
+
 
 
 

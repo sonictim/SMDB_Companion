@@ -5,6 +5,7 @@ use tokio::sync::mpsc;
 use std::collections::HashSet;
 use std::fs::{self};
 use std::hash::Hash;
+// use std::intrinsics::abort;
 use serde::Deserialize;
 use crate::assets::*;
 use crate::processing::*;
@@ -131,6 +132,46 @@ impl Config {
             progress: (0.0, 0.0),
             handle: None,
 
+        }
+    }
+    fn abort(&mut self) {
+        if let Some(handle) = &self.handle {
+            handle.abort();
+        }
+        self.handle = None;
+        self.working = false;
+        self.records.clear();
+        self.status.clear();
+        self.progress = (0.0, 0.0);
+    }
+
+    fn receive_hashset(&mut self) -> Option<HashSet<FileRecord>> {
+        if let Some(rx) = self.rx.as_mut() {
+            if let Ok(records) = rx.try_recv() {
+                self.records = records.clone();
+                self.handle = None;
+                self.working = false;
+                self.progress = (0.0, 0.0);
+                self.status = format!{"Found {} duplicate records", self.records.len()};
+                return Some(records);
+  
+            }
+        }
+        None
+    }
+    fn receive_progress(&mut self) {
+          if let Some(progress_receiver) = &mut self.progress_receiver {
+            while let Ok(message) = progress_receiver.try_recv() {
+                let ProgressMessage::Update(current, total) = message; 
+                self.progress = (current as f32, total as f32);
+            }
+        }
+    }
+    fn receive_status(&mut self) {
+        if let Some(status_receiver) = &mut self.status_receiver {
+            while let Ok(message) = status_receiver.try_recv() {
+                self.status = message;
+            }
         }
     }
     
@@ -654,6 +695,7 @@ impl eframe::App for TemplateApp {
                                 
                                     if  ui.input(|i| i.modifiers.alt ) {
                                         if ui.button("Search and Remove Duplicates").clicked() {
+                                            abort_all(self);
                                             self.go_search = true;
                                             self.go_replace = false;
                                             gather_duplicates(self);
@@ -692,8 +734,7 @@ impl eframe::App for TemplateApp {
                             });
 
                     
-                            
-                            
+                        
                             if self.main.working{
                                 ui.add( egui::ProgressBar::new(self.main.progress.0 / self.main.progress.1)
                                 // .text("progress")
@@ -932,90 +973,117 @@ pub fn gather_duplicates(app: &mut TemplateApp) {
 }
 
 fn receive_async_data(app: &mut TemplateApp) {
-    if let Some(rx) = app.main.rx.as_mut() {
-        if let Ok(records) = rx.try_recv() {
-            app.main.handle = None;
-            app.main.progress = (0.0, 0.0);
-            app.main.working = false;
-            app.main.status = format!{"Removed {} duplicates", records.len()};
-            app.main.records.clear();
-            // abort_all(app);
-        }
+    if let Some(records) = app.main.receive_hashset() {
+        app.main.status = format!{"Removed {} duplicates", records.len()};
+        app.main.records.clear();
     }
 
-    if let Some(rx) = app.group.rx.as_mut() {
-        if let Ok(records) = rx.try_recv() {
-            app.group.records = records;
-            app.group.handle = None;
-            app.group.working = false;
-            app.group.status = format!{"Found {} duplicate filenames", app.group.records.len()};
-            app.main.records.extend(app.group.records.clone());
-        }
+    if let Some(records) = app.group.receive_hashset() {
+        app.main.records.extend(records);
     }
 
-    if let Some(rx) = app.deep.rx.as_mut() {
+    if let Some(records) = app.deep.receive_hashset() {
+        app.main.records.extend(records);
+    }
+
+    if let Some(records) = app.tags.receive_hashset() {
+        app.main.records.extend(records);
+    }
+
+    if let Some(records) = app.compare.receive_hashset() {
+        app.main.records.extend(records);
+    }
+    // if let Some(rx) = app.main.rx.as_mut() {
+    //     if let Ok(records) = rx.try_recv() {
+    //         app.main.handle = None;
+    //         app.main.progress = (0.0, 0.0);
+    //         app.main.working = false;
+    //         app.main.status = format!{"Removed {} duplicates", records.len()};
+    //         app.main.records.clear();
+    //         // abort_all(app);
+    //     }
+    // }
+
+    // if let Some(rx) = app.group.rx.as_mut() {
+    //     if let Ok(records) = rx.try_recv() {
+    //         app.group.records = records;
+    //         app.group.handle = None;
+    //         app.group.working = false;
+    //         app.group.status = format!{"Found {} duplicate filenames", app.group.records.len()};
+    //         app.main.records.extend(app.group.records.clone());
+    //     }
+    // }
+
+    // if let Some(rx) = app.deep.rx.as_mut() {
         
-        if let Ok(records) = rx.try_recv() {
-            app.deep.records = records;
-            app.deep.handle = None;
-            app.deep.working = false;
-            app.deep.status = format!{"Found {} records with similar filenames", app.deep.records.len()};
-            app.main.records.extend(app.deep.records.clone());
-        }
-    }
+    //     if let Ok(records) = rx.try_recv() {
+    //         app.deep.records = records;
+    //         app.deep.handle = None;
+    //         app.deep.working = false;
+    //         app.deep.status = format!{"Found {} records with similar filenames", app.deep.records.len()};
+    //         app.main.records.extend(app.deep.records.clone());
+    //     }
+    // }
     
 
-    if let Some(rx) = app.tags.rx.as_mut() {
-        if let Ok(records) = rx.try_recv() {
-            app.tags.records = records;
-            app.tags.handle = None;
-            app.tags.working = false;
-            app.tags.status = format!{"Found {} records with matching tags", app.tags.records.len()};
-            app.main.records.extend(app.tags.records.clone());
-        }
-    }
+    // if let Some(rx) = app.tags.rx.as_mut() {
+    //     if let Ok(records) = rx.try_recv() {
+    //         app.tags.records = records;
+    //         app.tags.handle = None;
+    //         app.tags.working = false;
+    //         app.tags.status = format!{"Found {} records with matching tags", app.tags.records.len()};
+    //         app.main.records.extend(app.tags.records.clone());
+    //     }
+    // }
     
-    if let Some(rx) = app.compare.rx.as_mut() {
-        if let Ok(records) = rx.try_recv() {
-            app.compare.records = records;
-            app.compare.handle = None;
-            app.compare.working = false;
-            app.compare.status = format!{"Found {} overlapping records in {}", app.compare.records.len(), app.c_db.clone().unwrap().name};
-            app.main.records.extend(app.compare.records.clone());
-        }
-    }
+    // if let Some(rx) = app.compare.rx.as_mut() {
+    //     if let Ok(records) = rx.try_recv() {
+    //         app.compare.records = records;
+    //         app.compare.handle = None;
+    //         app.compare.working = false;
+    //         app.compare.status = format!{"Found {} overlapping records in {}", app.compare.records.len(), app.c_db.clone().unwrap().name};
+    //         app.main.records.extend(app.compare.records.clone());
+    //     }
+    // }
 
-    if let Some(progress_receiver) = &mut app.main.progress_receiver {
-        // Update progress state based on messages
-        while let Ok(message) = progress_receiver.try_recv() {
-            let ProgressMessage::Update(current, total) = message; 
-            app.main.progress = (current as f32, total as f32);
-        }
-    }
+    app.main.receive_progress();
+    app.main.receive_status();
+    app.deep.receive_progress();
+    app.deep.receive_status();
 
-    if let Some(status_receiver) = &mut app.main.status_receiver {
-        // Update progress state based on messages
-        while let Ok(message) = status_receiver.try_recv() {
-            // let ProgressMessage::Update(current, total) = message; 
-            app.main.status = message;
-        }
-    }
 
-    if let Some(progress_receiver) = &mut app.deep.progress_receiver {
-        // Update progress state based on messages
-        while let Ok(message) = progress_receiver.try_recv() {
-            let ProgressMessage::Update(current, total) = message; 
-            app.deep.progress = (current as f32, total as f32);
-        }
-    }
 
-    if let Some(status_receiver) = &mut app.deep.status_receiver {
-        // Update progress state based on messages
-        while let Ok(message) = status_receiver.try_recv() {
-            // let ProgressMessage::Update(current, total) = message; 
-            app.deep.status = message;
-        }
-    }
+    // if let Some(progress_receiver) = &mut app.main.progress_receiver {
+    //     // Update progress state based on messages
+    //     while let Ok(message) = progress_receiver.try_recv() {
+    //         let ProgressMessage::Update(current, total) = message; 
+    //         app.main.progress = (current as f32, total as f32);
+    //     }
+    // }
+
+    // if let Some(status_receiver) = &mut app.main.status_receiver {
+    //     // Update progress state based on messages
+    //     while let Ok(message) = status_receiver.try_recv() {
+    //         // let ProgressMessage::Update(current, total) = message; 
+    //         app.main.status = message;
+    //     }
+    // }
+
+    // if let Some(progress_receiver) = &mut app.deep.progress_receiver {
+    //     // Update progress state based on messages
+    //     while let Ok(message) = progress_receiver.try_recv() {
+    //         let ProgressMessage::Update(current, total) = message; 
+    //         app.deep.progress = (current as f32, total as f32);
+    //     }
+    // }
+
+    // if let Some(status_receiver) = &mut app.deep.status_receiver {
+    //     // Update progress state based on messages
+    //     while let Ok(message) = status_receiver.try_recv() {
+    //         // let ProgressMessage::Update(current, total) = message; 
+    //         app.deep.status = message;
+    //     }
+    // }
 
 }
 
@@ -1060,12 +1128,14 @@ pub async fn remove_duplicates_go(records: HashSet<FileRecord>, main_db_path: Op
     -> Result<HashSet<FileRecord>, sqlx::Error>
 
 {
-    if let Some(path) = &main_db_path {
-        let main_db = Database::open(path.to_string()).await;
+    if let Some(main_path) = &main_db_path {
+        let main_db = Database::open(main_path.to_string()).await;
         let _result = delete_file_records(&main_db.pool, &records, sender.clone(), sender2.clone()).await;
         if let Some(path) = dupe_db_path {
+            // let dupes_path = path.clone();
             let dupes_db = Database::open(path).await;
             let _result = create_duplicates_db(&dupes_db.pool, &records, sender.clone(), sender2.clone()).await;
+            // let _result = create_duplicates_db2(&main_path, &dupes_path, &records).await;
         }
     }
     Ok(records)
@@ -1075,51 +1145,56 @@ pub async fn remove_duplicates_go(records: HashSet<FileRecord>, main_db_path: Op
 
 
 fn abort_all(app: &mut TemplateApp) {
+    app.main.abort();
+    app.group.abort();
+    app.deep.abort();
+    app.tags.abort();
+    app.compare.abort();
 
-    if let Some(handle) = &app.main.handle {
-        handle.abort();
-    }
-    app.main.handle = None;
-    app.main.working = false;
-    app.main.records.clear();
-    app.main.status.clear();
-    app.main.progress = (0.0, 0.0);
+    // if let Some(handle) = &app.main.handle {
+    //     handle.abort();
+    // }
+    // app.main.handle = None;
+    // app.main.working = false;
+    // app.main.records.clear();
+    // app.main.status.clear();
+    // app.main.progress = (0.0, 0.0);
 
-    if let Some(handle) = &app.group.handle {
-        handle.abort();
-    }
-    app.group.handle = None;
-    app.group.working = false;
-    app.group.records.clear();
-    app.group.status.clear();
-    app.group.progress = (0.0, 0.0);
+    // if let Some(handle) = &app.group.handle {
+    //     handle.abort();
+    // }
+    // app.group.handle = None;
+    // app.group.working = false;
+    // app.group.records.clear();
+    // app.group.status.clear();
+    // app.group.progress = (0.0, 0.0);
 
-    if let Some(handle) = &app.deep.handle {
-        handle.abort();
-    }
-    app.deep.handle = None;
-    app.deep.working = false;
-    app.deep.records.clear();
-    app.deep.status.clear();
-    app.deep.progress = (0.0, 0.0);
+    // if let Some(handle) = &app.deep.handle {
+    //     handle.abort();
+    // }
+    // app.deep.handle = None;
+    // app.deep.working = false;
+    // app.deep.records.clear();
+    // app.deep.status.clear();
+    // app.deep.progress = (0.0, 0.0);
 
-    if let Some(handle) = &app.tags.handle {
-        handle.abort();
-    }
-    app.tags.handle = None;
-    app.tags.working = false;
-    app.tags.records.clear();
-    app.tags.status.clear();
-    app.tags.progress = (0.0, 0.0);
+    // if let Some(handle) = &app.tags.handle {
+    //     handle.abort();
+    // }
+    // app.tags.handle = None;
+    // app.tags.working = false;
+    // app.tags.records.clear();
+    // app.tags.status.clear();
+    // app.tags.progress = (0.0, 0.0);
 
-    if let Some(handle) = &app.compare.handle {
-        handle.abort();
-    }
-    app.compare.handle = None;
-    app.compare.working = false;
-    app.compare.records.clear();
-    app.compare.status.clear();
-    app.compare.progress = (0.0, 0.0);
+    // if let Some(handle) = &app.compare.handle {
+    //     handle.abort();
+    // }
+    // app.compare.handle = None;
+    // app.compare.working = false;
+    // app.compare.records.clear();
+    // app.compare.status.clear();
+    // app.compare.progress = (0.0, 0.0);
 }
 
 fn handles_active(app: &TemplateApp) -> bool {
