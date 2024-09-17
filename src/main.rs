@@ -4,7 +4,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
 
-const VERSION: &str = env!("CARGO_PKG_VERSION");
+// const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 
 // When compiling natively:
