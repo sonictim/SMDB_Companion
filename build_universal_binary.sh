@@ -9,14 +9,16 @@ BINARY_NAME="SMDB_Companion"
 rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
 # Build for both architectures
-cargo build --release --target aarch64-apple-darwin
-cargo build --release --target x86_64-apple-darwin
+cargo bundle --release --target aarch64-apple-darwin
+cargo bundle --release --target x86_64-apple-darwin
+
+cp -R target/x86_64-apple-darwin/release/bundle/osx/$BINARY_NAME.app target/universal/release/
 
 # Create the universal binary
-lipo -create -output $BINARY_NAME target/aarch64-apple-darwin/release/$BINARY_NAME target/x86_64-apple-darwin/release/$BINARY_NAME
+lipo -create -output target/universal/release/$BINARY_NAME.app/Contents/MacOS/$BINARY_NAME target/aarch64-apple-darwin/release/$BINARY_NAME target/x86_64-apple-darwin/release/$BINARY_NAME
 
 # Verify the binary
-file $BINARY_NAME
+file target/universal/release/$BINARY_NAME.app/Contents/MacOS/$BINARY_NAME
 
-cp -v $BINARY_NAME /Users/tfarrell/Library/CloudStorage/GoogleDrive-tim@farrellsound.com/Shared\ drives/PUBLIC/SMDB_Companion/
+cp -R target/x86_64-apple-darwin/release/bundle/osx/$BINARY_NAME.app /Users/tfarrell/Library/CloudStorage/GoogleDrive-tim@farrellsound.com/Shared\ drives/PUBLIC/SMDB_Companion/
 #mv $BINARY_NAME Mac\ Universal\ Binary/$BINARY_NAME

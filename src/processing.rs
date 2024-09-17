@@ -5,6 +5,8 @@ use rayon::prelude::*;
 use std::collections::{HashSet, HashMap};
 use futures::stream::{self, StreamExt};
 use futures::future::join_all;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 
 use regex::Regex;
@@ -350,8 +352,7 @@ fn extract_filenames_set_from_records(file_records: &HashSet<FileRecord>) -> Has
     file_records.iter().map(|record| record.filename.clone()).collect()
 }
 
-use std::sync::{Arc};
-use std::sync::atomic::{AtomicUsize, Ordering};
+
 
 
 pub async fn delete_file_records(
@@ -438,90 +439,90 @@ pub async fn create_duplicates_db(pool: &SqlitePool, dupe_records_to_keep: &Hash
     Ok(())
 }
 
-use sqlx::{ Executor, Error};
-use std::fs;
-use std::path::Path;
+// use sqlx::{ Executor, Error};
+// use std::fs;
+// use std::path::Path;
 
 
-pub async fn create_duplicates_db2(
-    old_db_path: &str,
-    new_db_path: &str,
-    records: &HashSet<FileRecord>,
-) -> Result<(), Error> {
-    println!("Starting new create dupes");
-    // Ensure the new database file does not already exist
-    if Path::new(new_db_path).exists() {
-        fs::remove_file(new_db_path)?;
-    }
+// pub async fn create_duplicates_db2(
+//     old_db_path: &str,
+//     new_db_path: &str,
+//     records: &HashSet<FileRecord>,
+// ) -> Result<(), Error> {
+//     println!("Starting new create dupes");
+//     // Ensure the new database file does not already exist
+//     if Path::new(new_db_path).exists() {
+//         fs::remove_file(new_db_path)?;
+//     }
 
-    let record_ids_to_keep: Vec<i64> = records.into_iter().map(|record| record.id as i64).collect();
-    let placeholders: Vec<String> = record_ids_to_keep.iter().map(|_| "?".to_string()).collect();
-    let placeholder_str = placeholders.join(",");
+//     let record_ids_to_keep: Vec<i64> = records.into_iter().map(|record| record.id as i64).collect();
+//     let placeholders: Vec<String> = record_ids_to_keep.iter().map(|_| "?".to_string()).collect();
+//     let placeholder_str = placeholders.join(",");
 
-    // Create a new database file (SQLite will automatically create it when connected)
-    let new_db_pool = SqlitePool::connect(&format!("sqlite://{}", new_db_path)).await?;
+//     // Create a new database file (SQLite will automatically create it when connected)
+//     let new_db_pool = SqlitePool::connect(&format!("sqlite://{}", new_db_path)).await?;
 
-    // Connect to the original database
-    let old_db_pool = SqlitePool::connect(&format!("sqlite://{}", old_db_path)).await?;
+//     // Connect to the original database
+//     let old_db_pool = SqlitePool::connect(&format!("sqlite://{}", old_db_path)).await?;
 
-    // Begin copying schema from the old database to the new database
-    // Fetch the schema (DDL) from the old database
-    let schema: Vec<(String,)> = sqlx::query_as(
-        r#"
-        SELECT sql 
-        FROM sqlite_master 
-        WHERE type='table' AND name != 'sqlite_sequence';
-        "#,
-    )
-    .fetch_all(&old_db_pool)
-    .await?;
+//     // Begin copying schema from the old database to the new database
+//     // Fetch the schema (DDL) from the old database
+//     let schema: Vec<(String,)> = sqlx::query_as(
+//         r#"
+//         SELECT sql 
+//         FROM sqlite_master 
+//         WHERE type='table' AND name != 'sqlite_sequence';
+//         "#,
+//     )
+//     .fetch_all(&old_db_pool)
+//     .await?;
 
-    // Create tables in the new database by executing the schema DDL
-    for (ddl,) in schema {
-        new_db_pool.execute(ddl.as_str()).await?;  // Use `as_str()` to convert `String` to `&str`
-    }
+//     // Create tables in the new database by executing the schema DDL
+//     for (ddl,) in schema {
+//         new_db_pool.execute(ddl.as_str()).await?;  // Use `as_str()` to convert `String` to `&str`
+//     }
 
-    // Copy records from the `justinmetadata` table
-    // Only keep records with IDs in the `record_ids_to_keep`
-    let query = format!(
-        r#"
-        INSERT INTO justinmetadata 
-        SELECT * 
-        FROM main.justinmetadata 
-        WHERE rowid IN ({});
-        "#,
-        placeholder_str
-    );
+//     // Copy records from the `justinmetadata` table
+//     // Only keep records with IDs in the `record_ids_to_keep`
+//     let query = format!(
+//         r#"
+//         INSERT INTO justinmetadata 
+//         SELECT * 
+//         FROM main.justinmetadata 
+//         WHERE rowid IN ({});
+//         "#,
+//         placeholder_str
+//     );
 
-    let mut query = sqlx::query(&query);
+//     let mut query = sqlx::query(&query);
 
-    for id in &record_ids_to_keep {
-        query = query.bind(id);
-    }
+//     for id in &record_ids_to_keep {
+//         query = query.bind(id);
+//     }
 
-    query.execute(&new_db_pool).await?;
+//     query.execute(&new_db_pool).await?;
 
-    // Optionally copy related records from other tables (if needed)
-    // Example: Suppose there is a related table with a foreign key constraint
-    // Here we assume related_table has a foreign key `foreign_key_id` pointing to `justinmetadata`
-    // sqlx::query(
-    //     r#"
-    //     INSERT INTO related_table
-    //     SELECT * 
-    //     FROM main.related_table
-    //     WHERE foreign_key_id IN (
-    //         SELECT rowid 
-    //         FROM justinmetadata
-    //     );
-    //     "#
-    // )
-    // .execute(&new_db_pool)
-    // .await?;
+//     // Optionally copy related records from other tables (if needed)
+//     // Example: Suppose there is a related table with a foreign key constraint
+//     // Here we assume related_table has a foreign key `foreign_key_id` pointing to `justinmetadata`
+//     // sqlx::query(
+//     //     r#"
+//     //     INSERT INTO related_table
+//     //     SELECT * 
+//     //     FROM main.related_table
+//     //     WHERE foreign_key_id IN (
+//     //         SELECT rowid 
+//     //         FROM justinmetadata
+//     //     );
+//     //     "#
+//     // )
+//     // .execute(&new_db_pool)
+//     // .await?;
 
-    println!("Records cloned successfully into the new database");
+//     println!("Records cloned successfully into the new database");
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 
 

@@ -29,13 +29,16 @@ where
 }
 
 
-pub fn enabled_text(text: &str, enabled: &bool) -> RichText {
-    if *enabled {
-        RichText::new(text)
-    } else {
-        RichText::new(text).weak()
-    }
-}
+// pub fn enabled_text(text: &str, enabled: &bool) -> RichText {
+//     if *enabled {
+//         RichText::new(text)
+//     } else {
+//         RichText::new(text).weak()
+//     }
+// }
+
+
+
 // pub fn spawn_db<F>(tx: Sender<Database>, action: F)
 // where
 //     F: FnOnce(),

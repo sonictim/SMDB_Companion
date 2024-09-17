@@ -12,8 +12,20 @@ all-features = true
 #targets = ["x86_64-unknown-linux-gnu", "x86_64-apple-darwin", "aarch64-apple-darwin", "wasm32-unknown-unknown"]
 targets = ["x86_64-unknown-linux-gnu", "wasm32-unknown-unknown"]
 
+[package.metadata.bundle]
+identifier = "com.SMDB_Companion"
+icon = ["assets/icon.icns"]
+
+[package.metadata.bundle.bin.SMDB_Companion]
+identifier = "com.SMDB_Companion"
+icon = ["assets/icon.icns"]
+
+
 #[lib]
 #crate-type = ["cdylib"]
+
+[build]
+rustflags = ["-C", "target-feature=+crt-static"]
 
 [dependencies]
 egui = "0.28"

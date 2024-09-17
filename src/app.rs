@@ -214,6 +214,7 @@ pub enum ProgressMessage {
     Update(usize, usize), // (current, total)
 }
 
+
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
@@ -437,14 +438,8 @@ impl eframe::App for TemplateApp {
 
                         egui::widgets::global_dark_light_mode_buttons(ui);
                     });
-
-                }
-                
-               
+                }  
             });
-
-            
-            
         });
         
     // The central panel the region left after adding TopPanel's and SidePanel's
@@ -746,104 +741,16 @@ impl eframe::App for TemplateApp {
                             
                         }
                         Panel::Order => {
-                            if self.help {order_help(ui)}
-                            
-                            for (index, line) in self.main.list.iter_mut().enumerate() {
-                                let checked = self.sel_line == Some(index);
-                                if ui.selectable_label(checked, line.clone()).clicked {
-                                    self.sel_line = if checked { None } else { Some(index) };
-                                }
-                            }
-                            ui.separator();
-
-                            order_toolbar(ui,self);
-
-                            ui.separator();
-                            if ui.button("Text Editor").clicked() {
-                                self.order_text = self.main.list.join("\n");
-                                self.my_panel = Panel::OrderText;
-                            }
+                            self.order_panel(ui);
                             
                         }
 
                         Panel:: OrderText => {
-                            if self.help {order_help(ui)}
-
-                            ui.columns(1, |columns| {
-                                // columns[0].heading("Duplicate Filename Keeper Priority Order:");
-                                columns[0].text_edit_multiline(&mut self.order_text);
-                            });
-                            ui.separator();
-                            if ui.button("Save").clicked() {
-                                self.main.list = self.order_text.lines().map(|s| s.to_string()).collect();
-                                self.my_panel = Panel::Order;
-                            }
+                            self.order_text_panel(ui);
                         }
 
                         Panel::Tags => {
-                            ui.heading("Tag Editor");
-                            ui.label("Protools Audiosuite Tags use the following format:  -example_");
-                            ui.label("You can enter any string of text and if it is a match, the file will be marked for removal");
-                            
-                            ui.separator();
-                            let num_columns = 6;
-                            egui::ScrollArea::vertical().show(ui, |ui| {
-                                egui::Grid::new("Tags Grid")
-                                .num_columns(num_columns)
-                                .spacing([20.0, 8.0])
-                                .striped(true)
-                                .show(ui, |ui| {
-                                    for (index, tag) in self.tags.list.iter_mut().enumerate() {
-                                        // Check if current index is in `sel_tags`
-                                        let is_selected = self.sel_tags.contains(&index);
-                                        
-                                        if ui.selectable_label(is_selected, tag.clone()).clicked() {
-                                            if is_selected {
-                                                // Deselect
-                                                self.sel_tags.retain(|&i| i != index);
-                                            } else {
-                                                // Select
-                                                self.sel_tags.push(index);
-                                            }
-                                        }
-                                        
-                                        if (index + 1) % num_columns == 0 {
-                                            ui.end_row(); // Move to the next row after 4 columns
-                                        }
-                                    }
-                                    
-                                    // End the last row if not fully filled
-                                    if self.tags.list.len() % 4 != 0 {
-                                        ui.end_row();
-                                    }
-                                });
-                            });
-                            ui.separator();
-                            ui.horizontal(|ui| {
-                                if ui.button("Add Tag:").clicked() && !self.new_tag.is_empty() {
-
-                                    self.tags.list.push(self.new_tag.clone());
-                                    self.new_tag.clear(); // Clears the string      
-                                    self.tags.list.sort_by_key(|s| s.to_lowercase());
-                                }
-                                ui.text_edit_singleline(&mut self.new_tag);
-                                
-                                
-                            });
-                            if ui.button("Remove Selected Tags").clicked() {
-                                // Sort and remove elements based on `sel_tags`
-                                let mut sorted_indices: Vec<usize> = self.sel_tags.clone();
-                                sorted_indices.sort_by(|a, b| b.cmp(a)); // Sort in reverse order
-                        
-                                for index in sorted_indices {
-                                    if index < self.tags.list.len() {
-                                        self.tags.list.remove(index);
-                                    }
-                                }
-                        
-                                // Clear the selection list after removal
-                                self.sel_tags.clear();
-                            }
+                           self.tags_panel(ui);
                         
                         }
 
@@ -855,6 +762,108 @@ impl eframe::App for TemplateApp {
         });
     }
     
+    
+}
+
+impl TemplateApp {
+    fn order_panel(&mut self, ui: &mut egui::Ui) {
+        if self.help {order_help(ui)}
+                            
+            for (index, line) in self.main.list.iter_mut().enumerate() {
+                let checked = self.sel_line == Some(index);
+                if ui.selectable_label(checked, line.clone()).clicked {
+                    self.sel_line = if checked { None } else { Some(index) };
+                }
+            }
+            ui.separator();
+
+            order_toolbar(ui,self);
+
+            ui.separator();
+            if ui.button("Text Editor").clicked() {
+                self.order_text = self.main.list.join("\n");
+                self.my_panel = Panel::OrderText;
+            }
+    }
+    
+    fn order_text_panel(&mut self, ui: &mut egui::Ui) {
+        if self.help {order_help(ui)}
+
+        ui.columns(1, |columns| {
+            // columns[0].heading("Duplicate Filename Keeper Priority Order:");
+            columns[0].text_edit_multiline(&mut self.order_text);
+        });
+        ui.separator();
+        if ui.button("Save").clicked() {
+            self.main.list = self.order_text.lines().map(|s| s.to_string()).collect();
+            self.my_panel = Panel::Order;
+        }
+    }
+    fn tags_panel(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Tag Editor");
+        ui.label("Protools Audiosuite Tags use the following format:  -example_");
+        ui.label("You can enter any string of text and if it is a match, the file will be marked for removal");
+        
+        ui.separator();
+        let num_columns = 6;
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            egui::Grid::new("Tags Grid")
+            .num_columns(num_columns)
+            .spacing([20.0, 8.0])
+            .striped(true)
+            .show(ui, |ui| {
+                for (index, tag) in self.tags.list.iter_mut().enumerate() {
+                    // Check if current index is in `sel_tags`
+                    let is_selected = self.sel_tags.contains(&index);
+                    
+                    if ui.selectable_label(is_selected, tag.clone()).clicked() {
+                        if is_selected {
+                            // Deselect
+                            self.sel_tags.retain(|&i| i != index);
+                        } else {
+                            // Select
+                            self.sel_tags.push(index);
+                        }
+                    }
+                    
+                    if (index + 1) % num_columns == 0 {
+                        ui.end_row(); // Move to the next row after 4 columns
+                    }
+                }
+                
+                // End the last row if not fully filled
+                if self.tags.list.len() % 4 != 0 {
+                    ui.end_row();
+                }
+            });
+        });
+        ui.separator();
+        ui.horizontal(|ui| {
+            if ui.button("Add Tag:").clicked() && !self.new_tag.is_empty() {
+
+                self.tags.list.push(self.new_tag.clone());
+                self.new_tag.clear(); // Clears the string      
+                self.tags.list.sort_by_key(|s| s.to_lowercase());
+            }
+            ui.text_edit_singleline(&mut self.new_tag);
+            
+            
+        });
+        if ui.button("Remove Selected Tags").clicked() {
+            // Sort and remove elements based on `sel_tags`
+            let mut sorted_indices: Vec<usize> = self.sel_tags.clone();
+            sorted_indices.sort_by(|a, b| b.cmp(a)); // Sort in reverse order
+    
+            for index in sorted_indices {
+                if index < self.tags.list.len() {
+                    self.tags.list.remove(index);
+                }
+            }
+    
+            // Clear the selection list after removal
+            self.sel_tags.clear();
+        }
+    }
 }
 
 pub fn order_toolbar(ui: &mut egui::Ui, app: &mut TemplateApp) {
