@@ -7,6 +7,7 @@ use futures::stream::{self, StreamExt};
 use futures::future::join_all;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use rfd::FileDialog;
 
 
 use regex::Regex;
@@ -529,7 +530,10 @@ pub async fn create_duplicates_db(pool: &SqlitePool, dupe_records_to_keep: &Hash
 
 
 pub async fn open_db() -> Option<Database> {
-    if let Some(path) = rfd::FileDialog::new().pick_file() {
+    if let Some(path) = FileDialog::new()
+    .add_filter("SQLite Database", &["sqlite"])
+    .pick_file()
+{
         let db_path = path.display().to_string();
         if db_path.ends_with(".sqlite") {
             println!("Opening Database {}", db_path);
@@ -539,6 +543,32 @@ pub async fn open_db() -> Option<Database> {
     }    
     None
 }
+
+
+
+// pub async fn open_db() -> Option<Database> {
+//     // Open file dialog and restrict to SQLite files
+//     if let Some(path) = FileDialog::new()
+//         .add_filter("SQLite Database", &["sqlite"])
+//         .pick_file()
+//     {
+//         let db_path = path.display().to_string();
+//         println!("Opening Database: {}", db_path);
+
+//         // Attempt to open the database and handle errors
+//         match Database::open(db_path).await {
+//             Ok(db) => Some(db),
+//             Err(e) => {
+//                 eprintln!("Failed to open database: {}", e);
+//                 None
+//             }
+//         }
+//     } else {
+//         eprintln!("No file was selected.");
+//         None
+//     }
+// }
+
 
 pub async fn get_db_size(pool: &SqlitePool) -> Result<usize, sqlx::Error> {
     let count: (i64,) = sqlx::query_as(&format!("SELECT COUNT(*) FROM {}", TABLE))

@@ -15,7 +15,7 @@ async fn main() -> eframe::Result {
 
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([585.0, 625.0])
+            .with_inner_size([700.0, 750.0])
             .with_min_inner_size([300.0, 220.0])
             .with_icon(
                 // NOTE: Adding an icon is optional
@@ -25,11 +25,12 @@ async fn main() -> eframe::Result {
         ..Default::default()
     };
     eframe::run_native(
-        format!("SMDB Companion :: v{}", VERSION).as_str(),
+        format!("SMDB Companion").as_str(),
         native_options,
         Box::new(|cc| Ok(Box::new(SMDB_Companion::TemplateApp::new(cc)))),
     )
 }
+
 
 // When compiling to web using trunk:
 #[cfg(target_arch = "wasm32")]

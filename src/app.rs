@@ -446,6 +446,7 @@ impl eframe::App for TemplateApp {
         
     // The central panel the region left after adding TopPanel's and SidePanel's
             
+            
             egui::CentralPanel::default().show(ctx, |ui| {
                 if let Some(rx) = self.rx.as_mut() {
                     if let Ok(db) = rx.try_recv() {
@@ -463,38 +464,9 @@ impl eframe::App for TemplateApp {
                         
                     });
                 
-                    ui.horizontal(|_| {});
-                    ui.separator();
-                    ui.horizontal(|_| {});
-
-
-                    match self.my_panel {
-                        Panel::Find => {
-                            self.find_panel(ui);      
-                        }
-
-                        Panel::Duplicates => {
-                            self.duplictes_panel(ui);         
-                        }
-
-                        Panel::Order => {
-                            self.order_panel(ui); 
-                        }
-
-                        Panel:: OrderText => {
-                            self.order_text_panel(ui);
-                        }
-
-                        Panel::Tags => {
-                           self.tags_panel(ui);
-                        
-                        }
-
-
-
-                    }
                     
                 } else {
+                    ui.horizontal(|_| {});
                     ui.vertical_centered(|ui| {
 
                         large_button(ui, "Open Database", ||{
@@ -505,32 +477,150 @@ impl eframe::App for TemplateApp {
                                     // eprintln!("Failed to send db");
                                 }
                             });
-
+                            
                         });
                     });
                 }
                 
+                ui.horizontal(|_| {});
+                ui.separator();
+                ui.horizontal(|_| {});
+                
+                self.panel_tab_bar(ui);
+                
+                ui.horizontal(|_| {});
+                ui.separator();
+                ui.horizontal(|_| {});
+                
+              
+
+                match self.my_panel {
+                    Panel::Find => {
+                        self.find_panel(ui);      
+                    }
+
+                    Panel::Duplicates => {
+                        self.duplictes_panel(ui);         
+                    }
+
+                    Panel::Order => {
+                        self.order_panel(ui); 
+                    }
+
+                    Panel:: OrderText => {
+                        self.order_text_panel(ui);
+                    }
+
+                    Panel::Tags => {
+                       self.tags_panel(ui);
+                    
+                    }
+
+
+
+                }
+                // self.show_version_in_bottom_right(ctx);
 
         });
+
+        let id = egui::Id::new("bottom panel");
+        egui::Area::new(id)
+        .anchor(egui::Align2::RIGHT_BOTTOM, egui::vec2(0.0, 0.0)) // Pin to bottom-right
+        .show(ctx, |ui| {
+            let version_text = format!("Version: {}    ", env!("CARGO_PKG_VERSION")); 
+                ui.label(RichText::new(version_text).weak());
+            // ui.label("This is the bottom panel.");
+        });
+        
+        // egui::TopBottomPanel::bottom("bottom_panel").resizable(false).show(ctx, |ui| {
+        //     ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+
+        //         let version_text = format!("Version: {}", env!("CARGO_PKG_VERSION")); // Replace self.version with your version string
+        //         ui.label(RichText::new(version_text).weak());
+        //     });
+        // });
     }
     
     
 }
 
 impl TemplateApp {
+    fn panel_tab_bar(&mut self, ui: &mut egui::Ui) {
+        // egui::Grid::new("Tags Grid")
+        //     .num_columns(4)
+        //     // .spacing([20.0, 8.0])
+        //     .striped(true)
+        //     .show(ui, |ui| {
+                
+        //     });
+        ui.horizontal(|ui| {
+            let size_big = 16.0;
+            let size_small = 16.0;
+            let column_width = 1.0; // Set the fixed width for each column
+            {
+                let checked = self.my_panel == Panel::Find;                
+                let label =  "Find & Replace";
+                let text = if checked {RichText::new(label).size(size_big).strong()} 
+                        else {RichText::new(label).size(size_small).weak()
+                };
+                ui.allocate_exact_size(egui::vec2(column_width, 20.0), egui::Sense::click());
+
+                if ui
+                    .selectable_label(checked, text)
+                    .clicked() {
+                    self.my_panel =  Panel::Find; 
+                }
+            }
+            {
+                let checked = self.my_panel == Panel::Duplicates;                
+                let label =  "Search for Duplicates";
+                let text = if checked {RichText::new(label).size(size_big).strong()} 
+                        else {RichText::new(label).size(size_small).weak()
+                    };
+                    ui.allocate_exact_size(egui::vec2(column_width, 20.0), egui::Sense::click());
+                if ui
+                    .selectable_label(checked, text)
+                    .clicked() {
+                    self.my_panel =  Panel::Duplicates; 
+                }
+            }
+            {
+                let checked = self.my_panel == Panel::Order;                
+                let label =  "Modify Duplicate Search Order";
+                let text = if checked {RichText::new(label).size(size_big).strong()} 
+                        else {RichText::new(label).size(size_small).weak()
+                };
+                ui.allocate_exact_size(egui::vec2(column_width, 20.0), egui::Sense::click());
+                if ui
+                    .selectable_label(checked, text)
+                    .clicked() {
+                    self.my_panel =  Panel::Order; 
+                }
+            }
+            {
+                let checked = self.my_panel == Panel::Tags;                
+                let label =  "Edit Tags List";
+                let text = if checked {RichText::new(label).size(size_big).strong()} 
+                        else {RichText::new(label).size(size_small).weak()
+                    };
+                ui.allocate_exact_size(egui::vec2(column_width, 20.0), egui::Sense::click());
+                if ui
+                    .selectable_label(checked, text)
+                    .clicked() {
+                    self.my_panel =  Panel::Tags; 
+                }
+            }
+
+        });
+    }
+
     fn find_panel(&mut self, ui: &mut egui::Ui) {
         if let Some(db)  = &self.db {
-            ui.horizontal(|_| {});
-        
-            ui.vertical_centered(|ui| {
-    
-                ui.heading(RichText::new(&db.name).size(24.0).strong().extra_letter_spacing(5.0));
-                ui.label(format!("{} records", &db.size));
-                
-            });
-            ui.heading("Find and Replace");
+            
+            // ui.heading("Find and Replace");
             ui.label("Note: Search is Case Sensitive");
-            ui.separator();
+            ui.horizontal(|_| {});
+            // ui.separator();
             ui.horizontal(|ui| {
                 ui.label("Find Text: ");
                 ui.text_edit_singleline(&mut self.find);
@@ -607,12 +697,15 @@ impl TemplateApp {
                 ui.label(format!("{} records replaced", self.count));
             }
         }
+        else {
+            ui.heading("No Open Database");
+        }
                           
     }
     fn duplictes_panel(&mut self, ui: &mut egui::Ui) {
         if let Some(db)  = &self.db {
 
-            ui.heading(RichText::new("Search for Duplicate Records").strong());
+            // ui.heading(RichText::new("Search for Duplicate Records").strong());
                     
             
     //GROUP GROUP GROUP GROUP
@@ -642,7 +735,7 @@ impl TemplateApp {
 
 
     //DEEP DIVE DEEP DIVE DEEP DIVE
-                ui.checkbox(&mut self.deep.search, "Deep Dive Duplicates Search (Slow)");
+                ui.checkbox(&mut self.deep.search, "Deep Dive Duplicates Search");
 
                 ui.horizontal( |ui| {
                     ui.add_space(24.0);
@@ -785,25 +878,52 @@ impl TemplateApp {
         }
             receive_async_data(self);
         }
+        else {
+            ui.heading("No Open Database");
+        }
     }
     fn order_panel(&mut self, ui: &mut egui::Ui) {
         if self.help {order_help(ui)}
+
+        ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui| {
+            // Determine the width available for the scrollable area
+            let width = ui.available_width();
+            
+            // Create a vertical scrollable area with a specified width and height
+            egui::ScrollArea::vertical()
+                .max_height(500.0) // Set the maximum height of the scroll area
+                .show(ui, |ui| {
+                    // Create a container with the desired width and height
+                    ui.horizontal(|ui| {
+                        ui.set_min_width(width);
+                        
+                        // Create a grid layout within the scrollable area
+                        egui::Grid::new("Order Grid")
+                            .spacing([20.0, 8.0])
+                            .striped(true)
+                            .show(ui, |ui| {
+                                for (index, line) in self.main.list.iter_mut().enumerate() {
+                                    let checked = self.sel_line == Some(index);
+                                    if ui.selectable_label(checked, line.clone()).clicked() {
+                                        self.sel_line = if checked { None } else { Some(index) };
+                                    }
+                                    ui.end_row();
+                                }
+                            });
+                    });
+                });
+        });
+
                             
-            for (index, line) in self.main.list.iter_mut().enumerate() {
-                let checked = self.sel_line == Some(index);
-                if ui.selectable_label(checked, line.clone()).clicked {
-                    self.sel_line = if checked { None } else { Some(index) };
-                }
-            }
-            ui.separator();
+        ui.separator();
 
-            order_toolbar(ui,self);
+        order_toolbar(ui,self);
 
-            ui.separator();
-            if ui.button("Text Editor").clicked() {
-                self.order_text = self.main.list.join("\n");
-                self.my_panel = Panel::OrderText;
-            }
+        ui.separator();
+        if ui.button("Text Editor").clicked() {
+            self.order_text = self.main.list.join("\n");
+            self.my_panel = Panel::OrderText;
+        }
     }
     
     fn order_text_panel(&mut self, ui: &mut egui::Ui) {
@@ -909,7 +1029,33 @@ impl TemplateApp {
     //     ui.separator();
     // }
 
+    // fn show_version_in_bottom_right(&self, ctx: &egui::Context) {
+    //     let version_text = format!("Version: {}", env!("CARGO_PKG_VERSION")); // Replace self.version with your version string
 
+    //     // Get the available space in the window
+    //     let screen_rect = ctx.screen_rect();
+        
+    //     // Define a margin from the bottom and right of the window
+    //     let margin = egui::vec2(10.0, 10.0);
+
+    //     // Define the size of the text
+    //     let text_size = egui::vec2(150.0, 20.0); // Approximate text size, can be adjusted
+
+    //     // Calculate the bottom-right position
+    //     let text_rect = egui::Rect::from_min_size(
+    //         screen_rect.max - margin - text_size,
+    //         text_size,
+    //     );
+
+    //     // Create a new UI in that calculated position
+    //     let id = egui::Id::new("version text");
+    //     egui::Area::new(id)
+    //         .movable(false) // Ensure it's static
+    //         .fixed_pos(text_rect.left_top())
+    //         .show(ctx, |ui| {
+    //             ui.label(version_text);
+    //         });
+    // }
 }
 
 
