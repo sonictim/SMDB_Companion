@@ -1,11 +1,8 @@
 #![warn(clippy::all, rust_2018_idioms)]
 #![allow(non_snake_case)]
-
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-
 // const VERSION: &str = env!("CARGO_PKG_VERSION");
-
 
 // When compiling natively:
 #[tokio::main]
@@ -25,12 +22,11 @@ async fn main() -> eframe::Result {
         ..Default::default()
     };
     eframe::run_native(
-        format!("SMDB Companion").as_str(),
+        "SMDB Companion",
         native_options,
         Box::new(|cc| Ok(Box::new(SMDB_Companion::TemplateApp::new(cc)))),
     )
 }
-
 
 // When compiling to web using trunk:
 #[cfg(target_arch = "wasm32")]

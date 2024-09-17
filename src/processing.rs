@@ -1,24 +1,22 @@
 #![allow(non_snake_case)]
-use sqlx::{sqlite::SqlitePool, Row};
-use tokio::sync::mpsc;
-use rayon::prelude::*;
-use std::collections::{HashSet, HashMap};
-use futures::stream::{self, StreamExt};
 use futures::future::join_all;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use futures::stream::{self, StreamExt};
+use rayon::prelude::*;
 use rfd::FileDialog;
+use sqlx::{sqlite::SqlitePool, Row};
+use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+use tokio::sync::mpsc;
 
-
-use regex::Regex;
 use crate::app::*;
+use regex::Regex;
 
 use once_cell::sync::Lazy;
 // use regex::Regex;
 
-static FILENAME_REGEX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^(?P<base>.+?)(\.\d+|\.\w+)+(?P<ext>\.\w+)$").unwrap()
-});
+static FILENAME_REGEX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^(?P<base>.+?)(\.\d+|\.\w+)+(?P<ext>\.\w+)$").unwrap());
 
 fn get_root_filename(filename: &str) -> Option<String> {
     if let Some(caps) = FILENAME_REGEX.captures(filename) {
@@ -37,38 +35,33 @@ where
     F: FnOnce() -> T + Send + 'static,
     T: std::future::Future<Output = Result<HashSet<FileRecord>, sqlx::Error>> + Send + 'static,
 {
+    config.working = true;
+    config.status = label.to_string();
+    // let records = config.records.clone();
+    if let Some(tx) = config.tx.clone() {
+        // if let Some(sender) = config.progress_sender.clone() {
+        // let pool = pool.clone();
 
-        config.working = true;
-        config.status = label.to_string();
-        // let records = config.records.clone();
-        if let Some(tx) = config.tx.clone() {
-            // if let Some(sender) = config.progress_sender.clone() {
-                // let pool = pool.clone();
+        let handle = tokio::spawn(async move {
+            println!("Inside Async Task");
 
-                let handle = tokio::spawn(async move {
-                    println!("Inside Async Task");
-                    
+            // let _results  = action(&pool, sender).await;
+            let results = action().await;
 
-                    
-                    // let _results  = action(&pool, sender).await;
-                    let results  = action().await;
-                    // match results {
-                    //     Ok(_) => println!("Tokio OK!"),
-                    //     Err(e) => println!("Error: {:#?}", e),
-                    // }
-                    if let Err(_) = tx.send(results.expect("Tokio Results Error HashSet")).await {
-                        eprintln!("Failed to send db");
-                    }
-                });
-                config.handle = Some(handle);
-            // }
-
-        }
-    
+            if (tx.send(results.expect("Tokio Results Error HashSet")).await).is_err() {
+                eprintln!("Failed to send db");
+            }
+        });
+        config.handle = Some(handle);
+        // }
+    }
 }
 
-pub async fn smreplace_get(pool: &SqlitePool, find: &mut String, column: &mut String ) -> Result<usize, sqlx::Error>  {
-    
+pub async fn smreplace_get(
+    pool: &SqlitePool,
+    find: &mut String,
+    column: &mut String,
+) -> Result<usize, sqlx::Error> {
     let search_query = format!("SELECT COUNT(rowid) FROM {} WHERE {} LIKE ?", TABLE, column);
     let result: (i64,) = sqlx::query_as(&search_query)
         .bind(format!("%{}%", find))
@@ -78,33 +71,34 @@ pub async fn smreplace_get(pool: &SqlitePool, find: &mut String, column: &mut St
     Ok(result.0 as usize)
 }
 
-pub async fn smreplace_process(pool: &SqlitePool, find: &mut String, replace: &mut String, column: &mut String, dirty: bool ) {
-   
+pub async fn smreplace_process(
+    pool: &SqlitePool,
+    find: &mut String,
+    replace: &mut String,
+    column: &mut String,
+    dirty: bool,
+) {
     let dirty_text = if dirty { ", _Dirty = 1" } else { "" };
 
     let replace_query = format!(
-        "UPDATE {} SET {} = REPLACE({}, '{}', '{}'){} WHERE {} LIKE '%{}%'", 
+        "UPDATE {} SET {} = REPLACE({}, '{}', '{}'){} WHERE {} LIKE '%{}%'",
         TABLE, column, column, find, replace, dirty_text, column, find
     );
     let _ = sqlx::query(&replace_query).execute(pool).await;
-
 }
-
 
 pub async fn gather_duplicate_filenames_in_database(
     pool: SqlitePool,
-    // config: Config, 
-    order: Vec<String>, 
-    group_sort: Option<String>, 
-    group_null: bool, 
+    // config: Config,
+    order: Vec<String>,
+    group_sort: Option<String>,
+    group_null: bool,
 ) -> Result<HashSet<FileRecord>, sqlx::Error> {
-
-
     let verbose = true;
     // let order = config.list;
     // let mut group_sort = None;
     // if config.search {group_sort = Some(config.selected)}
-    
+
     let mut file_records = HashSet::new();
 
     // Construct the ORDER BY clause dynamically
@@ -118,7 +112,10 @@ pub async fn gather_duplicate_filenames_in_database(
             }
             let where_clause = if group_null {
                 if verbose {
-                    println!("Records without a {} entry will be processed together.", group);
+                    println!(
+                        "Records without a {} entry will be processed together.",
+                        group
+                    );
                 }
                 String::new()
             } else {
@@ -131,7 +128,7 @@ pub async fn gather_duplicate_filenames_in_database(
         }
         None => ("filename".to_string(), String::new()),
     };
-    
+
     let sql = format!(
         "
         WITH ranked AS (
@@ -152,82 +149,78 @@ pub async fn gather_duplicate_filenames_in_database(
     );
 
     // Execute the query and fetch the results
-    let rows = sqlx::query(&sql)
-        .fetch_all(&pool)
-        .await?;
-    
+    let rows = sqlx::query(&sql).fetch_all(&pool).await?;
+
     // Iterate through the rows and insert them into the hashset
     for row in rows {
         let id: u32 = row.get(0);
         let file_record = FileRecord {
             id: id as usize,
             filename: row.get(1),
-            duration: row.try_get(2).unwrap_or("".to_string()),  // Handle possible NULL in duration
+            duration: row.try_get(2).unwrap_or("".to_string()), // Handle possible NULL in duration
         };
         file_records.insert(file_record);
     }
 
     if verbose {
-        println!("Marked {} duplicate records for deletion.", file_records.len());
+        println!(
+            "Marked {} duplicate records for deletion.",
+            file_records.len()
+        );
     }
-    
+
     Ok(file_records)
 }
-
-
-
-
 
 pub async fn gather_deep_dive_records(
     pool: SqlitePool,
     progress_sender: mpsc::Sender<ProgressMessage>,
     status_sender: mpsc::Sender<String>,
 ) -> Result<HashSet<FileRecord>, sqlx::Error> {
-    
     let mut file_groups: HashMap<String, Vec<FileRecord>> = HashMap::new();
 
     let query = &format!("SELECT rowid, filename, duration FROM {}", TABLE);
 
-    let rows = sqlx::query(query)
-        .fetch_all(&pool)
-        .await?;
+    let rows = sqlx::query(query).fetch_all(&pool).await?;
 
     let total = rows.len();
     let mut counter: usize = 0;
-    
+
     // let _ = status_sender.send("Starting Parallel iterations".to_string()).await;
 
     // Use a parallel iterator to process the rows
     let processed_records: Vec<(String, FileRecord)> = rows
-        .par_iter()  // Use a parallel iterator
+        .par_iter() // Use a parallel iterator
         .map(|row| {
             let id: u32 = row.get(0);
             let file_record = FileRecord {
                 id: id as usize,
                 filename: row.get(1),
-                duration: row.try_get(2).unwrap_or("".to_string()),  // Handle possible NULL in duration
+                duration: row.try_get(2).unwrap_or("".to_string()), // Handle possible NULL in duration
             };
-            
+
             let base_filename = get_root_filename(&file_record.filename)
                 .unwrap_or_else(|| file_record.filename.clone());
 
             (base_filename, file_record)
         })
-        .collect();  // Collect results into a Vec<(String, FileRecord)>
-    
+        .collect(); // Collect results into a Vec<(String, FileRecord)>
+
     let _ = status_sender.send("Processing Records".to_string()).await;
     // Now merge the results into the file_groups (sequentially)
     for (base_filename, file_record) in processed_records {
         file_groups
             .entry(base_filename)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(file_record);
 
         counter += 1;
 
         // Send progress updates every 100 rows
         if counter % 100 == 0 {
-            let _ = progress_sender.send(ProgressMessage::Update(counter, total)).await;
+            let _ = progress_sender
+                .send(ProgressMessage::Update(counter, total))
+                .await;
         }
     }
 
@@ -236,13 +229,13 @@ pub async fn gather_deep_dive_records(
 
     let mut file_records = HashSet::new();
     for (root, records) in file_groups {
-        if records.len() <= 1 { continue; }
+        if records.len() <= 1 {
+            continue;
+        }
 
         let root_found = records.iter().any(|record| record.filename == root);
         if root_found {
-            file_records.extend(
-                records.into_iter().filter(|record| record.filename != root)
-            );
+            file_records.extend(records.into_iter().filter(|record| record.filename != root));
         } else {
             file_records.extend(records.into_iter().skip(1));
         }
@@ -251,28 +244,27 @@ pub async fn gather_deep_dive_records(
     Ok(file_records)
 }
 
-
-
-
-
-pub async fn gather_filenames_with_tags(pool: SqlitePool, tags: Vec<String>) -> Result<HashSet<FileRecord>, sqlx::Error> {
+pub async fn gather_filenames_with_tags(
+    pool: SqlitePool,
+    tags: Vec<String>,
+) -> Result<HashSet<FileRecord>, sqlx::Error> {
     println!("Tokio Start");
     let mut file_records = HashSet::new();
-    let max_concurrency = 10;  // Adjust based on your system's capacity and connection pool size
+    let max_concurrency = 10; // Adjust based on your system's capacity and connection pool size
 
     // Process each tag concurrently with a controlled level of concurrency
     let results = stream::iter(tags.into_iter())
         .map(|tag| {
             let pool = pool.clone();
             async move {
-                let query = format!("SELECT rowid, filename, duration FROM {} WHERE filename LIKE '%' || ? || '%'", TABLE);
-                sqlx::query(&query)
-                    .bind(tag)
-                    .fetch_all(&pool)
-                    .await  // Return the result (Result<Vec<sqlx::sqlite::SqliteRow>, sqlx::Error>)
+                let query = format!(
+                    "SELECT rowid, filename, duration FROM {} WHERE filename LIKE '%' || ? || '%'",
+                    TABLE
+                );
+                sqlx::query(&query).bind(tag).fetch_all(&pool).await // Return the result (Result<Vec<sqlx::sqlite::SqliteRow>, sqlx::Error>)
             }
         })
-        .buffer_unordered(max_concurrency)  // Control the level of concurrency
+        .buffer_unordered(max_concurrency) // Control the level of concurrency
         .collect::<Vec<Result<Vec<sqlx::sqlite::SqliteRow>, sqlx::Error>>>()
         .await;
 
@@ -285,13 +277,13 @@ pub async fn gather_filenames_with_tags(pool: SqlitePool, tags: Vec<String>) -> 
                     let file_record = FileRecord {
                         id: id as usize,
                         filename: row.get(1),
-                        duration: row.try_get(2).unwrap_or("".to_string()),  // Handle possible NULL in duration
+                        duration: row.try_get(2).unwrap_or("".to_string()), // Handle possible NULL in duration
                     };
                     file_records.insert(file_record);
                 }
             }
             Err(err) => {
-                return Err(err);  // Return early if an error occurs
+                return Err(err); // Return early if an error occurs
             }
         }
     }
@@ -301,70 +293,72 @@ pub async fn gather_filenames_with_tags(pool: SqlitePool, tags: Vec<String>) -> 
 }
 
 pub async fn gather_compare_database_overlaps(
-        target_pool: &SqlitePool,
-        compare_pool: &SqlitePool
-    ) -> Result<HashSet<FileRecord>, sqlx::Error> {
-        let compare_records = fetch_all_filerecords_from_database(compare_pool).await?;
-        let filenames_to_check = extract_filenames_set_from_records(&compare_records);
-        
-        let mut matching_records = fetch_all_filerecords_from_database(target_pool).await?;
-        println!(
-            "Comparing filenames between databases"
-        );
-        
-        matching_records.retain(|record| filenames_to_check.contains(&record.filename));
-    
-        if matching_records.is_empty() {
-            println!("NO OVERLAPPING FILE RECORDS FOUND!");
-        } else {
-            println!(
-                "Found {} overlapping file records.",
-                matching_records.len()
-            );
-        }
-    
-        Ok(matching_records.into_iter().collect())
+    target_pool: &SqlitePool,
+    compare_pool: &SqlitePool,
+) -> Result<HashSet<FileRecord>, sqlx::Error> {
+    let compare_records = fetch_all_filerecords_from_database(compare_pool).await?;
+    let filenames_to_check = extract_filenames_set_from_records(&compare_records);
+
+    let mut matching_records = fetch_all_filerecords_from_database(target_pool).await?;
+    println!("Comparing filenames between databases");
+
+    matching_records.retain(|record| filenames_to_check.contains(&record.filename));
+
+    if matching_records.is_empty() {
+        println!("NO OVERLAPPING FILE RECORDS FOUND!");
+    } else {
+        println!("Found {} overlapping file records.", matching_records.len());
+    }
+
+    Ok(matching_records.into_iter().collect())
 }
 
-pub async fn fetch_filerecords_from_database(pool: &SqlitePool, query: &str) -> Result<HashSet<FileRecord>, sqlx::Error> {
+pub async fn fetch_filerecords_from_database(
+    pool: &SqlitePool,
+    query: &str,
+) -> Result<HashSet<FileRecord>, sqlx::Error> {
     let mut file_records = HashSet::new();
 
-    let rows = sqlx::query(query)
-    .fetch_all(pool)
-    .await?;
+    let rows = sqlx::query(query).fetch_all(pool).await?;
 
     for row in rows {
         let id: u32 = row.get(0);
         let file_record = FileRecord {
             id: id as usize,
             filename: row.get(1),
-            duration: row.try_get(2).unwrap_or("".to_string()),  // Handle possible NULL in duration
+            duration: row.try_get(2).unwrap_or("".to_string()), // Handle possible NULL in duration
         };
         file_records.insert(file_record);
     }
     Ok(file_records)
 }
-pub async fn fetch_all_filerecords_from_database(pool: &SqlitePool) -> Result<HashSet<FileRecord>, sqlx::Error> {
+pub async fn fetch_all_filerecords_from_database(
+    pool: &SqlitePool,
+) -> Result<HashSet<FileRecord>, sqlx::Error> {
     println!("Gathering all records from database");
-    fetch_filerecords_from_database(pool, &format!("SELECT rowid, filename, duration FROM {}", TABLE)).await
+    fetch_filerecords_from_database(
+        pool,
+        &format!("SELECT rowid, filename, duration FROM {}", TABLE),
+    )
+    .await
 }
 
 fn extract_filenames_set_from_records(file_records: &HashSet<FileRecord>) -> HashSet<String> {
-    file_records.iter().map(|record| record.filename.clone()).collect()
+    file_records
+        .iter()
+        .map(|record| record.filename.clone())
+        .collect()
 }
-
-
-
 
 pub async fn delete_file_records(
     pool: &SqlitePool,
     records: &HashSet<FileRecord>,
     progress_sender: mpsc::Sender<ProgressMessage>,
-    status_sender: mpsc::Sender<String>
+    status_sender: mpsc::Sender<String>,
 ) -> Result<(), sqlx::Error> {
     const CHUNK_SIZE: usize = 12321;
 
-    let ids: Vec<i64> = records.into_iter().map(|record| record.id as i64).collect();
+    let ids: Vec<i64> = records.iter().map(|record| record.id as i64).collect();
 
     if ids.is_empty() {
         return Ok(());
@@ -384,12 +378,9 @@ pub async fn delete_file_records(
         let task = tokio::spawn(async move {
             // Construct the SQL query with placeholders for the chunk
             let query = format!(
-                "DELETE FROM {} WHERE rowid IN ({})", 
-                TABLE, 
-                chunk.iter()
-                    .map(|_| "?")
-                    .collect::<Vec<&str>>()
-                    .join(", ")
+                "DELETE FROM {} WHERE rowid IN ({})",
+                TABLE,
+                chunk.iter().map(|_| "?").collect::<Vec<&str>>().join(", ")
             );
 
             // Prepare the query with bound parameters
@@ -404,8 +395,12 @@ pub async fn delete_file_records(
             let current_count = counter.fetch_add(CHUNK_SIZE, Ordering::SeqCst) + CHUNK_SIZE;
             let progress = std::cmp::min(current_count, total); // Ensure we don't exceed total
 
-            let _ = progress_sender.send(ProgressMessage::Update(progress, total)).await;
-            let _ = status_sender.send(format!("Processed {} / {}", progress, total)).await;
+            let _ = progress_sender
+                .send(ProgressMessage::Update(progress, total))
+                .await;
+            let _ = status_sender
+                .send(format!("Processed {} / {}", progress, total))
+                .await;
         });
 
         tasks.push(task);
@@ -422,20 +417,28 @@ pub async fn delete_file_records(
     Ok(())
 }
 
-
-
-pub async fn create_duplicates_db(pool: &SqlitePool, dupe_records_to_keep: &HashSet<FileRecord>, progress_sender: mpsc::Sender<ProgressMessage>, status_sender: mpsc::Sender<String>,) -> Result<(), sqlx::Error> {
+pub async fn create_duplicates_db(
+    pool: &SqlitePool,
+    dupe_records_to_keep: &HashSet<FileRecord>,
+    progress_sender: mpsc::Sender<ProgressMessage>,
+    status_sender: mpsc::Sender<String>,
+) -> Result<(), sqlx::Error> {
     println!("Generating Duplicates Only Database.  This can take awhile.");
-    let _ = status_sender.send("Creating Dupliates Only Database.  This can be slow.".to_string()).await;
-    
+    let _ = status_sender
+        .send("Creating Dupliates Only Database.  This can be slow.".to_string())
+        .await;
+
     if let Ok(mut dupe_records_to_delete) = fetch_all_filerecords_from_database(pool).await {
-
         dupe_records_to_delete.retain(|record| !dupe_records_to_keep.contains(record));
-        
-        let _result = delete_file_records(pool, &dupe_records_to_delete, progress_sender, status_sender).await;
 
+        let _result = delete_file_records(
+            pool,
+            &dupe_records_to_delete,
+            progress_sender,
+            status_sender,
+        )
+        .await;
     }
-
 
     Ok(())
 }
@@ -443,7 +446,6 @@ pub async fn create_duplicates_db(pool: &SqlitePool, dupe_records_to_keep: &Hash
 // use sqlx::{ Executor, Error};
 // use std::fs;
 // use std::path::Path;
-
 
 // pub async fn create_duplicates_db2(
 //     old_db_path: &str,
@@ -470,8 +472,8 @@ pub async fn create_duplicates_db(pool: &SqlitePool, dupe_records_to_keep: &Hash
 //     // Fetch the schema (DDL) from the old database
 //     let schema: Vec<(String,)> = sqlx::query_as(
 //         r#"
-//         SELECT sql 
-//         FROM sqlite_master 
+//         SELECT sql
+//         FROM sqlite_master
 //         WHERE type='table' AND name != 'sqlite_sequence';
 //         "#,
 //     )
@@ -487,9 +489,9 @@ pub async fn create_duplicates_db(pool: &SqlitePool, dupe_records_to_keep: &Hash
 //     // Only keep records with IDs in the `record_ids_to_keep`
 //     let query = format!(
 //         r#"
-//         INSERT INTO justinmetadata 
-//         SELECT * 
-//         FROM main.justinmetadata 
+//         INSERT INTO justinmetadata
+//         SELECT *
+//         FROM main.justinmetadata
 //         WHERE rowid IN ({});
 //         "#,
 //         placeholder_str
@@ -509,10 +511,10 @@ pub async fn create_duplicates_db(pool: &SqlitePool, dupe_records_to_keep: &Hash
 //     // sqlx::query(
 //     //     r#"
 //     //     INSERT INTO related_table
-//     //     SELECT * 
+//     //     SELECT *
 //     //     FROM main.related_table
 //     //     WHERE foreign_key_id IN (
-//     //         SELECT rowid 
+//     //         SELECT rowid
 //     //         FROM justinmetadata
 //     //     );
 //     //     "#
@@ -525,26 +527,20 @@ pub async fn create_duplicates_db(pool: &SqlitePool, dupe_records_to_keep: &Hash
 //     Ok(())
 // }
 
-
-
-
-
 pub async fn open_db() -> Option<Database> {
     if let Some(path) = FileDialog::new()
-    .add_filter("SQLite Database", &["sqlite"])
-    .pick_file()
-{
+        .add_filter("SQLite Database", &["sqlite"])
+        .pick_file()
+    {
         let db_path = path.display().to_string();
         if db_path.ends_with(".sqlite") {
             println!("Opening Database {}", db_path);
             let db = Database::open(db_path).await;
             return Some(db);
         }
-    }    
+    }
     None
 }
-
-
 
 // pub async fn open_db() -> Option<Database> {
 //     // Open file dialog and restrict to SQLite files
@@ -568,7 +564,6 @@ pub async fn open_db() -> Option<Database> {
 //         None
 //     }
 // }
-
 
 pub async fn get_db_size(pool: &SqlitePool) -> Result<usize, sqlx::Error> {
     let count: (i64,) = sqlx::query_as(&format!("SELECT COUNT(*) FROM {}", TABLE))
@@ -601,152 +596,151 @@ pub async fn get_columns(pool: &SqlitePool) -> Result<Vec<String>, sqlx::Error> 
 }
 
 pub fn default_tags() -> Vec<String> {
-const DEFAULT_TAGS_VEC: [&str; 44] = [
-    "-6030_", 
-    "-7eqa_",
-    "-A2sA_", 
-    "-A44m_", 
-    "-A44s_", 
-    "-Alt7S_", 
-    "-ASMA_", 
-    "-AVrP_", 
-    "-AVrT_", 
-    "-AVSt_", 
-    "-DEC4_", 
-    "-Delays_", 
-    "-Dn_",
-    "-DUPL_",
-    "-DVerb_", 
-    "-GAIN_", 
-    "-M2DN_", 
-    "-NORM_",
-    "-NYCT_", 
-    "-PiSh_", 
-    "-PnT2_", 
-    "-PnTPro_", 
-    "-ProQ2_", 
-    "-PSh_", 
-    "-Reverse_", 
-    "-RVRS_", 
-    "-RING_", 
-    "-RX7Cnct_", 
-    "-spce_", 
-    "-TCEX_", 
-    "-TiSh_", 
-    "-TmShft_", 
-    "-VariFi_", 
-    "-VlhllVV_", 
-    "-VSPD_",
-    "-VitmnMn_", 
-    "-VtmnStr_", 
-    "-X2mA_", 
-    "-X2sA_", 
-    "-XForm_",
-    "-Z2N5_",
-    "-Z2S5_",
-    "-Z4n2_",
-    "-ZXN5_", 
-];
-DEFAULT_TAGS_VEC.map(|s| s.to_string()).to_vec()
+    const DEFAULT_TAGS_VEC: [&str; 44] = [
+        "-6030_",
+        "-7eqa_",
+        "-A2sA_",
+        "-A44m_",
+        "-A44s_",
+        "-Alt7S_",
+        "-ASMA_",
+        "-AVrP_",
+        "-AVrT_",
+        "-AVSt_",
+        "-DEC4_",
+        "-Delays_",
+        "-Dn_",
+        "-DUPL_",
+        "-DVerb_",
+        "-GAIN_",
+        "-M2DN_",
+        "-NORM_",
+        "-NYCT_",
+        "-PiSh_",
+        "-PnT2_",
+        "-PnTPro_",
+        "-ProQ2_",
+        "-PSh_",
+        "-Reverse_",
+        "-RVRS_",
+        "-RING_",
+        "-RX7Cnct_",
+        "-spce_",
+        "-TCEX_",
+        "-TiSh_",
+        "-TmShft_",
+        "-VariFi_",
+        "-VlhllVV_",
+        "-VSPD_",
+        "-VitmnMn_",
+        "-VtmnStr_",
+        "-X2mA_",
+        "-X2sA_",
+        "-XForm_",
+        "-Z2N5_",
+        "-Z2S5_",
+        "-Z4n2_",
+        "-ZXN5_",
+    ];
+    DEFAULT_TAGS_VEC.map(|s| s.to_string()).to_vec()
 }
 
 pub fn tjf_tags() -> Vec<String> {
-const TJF_TAGS_VEC: [&str; 48] = [
-    "-6030_", 
-    "-7eqa_",
-    "-A2sA_", 
-    "-A44m_", 
-    "-A44s_", 
-    "-Alt7S_", 
-    "-ASMA_", 
-    "-AVrP_", 
-    "-AVrT_", 
-    "-AVSt_", 
-    "-DEC4_", 
-    "-Delays_", 
-    "-Dn_",
-    "-DUPL_",
-    "-DVerb_", 
-    "-GAIN_", 
-    "-M2DN_", 
-    "-NORM_",
-    "-NYCT_", 
-    "-PiSh_", 
-    "-PnT2_", 
-    "-PnTPro_", 
-    "-ProQ2_", 
-    "-PSh_", 
-    "-Reverse_", 
-    "-RVRS_", 
-    "-RING_", 
-    "-RX7Cnct_", 
-    "-spce_", 
-    "-TCEX_", 
-    "-TiSh_", 
-    "-TmShft_", 
-    "-VariFi_", 
-    "-VlhllVV_", 
-    "-VSPD_",
-    "-VitmnMn_", 
-    "-VtmnStr_", 
-    "-X2mA_", 
-    "-X2sA_", 
-    "-XForm_",
-    "-Z2N5_",
-    "-Z2S5_",
-    "-Z4n2_",
-    "-ZXN5_",
-    ".new.",
-    ".aif.",
-    ".mp3.",
-    ".wav.", 
-];
-TJF_TAGS_VEC.map(|s| s.to_string()).to_vec()
+    const TJF_TAGS_VEC: [&str; 48] = [
+        "-6030_",
+        "-7eqa_",
+        "-A2sA_",
+        "-A44m_",
+        "-A44s_",
+        "-Alt7S_",
+        "-ASMA_",
+        "-AVrP_",
+        "-AVrT_",
+        "-AVSt_",
+        "-DEC4_",
+        "-Delays_",
+        "-Dn_",
+        "-DUPL_",
+        "-DVerb_",
+        "-GAIN_",
+        "-M2DN_",
+        "-NORM_",
+        "-NYCT_",
+        "-PiSh_",
+        "-PnT2_",
+        "-PnTPro_",
+        "-ProQ2_",
+        "-PSh_",
+        "-Reverse_",
+        "-RVRS_",
+        "-RING_",
+        "-RX7Cnct_",
+        "-spce_",
+        "-TCEX_",
+        "-TiSh_",
+        "-TmShft_",
+        "-VariFi_",
+        "-VlhllVV_",
+        "-VSPD_",
+        "-VitmnMn_",
+        "-VtmnStr_",
+        "-X2mA_",
+        "-X2sA_",
+        "-XForm_",
+        "-Z2N5_",
+        "-Z2S5_",
+        "-Z4n2_",
+        "-ZXN5_",
+        ".new.",
+        ".aif.",
+        ".mp3.",
+        ".wav.",
+    ];
+    TJF_TAGS_VEC.map(|s| s.to_string()).to_vec()
 }
 
 pub fn default_order() -> Vec<String> {
-const DEFAULT_ORDER_VEC: [&str; 12] = [
-
-    "CASE WHEN Description IS NOT NULL AND Description != '' THEN 0 ELSE 1 END ASC",
-    "CASE WHEN pathname LIKE '%Audio Files%' THEN 1 ELSE 0 END ASC",
-    "CASE WHEN pathname LIKE '%LIBRARIES%' THEN 0 ELSE 1 END ASC",  
-    "CASE WHEN pathname LIKE '%LIBRARY%' THEN 0 ELSE 1 END ASC",
-    "CASE WHEN pathname LIKE '%/LIBRARY%' THEN 0 ELSE 1 END ASC",
-    "CASE WHEN pathname LIKE '%LIBRARY/%' THEN 0 ELSE 1 END ASC",
-    "duration DESC",
-    "channels DESC",
-    "sampleRate DESC",
-    "bitDepth DESC",
-    "BWDate ASC",
-    "scannedDate ASC",
-];
-DEFAULT_ORDER_VEC.map(|s| s.to_string()).to_vec()
+    const DEFAULT_ORDER_VEC: [&str; 12] = [
+        "CASE WHEN Description IS NOT NULL AND Description != '' THEN 0 ELSE 1 END ASC",
+        "CASE WHEN pathname LIKE '%Audio Files%' THEN 1 ELSE 0 END ASC",
+        "CASE WHEN pathname LIKE '%LIBRARIES%' THEN 0 ELSE 1 END ASC",
+        "CASE WHEN pathname LIKE '%LIBRARY%' THEN 0 ELSE 1 END ASC",
+        "CASE WHEN pathname LIKE '%/LIBRARY%' THEN 0 ELSE 1 END ASC",
+        "CASE WHEN pathname LIKE '%LIBRARY/%' THEN 0 ELSE 1 END ASC",
+        "duration DESC",
+        "channels DESC",
+        "sampleRate DESC",
+        "bitDepth DESC",
+        "BWDate ASC",
+        "scannedDate ASC",
+    ];
+    DEFAULT_ORDER_VEC.map(|s| s.to_string()).to_vec()
 }
 
 pub fn tjf_order() -> Vec<String> {
-const TJF_ORDER_VEC: [&str; 22] = [
-    "CASE WHEN pathname LIKE '%TJF RECORDINGS%' THEN 0 ELSE 1 END ASC",
-    "CASE WHEN pathname LIKE '%LIBRARIES%' THEN 0 ELSE 1 END ASC",
-    "CASE WHEN pathname LIKE '%SHOWS/Tim Farrell%' THEN 1 ELSE 0 END ASC",
-    "CASE WHEN Description IS NOT NULL AND Description != '' THEN 0 ELSE 1 END ASC",
-    "CASE WHEN pathname LIKE '%Audio Files%' THEN 1 ELSE 0 END ASC",
-    "CASE WHEN pathname LIKE '%RECORD%' THEN 0 ELSE 1 END ASC",
-    "CASE WHEN pathname LIKE '%CREATED SFX%' THEN 0 ELSE 1 END ASC",
-    "CASE WHEN pathname LIKE '%CREATED FX%' THEN 0 ELSE 1 END ASC",
-    "CASE WHEN pathname LIKE '%LIBRARY%' THEN 0 ELSE 1 END ASC",
-    "CASE WHEN pathname LIKE '%/LIBRARY%' THEN 0 ELSE 1 END ASC",
-    "CASE WHEN pathname LIKE '%LIBRARY/%' THEN 0 ELSE 1 END ASC",
-    "CASE WHEN pathname LIKE '%SIGNATURE%' THEN 0 ELSE 1 END ASC",
-    "CASE WHEN pathname LIKE '%PULLS%' THEN 0 ELSE 1 END ASC",
-    "CASE WHEN pathname LIKE '%EDIT%' THEN 1 ELSE 0 END ASC",
-    "CASE WHEN pathname LIKE '%MIX%' THEN 1 ELSE 0 END ASC",
-    "CASE WHEN pathname LIKE '%SESSION%' THEN 1 ELSE 0 END ASC",
-    "duration DESC",
-    "channels DESC",
-    "sampleRate DESC",
-    "bitDepth DESC",
-    "BWDate ASC",
-    "scannedDate ASC",
-];
+    const TJF_ORDER_VEC: [&str; 22] = [
+        "CASE WHEN pathname LIKE '%TJF RECORDINGS%' THEN 0 ELSE 1 END ASC",
+        "CASE WHEN pathname LIKE '%LIBRARIES%' THEN 0 ELSE 1 END ASC",
+        "CASE WHEN pathname LIKE '%SHOWS/Tim Farrell%' THEN 1 ELSE 0 END ASC",
+        "CASE WHEN Description IS NOT NULL AND Description != '' THEN 0 ELSE 1 END ASC",
+        "CASE WHEN pathname LIKE '%Audio Files%' THEN 1 ELSE 0 END ASC",
+        "CASE WHEN pathname LIKE '%RECORD%' THEN 0 ELSE 1 END ASC",
+        "CASE WHEN pathname LIKE '%CREATED SFX%' THEN 0 ELSE 1 END ASC",
+        "CASE WHEN pathname LIKE '%CREATED FX%' THEN 0 ELSE 1 END ASC",
+        "CASE WHEN pathname LIKE '%LIBRARY%' THEN 0 ELSE 1 END ASC",
+        "CASE WHEN pathname LIKE '%/LIBRARY%' THEN 0 ELSE 1 END ASC",
+        "CASE WHEN pathname LIKE '%LIBRARY/%' THEN 0 ELSE 1 END ASC",
+        "CASE WHEN pathname LIKE '%SIGNATURE%' THEN 0 ELSE 1 END ASC",
+        "CASE WHEN pathname LIKE '%PULLS%' THEN 0 ELSE 1 END ASC",
+        "CASE WHEN pathname LIKE '%EDIT%' THEN 1 ELSE 0 END ASC",
+        "CASE WHEN pathname LIKE '%MIX%' THEN 1 ELSE 0 END ASC",
+        "CASE WHEN pathname LIKE '%SESSION%' THEN 1 ELSE 0 END ASC",
+        "duration DESC",
+        "channels DESC",
+        "sampleRate DESC",
+        "bitDepth DESC",
+        "BWDate ASC",
+        "scannedDate ASC",
+    ];
     TJF_ORDER_VEC.map(|s| s.to_string()).to_vec()
 }
