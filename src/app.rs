@@ -283,7 +283,7 @@ pub struct TemplateApp {
 
 
 
-#[derive(PartialEq, serde::Serialize, Deserialize)]
+#[derive(PartialEq, serde::Serialize, Deserialize, Clone, Copy)]
 enum Panel { Duplicates, Order, OrderText, Tags, Find }
 
 
@@ -354,14 +354,16 @@ impl TemplateApp {
 
         Default::default()
     }
-    fn reset_to_defaults(&mut self, db: Option<Database>) {
+    fn reset_to_defaults(&mut self, db: Option<Database>, panel: Panel) {
         *self = Self::default();
         self.db = db;
+        self.my_panel = panel;
     }
         
-    fn reset_to_tjf_defaults(&mut self, db: Option<Database>) {
+    fn reset_to_tjf_defaults(&mut self, db: Option<Database>, panel: Panel) {
         *self = Self::default();
         self.db = db;
+        self.my_panel = panel;
         self.main.list = tjf_order();
         self.tags.list = tjf_tags();   
         self.deep.search = true;
@@ -410,13 +412,13 @@ impl eframe::App for TemplateApp {
                         ui.separator();
                         if ui.button("Restore Defaults").clicked() {
                             ui.close_menu(); 
-                            self.reset_to_defaults(self.db.clone());
+                            self.reset_to_defaults(self.db.clone(), self.my_panel.clone());
                           
                         }
                         if  ui.input(|i| i.modifiers.alt ) {
                             if ui.button("TJF Defaults").clicked() {
                                 ui.close_menu();
-                                self.reset_to_tjf_defaults(self.db.clone());
+                                self.reset_to_tjf_defaults(self.db.clone(), self.my_panel.clone());
                             }
                         }
                         ui.separator();
@@ -450,22 +452,7 @@ impl eframe::App for TemplateApp {
                         self.db = Some(db);
                     }
                 }
-                if self.db.is_none() {
-                    ui.vertical_centered(|ui| {
 
-                        large_button(ui, "Open Database", ||{
-                            let tx = self.tx.clone().expect("tx channel exists");
-                            tokio::spawn(async move {
-                                let db = open_db().await.unwrap();
-                                if let Err(_) = tx.send(db).await {
-                                    // eprintln!("Failed to send db");
-                                }
-                            });
-
-                        });
-                    });
-                    return; // Return early if database is not loaded
-                }
                 if let Some(db)  = &self.db {
                     ui.horizontal(|_| {});
                 
@@ -475,6 +462,7 @@ impl eframe::App for TemplateApp {
                         ui.label(format!("{} records", &db.size));
                         
                     });
+                
                     ui.horizontal(|_| {});
                     ui.separator();
                     ui.horizontal(|_| {});
@@ -482,267 +470,15 @@ impl eframe::App for TemplateApp {
 
                     match self.my_panel {
                         Panel::Find => {
-                            ui.heading("Find and Replace");
-                            ui.label("Note: Search is Case Sensitive");
-                            ui.separator();
-                            ui.horizontal(|ui| {
-                                ui.label("Find Text: ");
-                                ui.text_edit_singleline(&mut self.find);
-                                
-                            });
-                            ui.horizontal(|ui| {
-                                ui.label("Replace: ");
-                                ui.add_space(8.0);
-                                ui.text_edit_singleline(&mut self.replace);
-                            });
-                            ui.horizontal(|ui| {
-                                ui.label("in Column: ");
-                                combo_box(ui, "find_column", &mut self.column, &db.columns);
-                            });
-                            ui.separator();
-                            ui.checkbox(&mut self.dirty,"Mark Records as Dirty?");
-                            ui.label("Dirty Records are audio files with metadata that is not embedded");
-                            ui.separator();
-                
-                            if self.find.is_empty() {
-                                return;
-                            }
-                            if ui.button("Search").clicked() {
-                                self.replace_safety = true;
-                             
-                                let tx = self.find_tx.clone().expect("tx channel exists");
-                                let pool = db.pool.clone();
-                                let mut find = self.find.clone();
-                                let mut column = self.column.clone();
-                                tokio::spawn(async move {
-                                    let count = smreplace_get(&pool, &mut find, &mut column).await.unwrap();
-                                    if let Err(_) = tx.send(count).await {
-                                        // eprintln!("Failed to send db");
-                                    }
-                                });
-                                
-                                
-                            }
-                            if let Some(rx) = self.find_rx.as_mut() {
-                                if let Ok(count) = rx.try_recv() {
-                                    self.count = count;
-                                }
-                            }
-                            if self.replace_safety {
-                                ui.label(format!("Found {} records matching '{}' in {} of SM database: {}", self.count, self.find, self.column, db.name));
-                                if self.count == 0 {return;}
-                                ui.label(format!("Replace with \"{}\" ?", self.replace));
-                                ui.label(format!("This is NOT undoable"));
-                                ui.separator();
-                                ui.horizontal(|ui| {
-
-                                    if ui.button("Proceed").clicked() {
-                                        // let tx = self.find_tx.clone().expect("tx channel exists");
-                                        let pool = db.pool.clone();
-                                        let mut find = self.find.clone();
-                                        let mut replace = self.replace.clone();
-                                        let mut column = self.column.clone();
-                                        let dirty = self.dirty;
-                                        tokio::spawn(async move {
-                                            smreplace_process(&pool, &mut find, &mut replace, &mut column, dirty).await;
-                                            // if let Err(_) = tx.send(count).await {
-                                            //     eprintln!("Failed to send db");
-                                            // }
-                                        });
-                                        self.replace_safety = false;
-                                    }
-                                    if ui.button("Cancel").clicked() {
-                                        self.count = 0;
-                                        self.replace_safety = false;
-                                    }
-                                });
-                            }
-                            else if self.count > 0 {
-                                ui.label(format!("{} records replaced", self.count));
-                            }
-                                
+                            self.find_panel(ui);      
                         }
+
                         Panel::Duplicates => {
-                            ui.heading(RichText::new("Search for Duplicate Records").strong());
-                
-                            ui.checkbox(&mut self.main.search, "Basic Duplicate Filename Search");
-                                
-                                //GROUP GROUP GROUP GROUP
-                                ui.horizontal(|ui| {
-                                    ui.add_space(24.0);
-                                    ui.checkbox(&mut self.group.search, "Group Duplicate Filename Search by: ");
-                                    combo_box(ui, "group", &mut self.group.selected, &db.columns);
-                                    
-                                    
-                                });
-                                ui.horizontal(|ui| {
-                                    ui.add_space(44.0);
-                                    ui.label("Records without group entry: ");
-                                    ui.radio_value(&mut self.group_null, false, "Skip/Ignore");
-                                    ui.radio_value(&mut self.group_null, true, "Process Together");
-                                    // ui.checkbox(&mut self.group_null, "Process records without defined group together, or skip?");
-                                });
-                                ui.horizontal( |ui| {
-                                    if self.group.working { ui.spinner();}
-                                    else {ui.add_space(24.0);}
-                                    ui.label(RichText::new(self.group.status.clone()).strong());
-                                    
-
-                                });
-                                ui.separator();
-                                //DEEP DIVE DEEP DIVE DEEP DIVE
-                                ui.checkbox(&mut self.deep.search, "Deep Dive Duplicates Search (Slow)");
-                                ui.horizontal( |ui| {
-                                    ui.add_space(24.0);
-                                    ui.label("Filenames ending in .#, .#.#.#, or .M will be examined as possible duplicates");
-                                });
-                                ui.horizontal( |ui| {
-                                    if self.deep.working {ui.spinner();}
-                                    else {ui.add_space(24.0)}
-                                    ui.label(RichText::new(self.deep.status.clone()).strong());
-
-                                });
-
-                                
-
-                                
-
-                                if self.deep.working{
-                                    ui.add( egui::ProgressBar::new(self.deep.progress.0 / self.deep.progress.1)
-                                            // .text("progress")
-                                            .desired_height(4.0)
-                                        );
-                                    ui.label(format!("Progress: {} / {}", self.deep.progress.0, self.deep.progress.1));
-                                }
-
-                                // Use `progress` to update your UI
-                                ui.separator();
-
-                            //TAGS TAGS TAGS TAGS
-                            ui.checkbox(&mut self.tags.search, "Search for Records with AudioSuite Tags");
-
-
-                                ui.horizontal(|ui| {
-                                    ui.add_space(24.0);
-                                    ui.label("Filenames with Common Protools AudioSuite Tags will be marked for removal")
-                                });
-                                
-                                ui.horizontal(|ui| {
-                                    if self.tags.working {ui.spinner();}
-                                    else {ui.add_space(24.0);}
-                                    ui.label(RichText::new(self.tags.status.clone()).strong());
-
-                                });
-                                ui.separator();
-
-                            //COMPARE COMPARE COMPARE COMPARE
-                            ui.horizontal(|ui| {
-                                ui.checkbox(&mut self.compare.search, "Compare against database: ");
-                                if let Some(cdb) = &self.c_db {
-                                    ui.label(&cdb.name);
-                                }
-
-                                
-                                button(ui, "Select DB", ||{
-                                    let tx = self.c_tx.clone().expect("tx channel exists");
-                                        tokio::spawn(async move {
-                                            let db = open_db().await.unwrap();
-                                            if let Err(_) = tx.send(db).await {
-                                                // eprintln!("Failed to send db");
-                                            }
-                                        });
-                                });
-                                if let Some(rx) = self.c_rx.as_mut() {
-                                    if let Ok(db) = rx.try_recv() {
-                                        self.c_db = Some(db);
-                                    }
-                                }
-
-                            });
-                        
-                                ui.horizontal(|ui| {
-                                    ui.add_space(24.0);
-                                    ui.label("Filenames from Target Database found in Comparison Database will be Marked for Removal");
-                                });
-                                ui.horizontal(|ui| {
-                                    if self.compare.working {ui.spinner();}
-                                    else {ui.add_space(24.0)}
-                                    ui.label(RichText::new(self.compare.status.clone()).strong());
-
-                                });
-                                ui.separator();
-
-                            ui.horizontal(|_| {});
-                            ui.checkbox(&mut self.safe, "Create Safety Database of Thinned Records");
-                            ui.checkbox(&mut self.dupes_db, "Create Database of Duplicate Records");
-                            ui.separator();
-
-                            ui.horizontal( |_ui| {});
-                            
-                           
-                            ui.horizontal(|ui| {
-                                
-                                if handles_active(self) {
-                                    self.go_replace = false;
-                                    button(ui, "Cancel", ||abort_all(self));
-
-                                } else {self.go_replace = true;
-                                
-                                    if  ui.input(|i| i.modifiers.alt ) {
-                                        if ui.button("Search and Remove Duplicates").clicked() {
-                                            abort_all(self);
-                                            self.go_search = true;
-                                            self.go_replace = false;
-                                            gather_duplicates(self);
-                                        }
-                                    } else {
-                                        if ui.button("Search for Duplicates").clicked() {
-                                            // self.gather_dupes = true;
-                                            gather_duplicates(self);
-                                        }
-    
-                                    }
-                                }
-                                if self.main.records.len() > 0 && !handles_active(self) {
-                                    
-
-                                    self.main.status = format!("{} total records marked for removal", self.main.records.len());
-
-                                    if ui.button("Remove Duplicates").clicked() {
-                                       remove_duplicates(self);
-                                    }
-                                }
-
-
-                                if self.go_replace && self.go_search {
-                                    self.go_replace = false;
-                                    self.go_search = false;
-                                    remove_duplicates(self);
-                                }
-
-                            });
-                         
-                            ui.horizontal( |ui| {
-                                if self.main.working {ui.spinner();}
-                                ui.label(RichText::new(self.main.status.clone()).strong());
-
-                            });
-
-                    
-                        
-                            if self.main.working{
-                                ui.add( egui::ProgressBar::new(self.main.progress.0 / self.main.progress.1)
-                                // .text("progress")
-                                .desired_height(4.0)
-                            );
-
+                            self.duplictes_panel(ui);         
                         }
-                            receive_async_data(self);
-                            
-                        }
+
                         Panel::Order => {
-                            self.order_panel(ui);
-                            
+                            self.order_panel(ui); 
                         }
 
                         Panel:: OrderText => {
@@ -757,7 +493,23 @@ impl eframe::App for TemplateApp {
 
 
                     }
+                    
+                } else {
+                    ui.vertical_centered(|ui| {
+
+                        large_button(ui, "Open Database", ||{
+                            let tx = self.tx.clone().expect("tx channel exists");
+                            tokio::spawn(async move {
+                                let db = open_db().await.unwrap();
+                                if let Err(_) = tx.send(db).await {
+                                    // eprintln!("Failed to send db");
+                                }
+                            });
+
+                        });
+                    });
                 }
+                
 
         });
     }
@@ -766,6 +518,274 @@ impl eframe::App for TemplateApp {
 }
 
 impl TemplateApp {
+    fn find_panel(&mut self, ui: &mut egui::Ui) {
+        if let Some(db)  = &self.db {
+            ui.horizontal(|_| {});
+        
+            ui.vertical_centered(|ui| {
+    
+                ui.heading(RichText::new(&db.name).size(24.0).strong().extra_letter_spacing(5.0));
+                ui.label(format!("{} records", &db.size));
+                
+            });
+            ui.heading("Find and Replace");
+            ui.label("Note: Search is Case Sensitive");
+            ui.separator();
+            ui.horizontal(|ui| {
+                ui.label("Find Text: ");
+                ui.text_edit_singleline(&mut self.find);
+                
+            });
+            ui.horizontal(|ui| {
+                ui.label("Replace: ");
+                ui.add_space(8.0);
+                ui.text_edit_singleline(&mut self.replace);
+            });
+            ui.horizontal(|ui| {
+                ui.label("in Column: ");
+                combo_box(ui, "find_column", &mut self.column, &db.columns);
+            });
+            ui.separator();
+            ui.checkbox(&mut self.dirty,"Mark Records as Dirty?");
+            ui.label("Dirty Records are audio files with metadata that is not embedded");
+            ui.separator();
+
+            if self.find.is_empty() {
+                return;
+            }
+            if ui.button("Search").clicked() {
+                self.replace_safety = true;
+                
+                let tx = self.find_tx.clone().expect("tx channel exists");
+                let pool = db.pool.clone();
+                let mut find = self.find.clone();
+                let mut column = self.column.clone();
+                tokio::spawn(async move {
+                    let count = smreplace_get(&pool, &mut find, &mut column).await.unwrap();
+                    if let Err(_) = tx.send(count).await {
+                        // eprintln!("Failed to send db");
+                    }
+                });
+                
+                
+            }
+            if let Some(rx) = self.find_rx.as_mut() {
+                if let Ok(count) = rx.try_recv() {
+                    self.count = count;
+                }
+            }
+            if self.replace_safety {
+                ui.label(format!("Found {} records matching '{}' in {} of SM database: {}", self.count, self.find, self.column, db.name));
+                if self.count == 0 {return;}
+                ui.label(format!("Replace with \"{}\" ?", self.replace));
+                ui.label(format!("This is NOT undoable"));
+                ui.separator();
+                ui.horizontal(|ui| {
+
+                    if ui.button("Proceed").clicked() {
+                        // let tx = self.find_tx.clone().expect("tx channel exists");
+                        let pool = db.pool.clone();
+                        let mut find = self.find.clone();
+                        let mut replace = self.replace.clone();
+                        let mut column = self.column.clone();
+                        let dirty = self.dirty;
+                        tokio::spawn(async move {
+                            smreplace_process(&pool, &mut find, &mut replace, &mut column, dirty).await;
+                            // if let Err(_) = tx.send(count).await {
+                            //     eprintln!("Failed to send db");
+                            // }
+                        });
+                        self.replace_safety = false;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        self.count = 0;
+                        self.replace_safety = false;
+                    }
+                });
+            }
+            else if self.count > 0 {
+                ui.label(format!("{} records replaced", self.count));
+            }
+        }
+                          
+    }
+    fn duplictes_panel(&mut self, ui: &mut egui::Ui) {
+        if let Some(db)  = &self.db {
+
+            ui.heading(RichText::new("Search for Duplicate Records").strong());
+                    
+            
+    //GROUP GROUP GROUP GROUP
+                ui.checkbox(&mut self.main.search, "Basic Duplicate Filename Search");
+
+                ui.horizontal(|ui| {
+                    ui.add_space(24.0);
+                    ui.checkbox(&mut self.group.search, "Group Duplicate Filename Search by: ");
+                    combo_box(ui, "group", &mut self.group.selected, &db.columns);  
+                });
+
+                ui.horizontal(|ui| {
+                    ui.add_space(44.0);
+                    ui.label("Records without group entry: ");
+                    ui.radio_value(&mut self.group_null, false, "Skip/Ignore");
+                    ui.radio_value(&mut self.group_null, true, "Process Together");
+                    
+                });
+
+                ui.horizontal( |ui| {
+                    if self.group.working { ui.spinner();}
+                    else {ui.add_space(24.0);}
+                    ui.label(RichText::new(self.group.status.clone()).strong());
+                });
+
+                ui.separator();
+
+
+    //DEEP DIVE DEEP DIVE DEEP DIVE
+                ui.checkbox(&mut self.deep.search, "Deep Dive Duplicates Search (Slow)");
+
+                ui.horizontal( |ui| {
+                    ui.add_space(24.0);
+                    ui.label("Filenames ending in .#, .#.#.#, or .M will be examined as possible duplicates");
+                });
+
+                ui.horizontal( |ui| {
+                    if self.deep.working {ui.spinner();}
+                    else {ui.add_space(24.0)}
+                    ui.label(RichText::new(self.deep.status.clone()).strong());
+    
+                });
+    
+                if self.deep.working{
+                    ui.add( egui::ProgressBar::new(self.deep.progress.0 / self.deep.progress.1)
+                            // .text("progress")
+                            .desired_height(4.0)
+                        );
+                    ui.label(format!("Progress: {} / {}", self.deep.progress.0, self.deep.progress.1));
+                }
+                
+                ui.separator();
+    
+    //TAGS TAGS TAGS TAGS
+                ui.checkbox(&mut self.tags.search, "Search for Records with AudioSuite Tags");
+        
+        
+                ui.horizontal(|ui| {
+                    ui.add_space(24.0);
+                    ui.label("Filenames with Common Protools AudioSuite Tags will be marked for removal")
+                });
+                
+                ui.horizontal(|ui| {
+                    if self.tags.working {ui.spinner();}
+                    else {ui.add_space(24.0);}
+                    ui.label(RichText::new(self.tags.status.clone()).strong());
+    
+                });
+                ui.separator();
+    
+    //COMPARE COMPARE COMPARE COMPARE
+                    ui.horizontal(|ui| {
+                        ui.checkbox(&mut self.compare.search, "Compare against database: ");
+                        if let Some(cdb) = &self.c_db {
+                            ui.label(&cdb.name);
+                        }
+            
+                        
+                        button(ui, "Select DB", ||{
+                            let tx = self.c_tx.clone().expect("tx channel exists");
+                                tokio::spawn(async move {
+                                    let db = open_db().await.unwrap();
+                                    if let Err(_) = tx.send(db).await {
+                                        // eprintln!("Failed to send db");
+                                    }
+                                });
+                        });
+                        if let Some(rx) = self.c_rx.as_mut() {
+                            if let Ok(db) = rx.try_recv() {
+                                self.c_db = Some(db);
+                            }
+                        }
+            
+                    });
+                
+                    ui.horizontal(|ui| {
+                        ui.add_space(24.0);
+                        ui.label("Filenames from Target Database found in Comparison Database will be Marked for Removal");
+                    });
+                    ui.horizontal(|ui| {
+                        if self.compare.working {ui.spinner();}
+                        else {ui.add_space(24.0)}
+                        ui.label(RichText::new(self.compare.status.clone()).strong());
+        
+                    });
+                    ui.separator();
+
+    // DELETION PREFERENCES
+                ui.horizontal(|_| {});
+                ui.checkbox(&mut self.safe, "Create Safety Database of Thinned Records");
+                ui.checkbox(&mut self.dupes_db, "Create Database of Duplicate Records");
+                ui.separator();
+    
+            ui.horizontal( |_ui| {});
+            
+            
+            ui.horizontal(|ui| {
+                
+                if handles_active(self) {
+                    self.go_replace = false;
+                    button(ui, "Cancel", ||abort_all(self));
+    
+                } else {self.go_replace = true;
+                
+                    if  ui.input(|i| i.modifiers.alt ) {
+                        button(ui, "Search and Remove Duplicates", || {
+                            self.go_search = true;
+                            self.go_replace = false;
+                            gather_duplicates(self);
+                        });
+                    } else {
+                        button(ui, "Search for Duplicates", || gather_duplicates(self));
+                       
+    
+                    }
+                }
+                if self.main.records.len() > 0 && !handles_active(self) {
+                    
+    
+                    self.main.status = format!("{} total records marked for removal", self.main.records.len());
+    
+                    if ui.button("Remove Duplicates").clicked() {
+                        remove_duplicates(self);
+                    }
+                }
+    
+    
+                if self.go_replace && self.go_search {
+                    self.go_replace = false;
+                    self.go_search = false;
+                    remove_duplicates(self);
+                }
+    
+            });
+            
+            ui.horizontal( |ui| {
+                if self.main.working {ui.spinner();}
+                ui.label(RichText::new(self.main.status.clone()).strong());
+    
+            });
+    
+    
+        
+            if self.main.working{
+                ui.add( egui::ProgressBar::new(self.main.progress.0 / self.main.progress.1)
+                // .text("progress")
+                .desired_height(4.0)
+            );
+    
+        }
+            receive_async_data(self);
+        }
+    }
     fn order_panel(&mut self, ui: &mut egui::Ui) {
         if self.help {order_help(ui)}
                             
@@ -864,7 +884,36 @@ impl TemplateApp {
             self.sel_tags.clear();
         }
     }
+
+    // fn panel_chunk<F>(&mut self, ui: &mut egui::Ui, display: F, config: &Config) 
+    // where
+    // F: FnOnce(),
+    // {
+    //     display();
+
+
+    //     ui.horizontal( |ui| {
+    //         if config.working {ui.spinner();}
+    //         else {ui.add_space(24.0)}
+    //         ui.label(RichText::new(config.status.clone()).strong());
+
+    //     });
+
+    //     if config.working{
+    //         ui.add( egui::ProgressBar::new(config.progress.0 / config.progress.1)
+    //                 // .text("progress")
+    //                 .desired_height(4.0)
+    //             );
+    //         ui.label(format!("Progress: {} / {}", config.progress.0, config.progress.1));
+    //     }
+    //     ui.separator();
+    // }
+
+
 }
+
+
+
 
 pub fn order_toolbar(ui: &mut egui::Ui, app: &mut TemplateApp) {
     ui.horizontal(|ui| {
@@ -905,6 +954,7 @@ pub fn order_toolbar(ui: &mut egui::Ui, app: &mut TemplateApp) {
 
 
 pub fn gather_duplicates(app: &mut TemplateApp) {
+    abort_all(app);
     app.main.records.clear();
     if let Some(db) = app.db.clone() {
     
@@ -1002,97 +1052,11 @@ fn receive_async_data(app: &mut TemplateApp) {
     if let Some(records) = app.compare.receive_hashset() {
         app.main.records.extend(records);
     }
-    // if let Some(rx) = app.main.rx.as_mut() {
-    //     if let Ok(records) = rx.try_recv() {
-    //         app.main.handle = None;
-    //         app.main.progress = (0.0, 0.0);
-    //         app.main.working = false;
-    //         app.main.status = format!{"Removed {} duplicates", records.len()};
-    //         app.main.records.clear();
-    //         // abort_all(app);
-    //     }
-    // }
-
-    // if let Some(rx) = app.group.rx.as_mut() {
-    //     if let Ok(records) = rx.try_recv() {
-    //         app.group.records = records;
-    //         app.group.handle = None;
-    //         app.group.working = false;
-    //         app.group.status = format!{"Found {} duplicate filenames", app.group.records.len()};
-    //         app.main.records.extend(app.group.records.clone());
-    //     }
-    // }
-
-    // if let Some(rx) = app.deep.rx.as_mut() {
-        
-    //     if let Ok(records) = rx.try_recv() {
-    //         app.deep.records = records;
-    //         app.deep.handle = None;
-    //         app.deep.working = false;
-    //         app.deep.status = format!{"Found {} records with similar filenames", app.deep.records.len()};
-    //         app.main.records.extend(app.deep.records.clone());
-    //     }
-    // }
     
-
-    // if let Some(rx) = app.tags.rx.as_mut() {
-    //     if let Ok(records) = rx.try_recv() {
-    //         app.tags.records = records;
-    //         app.tags.handle = None;
-    //         app.tags.working = false;
-    //         app.tags.status = format!{"Found {} records with matching tags", app.tags.records.len()};
-    //         app.main.records.extend(app.tags.records.clone());
-    //     }
-    // }
-    
-    // if let Some(rx) = app.compare.rx.as_mut() {
-    //     if let Ok(records) = rx.try_recv() {
-    //         app.compare.records = records;
-    //         app.compare.handle = None;
-    //         app.compare.working = false;
-    //         app.compare.status = format!{"Found {} overlapping records in {}", app.compare.records.len(), app.c_db.clone().unwrap().name};
-    //         app.main.records.extend(app.compare.records.clone());
-    //     }
-    // }
-
     app.main.receive_progress();
     app.main.receive_status();
     app.deep.receive_progress();
     app.deep.receive_status();
-
-
-
-    // if let Some(progress_receiver) = &mut app.main.progress_receiver {
-    //     // Update progress state based on messages
-    //     while let Ok(message) = progress_receiver.try_recv() {
-    //         let ProgressMessage::Update(current, total) = message; 
-    //         app.main.progress = (current as f32, total as f32);
-    //     }
-    // }
-
-    // if let Some(status_receiver) = &mut app.main.status_receiver {
-    //     // Update progress state based on messages
-    //     while let Ok(message) = status_receiver.try_recv() {
-    //         // let ProgressMessage::Update(current, total) = message; 
-    //         app.main.status = message;
-    //     }
-    // }
-
-    // if let Some(progress_receiver) = &mut app.deep.progress_receiver {
-    //     // Update progress state based on messages
-    //     while let Ok(message) = progress_receiver.try_recv() {
-    //         let ProgressMessage::Update(current, total) = message; 
-    //         app.deep.progress = (current as f32, total as f32);
-    //     }
-    // }
-
-    // if let Some(status_receiver) = &mut app.deep.status_receiver {
-    //     // Update progress state based on messages
-    //     while let Ok(message) = status_receiver.try_recv() {
-    //         // let ProgressMessage::Update(current, total) = message; 
-    //         app.deep.status = message;
-    //     }
-    // }
 
 }
 
@@ -1122,7 +1086,6 @@ fn remove_duplicates(app: &mut TemplateApp) {
         if let Some(sender) = app.main.progress_sender.clone() {
             if let Some(sender2) = app.main.status_sender.clone() {
                 
-
                 wrap_async(
                     &mut app.main, 
                     "Performing Record Removal", 
@@ -1141,10 +1104,8 @@ pub async fn remove_duplicates_go(records: HashSet<FileRecord>, main_db_path: Op
         let main_db = Database::open(main_path.to_string()).await;
         let _result = delete_file_records(&main_db.pool, &records, sender.clone(), sender2.clone()).await;
         if let Some(path) = dupe_db_path {
-            // let dupes_path = path.clone();
             let dupes_db = Database::open(path).await;
             let _result = create_duplicates_db(&dupes_db.pool, &records, sender.clone(), sender2.clone()).await;
-            // let _result = create_duplicates_db2(&main_path, &dupes_path, &records).await;
         }
     }
     Ok(records)
@@ -1159,51 +1120,6 @@ fn abort_all(app: &mut TemplateApp) {
     app.deep.abort();
     app.tags.abort();
     app.compare.abort();
-
-    // if let Some(handle) = &app.main.handle {
-    //     handle.abort();
-    // }
-    // app.main.handle = None;
-    // app.main.working = false;
-    // app.main.records.clear();
-    // app.main.status.clear();
-    // app.main.progress = (0.0, 0.0);
-
-    // if let Some(handle) = &app.group.handle {
-    //     handle.abort();
-    // }
-    // app.group.handle = None;
-    // app.group.working = false;
-    // app.group.records.clear();
-    // app.group.status.clear();
-    // app.group.progress = (0.0, 0.0);
-
-    // if let Some(handle) = &app.deep.handle {
-    //     handle.abort();
-    // }
-    // app.deep.handle = None;
-    // app.deep.working = false;
-    // app.deep.records.clear();
-    // app.deep.status.clear();
-    // app.deep.progress = (0.0, 0.0);
-
-    // if let Some(handle) = &app.tags.handle {
-    //     handle.abort();
-    // }
-    // app.tags.handle = None;
-    // app.tags.working = false;
-    // app.tags.records.clear();
-    // app.tags.status.clear();
-    // app.tags.progress = (0.0, 0.0);
-
-    // if let Some(handle) = &app.compare.handle {
-    //     handle.abort();
-    // }
-    // app.compare.handle = None;
-    // app.compare.working = false;
-    // app.compare.records.clear();
-    // app.compare.status.clear();
-    // app.compare.progress = (0.0, 0.0);
 }
 
 fn handles_active(app: &TemplateApp) -> bool {
