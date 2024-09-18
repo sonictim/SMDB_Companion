@@ -3,6 +3,7 @@ use crate::processing::*;
 use eframe::egui::{self, RichText};
 use serde::Deserialize;
 use sqlx::sqlite::SqlitePool;
+use tokio::sync::Semaphore;
 use std::collections::HashSet;
 use std::fs::{self};
 use std::hash::Hash;
@@ -210,6 +211,44 @@ pub enum ProgressMessage {
     Update(usize, usize), // (current, total)
 }
 
+#[derive(PartialEq, serde::Serialize, Deserialize, Clone, Copy)]
+enum Panel {
+    Duplicates,
+    Order,
+    OrderText,
+    Tags,
+    Find,
+}
+
+#[derive(PartialEq, serde::Serialize, Deserialize, Clone, Copy)]
+enum OrderOperator {
+    Largest,
+    Smallest,
+    Is,
+    IsNot,
+    Contains,
+    DoesNotContain,
+}
+
+#[derive(PartialEq, serde::Serialize, Deserialize, Clone)]
+pub struct Order {
+    column: String,
+    operator: OrderOperator,
+    pattern: Option<String>,
+}
+
+impl Order {
+    fn parse(&self) -> String {
+
+    let text = match self.operator {
+        OrderOperator::Largest => format!{"{} DESC", self.column},
+        OrderOperator::Smallest => format!("{} ASC", self.column),
+        _ => "".to_string(),
+    }
+   text
+}
+}
+
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
@@ -273,15 +312,8 @@ pub struct TemplateApp {
     go_search: bool,
     #[serde(skip)]
     go_replace: bool,
-}
 
-#[derive(PartialEq, serde::Serialize, Deserialize, Clone, Copy)]
-enum Panel {
-    Duplicates,
-    Order,
-    OrderText,
-    Tags,
-    Find,
+    order: Vec<Order>,
 }
 
 impl Default for TemplateApp {
@@ -329,6 +361,7 @@ impl Default for TemplateApp {
             gather_dupes: false,
             go_search: false,
             go_replace: false,
+            order: Vec::new(),
         };
         app.tags.list = default_tags();
         app.main.list = default_order();
