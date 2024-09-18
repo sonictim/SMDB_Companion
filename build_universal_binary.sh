@@ -4,11 +4,13 @@
 
 # Set the binary name
 BINARY_NAME="SMDB_Companion"
+VERSION=$(awk '/\[package\]/ {flag=1} flag && /^version =/ {print $3; exit}' Cargo.toml | tr -d '"')
 
+echo Building and Bundling Version: $VERSION
 
 # Add the necessary targets
-rustup target add aarch64-apple-darwin x86_64-apple-darwin
-cargo install cargo-bundle
+#rustup target add aarch64-apple-darwin x86_64-apple-darwin
+#cargo install cargo-bundle
 
 # Build for both architectures
 cargo bundle --release --target aarch64-apple-darwin
@@ -26,10 +28,11 @@ file target/universal/release/$BINARY_NAME.app/Contents/MacOS/$BINARY_NAME
 
 
 
-
 # Define variables for paths
-APP_PATH="target/universal/release/SMDB_Companion.app"
-ZIP_PATH="/Users/tfarrell/Library/CloudStorage/GoogleDrive-tim@farrellsound.com/Shared drives/PUBLIC/SMDB_Companion/SMDB_Companion.zip"
+APP_PATH="target/universal/release/$BINARY_NAME.app"
+ZIP_PATH="/Users/tfarrell/Library/CloudStorage/GoogleDrive-tim@farrellsound.com/Shared drives/PUBLIC/$BINARY_NAME/$BINARY_NAME.v$VERSION.zip"
+
+/bin/rm -rf /Users/tfarrell/Library/CloudStorage/GoogleDrive-tim@farrellsound.com/Shared\ drives/PUBLIC/$BINARY_NAME/$BINARY_NAME*
 
 # Create a temporary directory to hold just the .app bundle
 TEMP_DIR=$(mktemp -d)
