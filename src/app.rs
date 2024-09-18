@@ -243,6 +243,7 @@ impl Order {
     let text = match self.operator {
         OrderOperator::Largest => format!{"{} DESC", self.column},
         OrderOperator::Smallest => format!("{} ASC", self.column),
+        OrderOperator::Is => format!("{} ASC", self.column),
         _ => "".to_string(),
     }
    text
