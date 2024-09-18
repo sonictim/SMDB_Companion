@@ -716,6 +716,23 @@ pub fn default_order() -> Vec<String> {
     ];
     DEFAULT_ORDER_VEC.map(|s| s.to_string()).to_vec()
 }
+pub fn default_order_friendly() -> Vec<String> {
+    const DEFAULT_ORDER_FRIENDLY: [&str; 12] = [
+        "Description is NOT Empty",
+        "Pathname does NOT contain 'Audio Files'",
+        "Pathname contains 'LIBRARIES'",
+        "Pathname contains 'LIBRARY'",
+        "Pathname contains '/LIBRARY'",
+        "Pathname contains 'LIBRARY/'",
+        "Largest Duration",
+        "Largest Channel Count",
+        "Largest Sample Rate",
+        "Largest Bit Depth",
+        "Smallest BWDate",
+        "Smallest Scanned Date",
+    ];
+    DEFAULT_ORDER_FRIENDLY.map(|s| s.to_string()).to_vec()
+}
 
 pub fn tjf_order() -> Vec<String> {
     const TJF_ORDER_VEC: [&str; 22] = [
@@ -743,4 +760,32 @@ pub fn tjf_order() -> Vec<String> {
         "scannedDate ASC",
     ];
     TJF_ORDER_VEC.map(|s| s.to_string()).to_vec()
+}
+
+pub fn tjf_order_friendly() -> Vec<String> {
+    const TJF_ORDER_FRIENDLY: [&str; 22] = [
+        "Pathname contains 'TJF RECORDINGS'",
+        "Pathname contains 'LIBRARIES'",
+        "Pathname does not contain 'SHOWS/Tim Farrell'",
+        "Description is NOT Empty",
+        "Pathname does NOT contain 'Audio Files'",
+        "Pathname contains 'RECORD'",
+        "Pathname contains 'CREATED SFX'",
+        "Pathname contains 'CREATED FX'",
+        "Pathname contains 'LIBRARY'",
+        "Pathname contains '/LIBRARY'",
+        "Pathname contains 'LIBRARY/'",
+        "Pathname contains 'SIGNATURE'",
+        "Pathname contains 'PULLS'",
+        "Pathname does NOT contain 'EDIT'",
+        "Pathname does NOT contain 'MIX'",
+        "Pathname does NOT contain 'SESSION'",
+        "Largest Duration",
+        "Largest Channel Count",
+        "Largest Sample Rate",
+        "Largest Bit Depth",
+        "Smallest BWDate",
+        "Smallest Scanned Date",
+    ];
+    TJF_ORDER_FRIENDLY.map(|s| s.to_string()).to_vec()
 }

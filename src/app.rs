@@ -3,7 +3,6 @@ use crate::processing::*;
 use eframe::egui::{self, RichText};
 use serde::Deserialize;
 use sqlx::sqlite::SqlitePool;
-use tokio::sync::Semaphore;
 use std::collections::HashSet;
 use std::fs::{self};
 use std::hash::Hash;
@@ -212,7 +211,7 @@ pub enum ProgressMessage {
 }
 
 #[derive(PartialEq, serde::Serialize, Deserialize, Clone, Copy)]
-enum Panel {
+pub enum Panel {
     Duplicates,
     Order,
     OrderText,
@@ -221,33 +220,43 @@ enum Panel {
 }
 
 #[derive(PartialEq, serde::Serialize, Deserialize, Clone, Copy)]
-enum OrderOperator {
+pub enum OrderOperator {
     Largest,
     Smallest,
-    Is,
-    IsNot,
     Contains,
     DoesNotContain,
+    Is,
+    IsNot,
+    IsEmpty,
+    IsNotEmpty,
 }
 
-#[derive(PartialEq, serde::Serialize, Deserialize, Clone)]
-pub struct Order {
-    column: String,
-    operator: OrderOperator,
-    pattern: Option<String>,
-}
-
-impl Order {
-    fn parse(&self) -> String {
-
-    let text = match self.operator {
-        OrderOperator::Largest => format!{"{} DESC", self.column},
-        OrderOperator::Smallest => format!("{} ASC", self.column),
-        OrderOperator::Is => format!("{} ASC", self.column),
-        _ => "".to_string(),
+impl OrderOperator {
+    fn as_str(&self) -> &'static str {
+        match self {
+            OrderOperator::Largest => "Largest",
+            OrderOperator::Smallest => "Smallest",
+            OrderOperator::Is => "is",
+            OrderOperator::IsNot => "is NOT",
+            OrderOperator::Contains => "Contains",
+            OrderOperator::DoesNotContain => "Does NOT Contain",
+            OrderOperator::IsEmpty => "Is Empty",
+            OrderOperator::IsNotEmpty => "Is NOT Empty",
+        }
     }
-   text
-}
+
+    fn variants() -> &'static [OrderOperator] {
+        &[
+            OrderOperator::Largest,
+            OrderOperator::Smallest,
+            OrderOperator::Contains,
+            OrderOperator::DoesNotContain,
+            OrderOperator::Is,
+            OrderOperator::IsNot,
+            OrderOperator::IsEmpty,
+            OrderOperator::IsNotEmpty,
+        ]
+    }
 }
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
@@ -314,7 +323,11 @@ pub struct TemplateApp {
     #[serde(skip)]
     go_replace: bool,
 
-    order: Vec<Order>,
+    order_friendly: Vec<String>,
+    order_column: String,
+    order_operator: OrderOperator,
+    #[serde(skip)]
+    order_input: String,
 }
 
 impl Default for TemplateApp {
@@ -362,10 +375,14 @@ impl Default for TemplateApp {
             gather_dupes: false,
             go_search: false,
             go_replace: false,
-            order: Vec::new(),
+            order_friendly: Vec::new(),
+            order_column: "Pathname".to_owned(),
+            order_operator: OrderOperator::Contains,
+            order_input: String::new(),
         };
         app.tags.list = default_tags();
         app.main.list = default_order();
+        app.order_friendly = default_order_friendly();
 
         app
     }
@@ -396,6 +413,7 @@ impl TemplateApp {
         self.db = db;
         self.my_panel = panel;
         self.main.list = tjf_order();
+        self.order_friendly = tjf_order_friendly();
         self.tags.list = tjf_tags();
         self.deep.search = true;
         self.tags.search = true;
@@ -909,6 +927,9 @@ impl TemplateApp {
         if self.help {
             order_help(ui)
         }
+        ui.label("Top of the list is higher priority");
+        order_toolbar2(ui, self);
+        ui.separator();
 
         ui.with_layout(
             egui::Layout::top_down_justified(egui::Align::Center),
@@ -929,9 +950,22 @@ impl TemplateApp {
                                 .spacing([20.0, 8.0])
                                 .striped(true)
                                 .show(ui, |ui| {
-                                    for (index, line) in self.main.list.iter_mut().enumerate() {
+                                    // for (index, line) in self.main.list.iter_mut().enumerate() {
+                                    for (index, line) in self.order_friendly.iter_mut().enumerate()
+                                    {
                                         let checked = self.sel_line == Some(index);
-                                        if ui.selectable_label(checked, line.clone()).clicked() {
+                                        if ui
+                                            .selectable_label(
+                                                checked,
+                                                RichText::new(format!(
+                                                    "{:02} : {}",
+                                                    index + 1,
+                                                    line.clone()
+                                                ))
+                                                .size(14.0),
+                                            )
+                                            .clicked()
+                                        {
                                             self.sel_line =
                                                 if checked { None } else { Some(index) };
                                         }
@@ -947,11 +981,7 @@ impl TemplateApp {
 
         order_toolbar(ui, self);
 
-        ui.separator();
-        if ui.button("Text Editor").clicked() {
-            self.order_text = self.main.list.join("\n");
-            self.my_panel = Panel::OrderText;
-        }
+        // ui.separator();
     }
 
     fn order_text_panel(&mut self, ui: &mut egui::Ui) {
@@ -986,7 +1016,10 @@ impl TemplateApp {
                         // Check if current index is in `sel_tags`
                         let is_selected = self.sel_tags.contains(&index);
 
-                        if ui.selectable_label(is_selected, tag.clone()).clicked() {
+                        if ui
+                            .selectable_label(is_selected, RichText::new(tag.clone()).size(14.0))
+                            .clicked()
+                        {
                             if is_selected {
                                 // Deselect
                                 self.sel_tags.retain(|&i| i != index);
@@ -1058,38 +1091,124 @@ impl TemplateApp {
 
 pub fn order_toolbar(ui: &mut egui::Ui, app: &mut TemplateApp) {
     ui.horizontal(|ui| {
-        if ui.button("Up").clicked() {
+        if ui.button("Move Up").clicked() {
             if let Some(index) = app.sel_line {
                 if index > 0 {
                     app.sel_line = Some(index - 1);
                     app.main.list.swap(index, index - 1);
+                    app.order_friendly.swap(index, index - 1);
                 }
             }
         }
-        if ui.button("Down").clicked() {
+        if ui.button("Move Down").clicked() {
             if let Some(index) = app.sel_line {
                 if index < app.main.list.len() - 1 {
                     app.sel_line = Some(index + 1);
                     app.main.list.swap(index, index + 1);
+                    app.order_friendly.swap(index, index + 1);
                 }
             }
         }
         if ui.button("Remove").clicked() {
             if let Some(index) = app.sel_line {
                 app.main.list.remove(index);
+                app.order_friendly.remove(index);
                 app.sel_line = None;
             }
         }
-        if ui.button("Add Line:").clicked && !app.new_line.is_empty() {
-            app.main.list.insert(0, app.new_line.clone());
-            app.new_line.clear();
+
+        if ui.input(|i| i.modifiers.alt) && ui.button("Text Editor").clicked() {
+            app.order_text = app.main.list.join("\n");
+            app.my_panel = Panel::OrderText;
+        }
+        // if ui.button("Add Line:").clicked && !app.new_line.is_empty() {
+        //     app.main.list.insert(0, app.new_line.clone());
+        //     app.new_line.clear();
+        // }
+
+        // ui.text_edit_singleline(&mut app.new_line);
+        // if ui.button("Help").clicked {
+        //     app.help = !app.help
+        // }
+    });
+}
+pub fn order_toolbar2(ui: &mut egui::Ui, app: &mut TemplateApp) {
+    ui.horizontal(|ui| {
+        // ui.label("Add Line: ");
+        if let Some(db) = &app.db.clone() {
+            combo_box(ui, "order_column", &mut app.order_column, &db.columns);
+        } else {
+            combo_box(
+                ui,
+                "order_column",
+                &mut "no database".to_string(),
+                &app.group.list,
+            );
+        }
+        enum_combo_box(ui, &mut app.order_operator);
+        match app.order_operator {
+            OrderOperator::Largest
+            | OrderOperator::Smallest
+            | OrderOperator::IsEmpty
+            | OrderOperator::IsNotEmpty => {}
+            _ => {
+                ui.text_edit_singleline(&mut app.order_input);
+            }
         }
 
-        ui.text_edit_singleline(&mut app.new_line);
-        if ui.button("Help").clicked {
-            app.help = !app.help
+        if ui.button("Add Line").clicked {
+            match app.order_operator {
+                OrderOperator::Largest
+                | OrderOperator::Smallest
+                | OrderOperator::IsEmpty
+                | OrderOperator::IsNotEmpty => {
+                    app.main.list.insert(
+                        0,
+                        parse_to_sql(
+                            app.order_column.clone(),
+                            app.order_operator,
+                            app.order_input.clone(),
+                        ),
+                    );
+                    app.order_friendly.insert(
+                        0,
+                        parse_to_user_friendly(
+                            app.order_column.clone(),
+                            app.order_operator,
+                            app.order_input.clone(),
+                        ),
+                    );
+                    app.order_input.clear();
+                }
+                _ => {
+                    if !app.order_input.is_empty() {
+                        app.main.list.insert(
+                            0,
+                            parse_to_sql(
+                                app.order_column.clone(),
+                                app.order_operator,
+                                app.order_input.clone(),
+                            ),
+                        );
+                        app.order_friendly.insert(
+                            0,
+                            parse_to_user_friendly(
+                                app.order_column.clone(),
+                                app.order_operator,
+                                app.order_input.clone(),
+                            ),
+                        );
+                        app.order_input.clear();
+                    }
+                }
+            }
         }
+        // if ui.button("Help").clicked {
+        //     app.help = !app.help
+        // }
     });
+    // ui.separator();
+    // }
 }
 
 pub fn gather_duplicates(app: &mut TemplateApp) {
@@ -1259,4 +1378,64 @@ fn handles_active(app: &TemplateApp) -> bool {
         || app.deep.handle.is_some()
         || app.tags.handle.is_some()
         || app.compare.handle.is_some()
+}
+
+fn enum_combo_box(ui: &mut egui::Ui, selected_variant: &mut OrderOperator) {
+    egui::ComboBox::from_id_source("variants")
+        .selected_text(selected_variant.as_str())
+        .show_ui(ui, |ui| {
+            for variant in OrderOperator::variants() {
+                ui.selectable_value(selected_variant, *variant, variant.as_str());
+            }
+        });
+}
+
+pub fn parse_to_sql(column: String, operator: OrderOperator, input: String) -> String {
+    match operator {
+        OrderOperator::Largest => format! {"{} DESC", column.to_lowercase()},
+        OrderOperator::Smallest => format!("{} ASC", column.to_lowercase()),
+        OrderOperator::Is => format!(
+            "CASE WHEN {} IS '%{}%' THEN 0 ELSE 1 END ASC",
+            column.to_lowercase(),
+            input
+        ),
+        OrderOperator::IsNot => format!(
+            "CASE WHEN {} IS '%{}%' THEN 1 ELSE 0 END ASC",
+            column.to_lowercase(),
+            input
+        ),
+        OrderOperator::Contains => format!(
+            "CASE WHEN {} LIKE '%{}%' THEN 0 ELSE 1 END ASC",
+            column.to_lowercase(),
+            input
+        ),
+        OrderOperator::DoesNotContain => format!(
+            "CASE WHEN {} LIKE '%{}%' THEN 1 ELSE 0 END ASC",
+            column.to_lowercase(),
+            input
+        ),
+        OrderOperator::IsEmpty => format!(
+            "CASE WHEN {} IS NOT NULL AND {} != '' THEN 1 ELSE 0 END ASC",
+            column.to_lowercase(),
+            column.to_lowercase()
+        ),
+        OrderOperator::IsNotEmpty => format!(
+            "CASE WHEN {} IS NOT NULL AND {} != '' THEN 0 ELSE 1 END ASC",
+            column.to_lowercase(),
+            column.to_lowercase()
+        ),
+    }
+}
+
+pub fn parse_to_user_friendly(column: String, operator: OrderOperator, input: String) -> String {
+    match operator {
+        OrderOperator::Largest => format! {"Largest {}", column},
+        OrderOperator::Smallest => format!("Smallest {} ", column),
+        OrderOperator::Is => format!("{} is '{}'", column, input),
+        OrderOperator::IsNot => format!("{} is NOT '{}'", column, input),
+        OrderOperator::Contains => format!("{} contains '{}'", column, input),
+        OrderOperator::DoesNotContain => format!("{} does NOT contain '{}'", column, input),
+        OrderOperator::IsEmpty => format!("{} is empty", column,),
+        OrderOperator::IsNotEmpty => format!("{} is NOT empty", column,),
+    }
 }
