@@ -1,6 +1,7 @@
 use crate::assets::*;
 use crate::processing::*;
 use eframe::egui::{self, RichText};
+// use rayon::prelude::*;
 use serde::Deserialize;
 use sqlx::sqlite::SqlitePool;
 use std::collections::HashSet;
@@ -328,6 +329,11 @@ pub struct TemplateApp {
     order_operator: OrderOperator,
     #[serde(skip)]
     order_input: String,
+    #[serde(skip)]
+    marked_records: String,
+    #[serde(skip)]
+    records_window: bool,
+    scroll_to_top: bool,
 }
 
 impl Default for TemplateApp {
@@ -379,6 +385,9 @@ impl Default for TemplateApp {
             order_column: "Pathname".to_owned(),
             order_operator: OrderOperator::Contains,
             order_input: String::new(),
+            marked_records: String::new(),
+            records_window: false,
+            scroll_to_top: false,
         };
         app.tags.list = default_tags();
         app.main.list = default_order();
@@ -583,6 +592,56 @@ impl eframe::App for TemplateApp {
                 }
                 empty_line(ui);
             });
+
+            if self.records_window {
+                let available_size = ctx.available_rect(); // Get the full available width and height
+                let width = available_size.width() - 20.0;
+                let height = available_size.height();
+                egui::Window::new("Records Marked for Duplication")
+                    .open(&mut self.records_window) // Control whether the window is open
+                    .resizable(false) // Make window non-resizable if you want it fixed
+                    .min_width(width)
+                    .min_height(height)
+                    .max_width(width)
+                    .max_height(height)
+                    .show(ctx, |ui| {
+                        // ui.label("To Be Implemented\n Testing line break");
+
+                        if self.scroll_to_top {
+                            egui::ScrollArea::vertical()
+                                .max_height(height) // Set the maximum height of the scroll area
+                                .max_width(width)
+                                .scroll_offset(egui::vec2(0.0, 0.0))
+                                .show(ui, |ui| {
+                                    ui.label(RichText::new(&self.marked_records).size(14.0));
+                                });
+                            self.scroll_to_top = false;
+                        } else {
+                            egui::ScrollArea::vertical()
+                                .max_height(height) // Set the maximum height of the scroll area
+                                .max_width(width)
+                                // .scroll_offset(egui::vec2(0.0, 0.0))
+                                .show(ui, |ui| {
+                                    // for filename in &self.marked_records {
+                                    ui.label(RichText::new(&self.marked_records).size(14.0));
+                                    // }
+                                    // ui.set_min_width(width - 20.0);
+                                    // egui::Grid::new("Dupe Records")
+                                    //     .spacing([20.0, 8.0])
+                                    //     .striped(true)
+                                    //     .show(ui, |ui| {
+                                    //         for filename in &self.marked_records {
+                                    //             ui.label(filename);
+                                    //             ui.end_row();
+                                    //         }
+                                    //     });
+                                    // ui.horizontal(|ui| {
+
+                                    // });
+                                });
+                        }
+                    });
+            }
 
             // self.show_version_in_bottom_right(ctx);
         });
@@ -948,7 +1007,20 @@ impl TemplateApp {
                 && !self.main.records.is_empty()
                 && ui.button("Show Records").clicked()
             {
-                ui.label("Not Implemented Yet");
+                let mut marked_records: Vec<&str> = self
+                    .main
+                    .records
+                    .iter()
+                    .map(|s| s.filename.as_str()) // Convert &String to &str
+                    .collect();
+
+                marked_records.sort(); // Sorting the mutable vector of &str
+
+                // Join the sorted records with newline characters and assign to `self.marked_records`
+                self.marked_records = marked_records.join("\n");
+
+                self.scroll_to_top = true;
+                self.records_window = true;
             }
 
             if self.main.working {
@@ -964,9 +1036,9 @@ impl TemplateApp {
         }
     }
     fn order_panel(&mut self, ui: &mut egui::Ui) {
-        if self.help {
-            order_help(ui)
-        }
+        // if self.help {
+        //     order_help(ui)
+        // }
         ui.heading(RichText::new("Duplicate Filename Preservation Priority").strong());
         ui.label("or... How to decide which file to keep when duplicates are found");
         ui.label("Entries at the top of list take precedence to those below");
@@ -1031,9 +1103,9 @@ impl TemplateApp {
     }
 
     fn order_text_panel(&mut self, ui: &mut egui::Ui) {
-        if self.help {
-            order_help(ui)
-        }
+        // if self.help {
+        //     order_help(ui)
+        // }
 
         ui.columns(1, |columns| {
             // columns[0].heading("Duplicate Filename Keeper Priority Order:");
@@ -1140,6 +1212,35 @@ impl TemplateApp {
     //     ui.separator();
     // }
 }
+
+// pub async fn records_window_display(ctx: &egui::Context, app: &mut TemplateApp) {
+//     egui::Window::new("Records Marked for Duplication")
+//         .open(&mut app.records_window) // Control whether the window is open
+//         .show(ctx, |ui| {
+//             ui.label("To Be Implemented");
+//             let width = ui.available_width();
+//             let height = ui.available_height();
+
+//             egui::ScrollArea::vertical()
+//                 .max_height(height) // Set the maximum height of the scroll area
+//                 .show(ui, |ui| {
+//                     ui.horizontal(|ui| {
+//                         ui.set_min_width(width);
+
+//                         egui::Grid::new("Dupe Records")
+//                             .spacing([20.0, 8.0])
+//                             .striped(true)
+//                             .show(ui, |ui| {
+//                                 // Use par_iter() to process in parallel
+//                                 app.marked_records.par_iter().for_each(|filename| {
+//                                     ui.label(filename); // Display each filename
+//                                     ui.end_row(); // Move to the next row
+//                                 });
+//                             });
+//                     });
+//                 });
+//         });
+// }
 
 pub fn order_toolbar(ui: &mut egui::Ui, app: &mut TemplateApp) {
     ui.horizontal(|ui| {

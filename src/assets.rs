@@ -64,24 +64,24 @@ pub fn combo_box(ui: &mut Ui, label: &str, selected: &mut String, list: &Vec<Str
         });
 }
 
-pub fn order_help(ui: &mut Ui) {
-    ui.heading("Column in order of Priority and whether it should be DESCending or ASCending.");
-    ui.label(
-        "These are SQL arguments and Google/ChatGPT can help you figure out how to compose them",
-    );
-    ui.horizontal(|_| {});
-    ui.heading("Examples:");
-    ui.heading("CASE WHEN pathname LIKE '%Audio Files%' THEN 1 ELSE 0 END ASC");
-    ui.label("Records with 'Audio Files' in the path will be removed over something that does not have it");
-    ui.horizontal(|_| {});
-    ui.heading("CASE WHEN pathname LIKE '%LIBRARY%' THEN 0 ELSE 1 END ASC");
-    ui.label(
-        "Records with 'LIBRARY' (not case sensitive) in the path will be kept over records without",
-    );
-    ui.horizontal(|_| {});
-    ui.heading("Rules at the top of the list are prioritized over those below");
-    ui.separator();
-}
+// pub fn order_help(ui: &mut Ui) {
+//     ui.heading("Column in order of Priority and whether it should be DESCending or ASCending.");
+//     ui.label(
+//         "These are SQL arguments and Google/ChatGPT can help you figure out how to compose them",
+//     );
+//     ui.horizontal(|_| {});
+//     ui.heading("Examples:");
+//     ui.heading("CASE WHEN pathname LIKE '%Audio Files%' THEN 1 ELSE 0 END ASC");
+//     ui.label("Records with 'Audio Files' in the path will be removed over something that does not have it");
+//     ui.horizontal(|_| {});
+//     ui.heading("CASE WHEN pathname LIKE '%LIBRARY%' THEN 0 ELSE 1 END ASC");
+//     ui.label(
+//         "Records with 'LIBRARY' (not case sensitive) in the path will be kept over records without",
+//     );
+//     ui.horizontal(|_| {});
+//     ui.heading("Rules at the top of the list are prioritized over those below");
+//     ui.separator();
+// }
 
 //SMALL TAG EDITOR
 
