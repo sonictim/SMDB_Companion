@@ -439,7 +439,7 @@ impl eframe::App for TemplateApp {
 
                 let is_web = cfg!(target_arch = "wasm32");
                 if !is_web {
-                    ui.menu_button("File", |ui| {
+                    ui.menu_button(RichText::new("File").weak(), |ui| {
                         if ui.button("Open Database").clicked() {
                             ui.close_menu();
 
@@ -468,26 +468,46 @@ impl eframe::App for TemplateApp {
                             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                         }
                     });
+                    ui.label(RichText::new("|").weak());
+                    self.panel_tab_bar(ui);
 
-                    ui.menu_button("View", |ui| {
-                        if ui.button("Duplicates Search").clicked() {
-                            ui.close_menu();
-                            self.my_panel = Panel::Duplicates
-                        }
-                        if ui.button("Find & Replace").clicked() {
-                            ui.close_menu();
-                            self.my_panel = Panel::Find
-                        }
-                        ui.separator();
-                        if ui.button("Duplicate Search Logic").clicked() {
-                            ui.close_menu();
-                            self.my_panel = Panel::Order
-                        }
-                        if ui.button("Tag Editor").clicked() {
-                            ui.close_menu();
-                            self.my_panel = Panel::Tags
-                        }
-                    });
+                    // ui.menu_button("View", |ui| {
+                    //     if ui.button("Duplicates Search").clicked() {
+                    //         ui.close_menu();
+                    //         self.my_panel = Panel::Duplicates
+                    //     }
+                    //     if ui.button("Find & Replace").clicked() {
+                    //         ui.close_menu();
+                    //         self.my_panel = Panel::Find
+                    //     }
+                    //     ui.separator();
+                    //     if ui.button("Duplicate Search Logic").clicked() {
+                    //         ui.close_menu();
+                    //         self.my_panel = Panel::Order
+                    //     }
+                    //     if ui.button("Tag Editor").clicked() {
+                    //         ui.close_menu();
+                    //         self.my_panel = Panel::Tags
+                    //     }
+                    // });
+                    // ui.menu_button("Help", |ui| {
+                    //     if ui.button("Show Help").clicked {
+                    //         ui.close_menu();
+                    //         self.help = true;
+                    //     }
+                    // });
+
+                    // // let mut show_help_window = self.help;
+                    // if self.help {
+                    //     egui::Window::new("Records Marked for Duplication")
+                    //         .open(&mut self.help) // Control whether the window is open
+                    //         .show(ctx, |ui| {
+                    //             ui.label("This is a dialog!");
+                    //             // if ui.button("Close").clicked() {
+                    //             //     self.help = false; // Close the window when clicked
+                    //             // }
+                    //         });
+                    // }
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
                         egui::widgets::global_dark_light_mode_buttons(ui);
@@ -505,7 +525,7 @@ impl eframe::App for TemplateApp {
                 }
             }
             if let Some(db) = &self.db {
-                ui.horizontal(|_| {});
+                empty_line(ui);
 
                 ui.vertical_centered(|ui| {
                     ui.heading(
@@ -517,7 +537,7 @@ impl eframe::App for TemplateApp {
                     ui.label(format!("{} records", &db.size));
                 });
             } else {
-                ui.horizontal(|_| {});
+                empty_line(ui);
                 ui.vertical_centered(|ui| {
                     large_button(ui, "Open Database", || {
                         let tx = self.tx.clone().expect("tx channel exists");
@@ -529,15 +549,15 @@ impl eframe::App for TemplateApp {
                 });
             }
 
-            ui.horizontal(|_| {});
-            ui.separator();
-            ui.horizontal(|_| {});
+            //empty_line(ui);
+            // ui.separator();
+            //empty_line(ui);
 
-            self.panel_tab_bar(ui);
+            // self.panel_tab_bar(ui);
 
-            ui.horizontal(|_| {});
+            empty_line(ui);
             ui.separator();
-            ui.horizontal(|_| {});
+            empty_line(ui);
 
             egui::ScrollArea::vertical().show(ui, |ui| {
                 match self.my_panel {
@@ -561,7 +581,7 @@ impl eframe::App for TemplateApp {
                         self.tags_panel(ui);
                     }
                 }
-                ui.horizontal(|_| {});
+                empty_line(ui);
             });
 
             // self.show_version_in_bottom_right(ctx);
@@ -658,9 +678,9 @@ impl TemplateApp {
 
     fn find_panel(&mut self, ui: &mut egui::Ui) {
         if let Some(db) = &self.db {
-            // ui.heading("Find and Replace");
+            ui.heading(RichText::new("Find and Replace").strong());
             ui.label("Note: Search is Case Sensitive");
-            ui.horizontal(|_| {});
+            empty_line(ui);
             // ui.separator();
             ui.horizontal(|ui| {
                 ui.label("Find Text: ");
@@ -675,10 +695,14 @@ impl TemplateApp {
                 ui.label("in Column: ");
                 combo_box(ui, "find_column", &mut self.column, &db.columns);
             });
+            empty_line(ui);
             ui.separator();
+            empty_line(ui);
             ui.checkbox(&mut self.dirty, "Mark Records as Dirty?");
             ui.label("Dirty Records are audio files with metadata that is not embedded");
+            empty_line(ui);
             ui.separator();
+            empty_line(ui);
 
             if self.find.is_empty() {
                 return;
@@ -695,16 +719,20 @@ impl TemplateApp {
                     let _ = tx.send(count).await;
                 });
             }
+            empty_line(ui);
             if let Some(rx) = self.find_rx.as_mut() {
                 if let Ok(count) = rx.try_recv() {
                     self.count = count;
                 }
             }
             if self.replace_safety {
-                ui.label(format!(
-                    "Found {} records matching '{}' in {} of SM database: {}",
-                    self.count, self.find, self.column, db.name
-                ));
+                ui.label(
+                    RichText::new(format!(
+                        "Found {} records matching '{}' in {} of SM database: {}",
+                        self.count, self.find, self.column, db.name
+                    ))
+                    .strong(),
+                );
                 if self.count == 0 {
                     return;
                 }
@@ -737,12 +765,12 @@ impl TemplateApp {
                 ui.label(format!("{} records replaced", self.count));
             }
         } else {
-            ui.heading("No Open Database");
+            ui.heading(RichText::new("No Open Database").weak());
         }
     }
     fn duplictes_panel(&mut self, ui: &mut egui::Ui) {
         if let Some(db) = &self.db {
-            // ui.heading(RichText::new("Search for Duplicate Records").strong());
+            ui.heading(RichText::new("Search for Duplicate Records").strong());
 
             //GROUP GROUP GROUP GROUP
             ui.checkbox(&mut self.main.search, "Basic Duplicate Filename Search");
@@ -866,9 +894,10 @@ impl TemplateApp {
             ui.separator();
 
             // DELETION PREFERENCES
-            ui.horizontal(|_| {});
+            empty_line(ui);
             ui.checkbox(&mut self.safe, "Create Safety Database of Thinned Records");
             ui.checkbox(&mut self.dupes_db, "Create Database of Duplicate Records");
+            empty_line(ui);
             ui.separator();
 
             ui.horizontal(|_ui| {});
@@ -907,6 +936,7 @@ impl TemplateApp {
                     remove_duplicates(self);
                 }
             });
+            empty_line(ui);
 
             ui.horizontal(|ui| {
                 if self.main.working {
@@ -914,6 +944,12 @@ impl TemplateApp {
                 }
                 ui.label(RichText::new(self.main.status.clone()).strong());
             });
+            if !handles_active(self)
+                && !self.main.records.is_empty()
+                && ui.button("Show Records").clicked()
+            {
+                ui.label("Not Implemented Yet");
+            }
 
             if self.main.working {
                 ui.add(
@@ -924,17 +960,20 @@ impl TemplateApp {
             }
             receive_async_data(self);
         } else {
-            ui.heading("No Open Database");
+            ui.heading(RichText::new("No Open Database").weak());
         }
     }
     fn order_panel(&mut self, ui: &mut egui::Ui) {
         if self.help {
             order_help(ui)
         }
-        ui.heading("Duplicate Filename Preservation Priority");
+        ui.heading(RichText::new("Duplicate Filename Preservation Priority").strong());
         ui.label("or... How to decide which file to keep when duplicates are found");
         ui.label("Entries at the top of list take precedence to those below");
-        // ui.horizontal(|_| {});
+        empty_line(ui);
+        // ui.separator();
+        order_toolbar2(ui, self);
+        empty_line(ui);
         ui.separator();
 
         ui.with_layout(
@@ -942,13 +981,12 @@ impl TemplateApp {
             |ui| {
                 // Determine the width available for the scrollable area
                 let width = ui.available_width();
+                let height = ui.available_height();
 
                 // Create a vertical scrollable area with a specified width and height
                 egui::ScrollArea::vertical()
-                    .max_height(500.0) // Set the maximum height of the scroll area
+                    .max_height(height - 55.0) // Set the maximum height of the scroll area
                     .show(ui, |ui| {
-                        order_toolbar2(ui, self);
-                        ui.separator();
                         // Create a container with the desired width and height
                         ui.horizontal(|ui| {
                             ui.set_min_width(width);
@@ -981,10 +1019,11 @@ impl TemplateApp {
                                     }
                                 });
                         });
-                        ui.separator();
-
-                        order_toolbar(ui, self);
                     });
+                ui.separator();
+                empty_line(ui);
+
+                order_toolbar(ui, self);
             },
         );
 
@@ -1012,10 +1051,10 @@ impl TemplateApp {
         });
     }
     fn tags_panel(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Tag Editor");
+        ui.heading(RichText::new("Tag Editor").strong());
         ui.label("Protools Audiosuite Tags use the following format:  -example_");
         ui.label("You can enter any string of text and if it is a match, the file will be marked for removal");
-
+        empty_line(ui);
         ui.separator();
         let num_columns = 6;
         egui::ScrollArea::vertical().show(ui, |ui| {
@@ -1052,6 +1091,7 @@ impl TemplateApp {
                     }
                 });
             ui.separator();
+            empty_line(ui);
             ui.horizontal(|ui| {
                 if ui.button("Add Tag:").clicked() && !self.new_tag.is_empty() {
                     self.tags.list.push(self.new_tag.clone());

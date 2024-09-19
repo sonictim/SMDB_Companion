@@ -50,6 +50,10 @@ where
 //     });
 // }
 
+pub fn empty_line(ui: &mut Ui) {
+    ui.horizontal(|_| {});
+}
+
 pub fn combo_box(ui: &mut Ui, label: &str, selected: &mut String, list: &Vec<String>) {
     egui::ComboBox::from_id_source(label)
         .selected_text(selected.clone())
