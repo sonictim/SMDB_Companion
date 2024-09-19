@@ -60,8 +60,13 @@ pub async fn smreplace_get(
     pool: &SqlitePool,
     find: &mut String,
     column: &mut String,
+    case_sensitive: bool,
 ) -> Result<usize, sqlx::Error> {
-    let search_query = format!("SELECT COUNT(rowid) FROM {} WHERE {} LIKE ?", TABLE, column);
+    let case = if case_sensitive { "GLOB" } else { "LIKE" };
+    let search_query = format!(
+        "SELECT COUNT(rowid) FROM {} WHERE {} {} ?",
+        TABLE, column, case
+    );
     let result: (i64,) = sqlx::query_as(&search_query)
         .bind(format!("%{}%", find))
         .fetch_one(pool)
@@ -76,14 +81,44 @@ pub async fn smreplace_process(
     replace: &mut String,
     column: &mut String,
     dirty: bool,
+    is_filepath: bool,
+    case_sensitive: bool,
 ) {
-    let dirty_text = if dirty { ", _Dirty = 1" } else { "" };
+    let dirty_text = if dirty && !is_filepath {
+        ", _Dirty = 1"
+    } else {
+        ""
+    };
+    let case_text = if case_sensitive { "GLOB" } else { "LIKE" };
 
     let replace_query = format!(
-        "UPDATE {} SET {} = REPLACE({}, '{}', '{}'){} WHERE {} LIKE '%{}%'",
-        TABLE, column, column, find, replace, dirty_text, column, find
+        "UPDATE {} SET {} = REPLACE({}, '{}', '{}'){} WHERE {} {} '%{}%'",
+        TABLE, column, column, find, replace, dirty_text, column, case_text, find
     );
     let _ = sqlx::query(&replace_query).execute(pool).await;
+
+    if is_filepath {
+        let mut column = "Filename";
+        let replace_query = format!(
+            "UPDATE {} SET {} = REPLACE({}, '{}', '{}'){} WHERE {} {} '%{}%'",
+            TABLE, column, column, find, replace, dirty_text, column, case_text, find
+        );
+        let _ = sqlx::query(&replace_query).execute(pool).await;
+
+        column = "Pathname";
+        let replace_query = format!(
+            "UPDATE {} SET {} = REPLACE({}, '{}', '{}'){} WHERE {} {} '%{}%'",
+            TABLE, column, column, find, replace, dirty_text, column, case_text, find
+        );
+        let _ = sqlx::query(&replace_query).execute(pool).await;
+
+        let table = "justinrdb_Pathname";
+        let replace_query = format!(
+            "UPDATE {} SET {} = REPLACE({}, '{}', '{}'){} WHERE {} {} '%{}%'",
+            table, column, column, find, replace, dirty_text, column, case_text, find
+        );
+        let _ = sqlx::query(&replace_query).execute(pool).await;
+    }
 }
 
 pub async fn gather_duplicate_filenames_in_database(
@@ -135,6 +170,7 @@ pub async fn gather_duplicate_filenames_in_database(
                 rowid AS id,
                 filename,
                 duration,
+                filepath,
                 ROW_NUMBER() OVER (
                     PARTITION BY {}
                     ORDER BY {}
@@ -142,7 +178,7 @@ pub async fn gather_duplicate_filenames_in_database(
             FROM {}
             {}
         )
-        SELECT id, filename, duration FROM ranked WHERE rn > 1
+        SELECT id, filename, duration, filepath FROM ranked WHERE rn > 1
         ",
         partition_by, order_clause, TABLE, where_clause
     );
@@ -157,6 +193,7 @@ pub async fn gather_duplicate_filenames_in_database(
             id: id as usize,
             filename: row.get(1),
             duration: row.try_get(2).unwrap_or("".to_string()), // Handle possible NULL in duration
+            path: row.get(3),
         };
         file_records.insert(file_record);
     }
@@ -178,7 +215,7 @@ pub async fn gather_deep_dive_records(
 ) -> Result<HashSet<FileRecord>, sqlx::Error> {
     let mut file_groups: HashMap<String, Vec<FileRecord>> = HashMap::new();
 
-    let query = &format!("SELECT rowid, filename, duration FROM {}", TABLE);
+    let query = &format!("SELECT rowid, filename, duration, filepath FROM {}", TABLE);
 
     let rows = sqlx::query(query).fetch_all(&pool).await?;
 
@@ -196,6 +233,7 @@ pub async fn gather_deep_dive_records(
                 id: id as usize,
                 filename: row.get(1),
                 duration: row.try_get(2).unwrap_or("".to_string()), // Handle possible NULL in duration
+                path: row.get(3),
             };
 
             let base_filename = get_root_filename(&file_record.filename)
@@ -239,6 +277,9 @@ pub async fn gather_deep_dive_records(
             file_records.extend(records.into_iter().skip(1));
         }
     }
+    let _ = status_sender
+        .send(format!("Found {} duplicate records", file_records.len()))
+        .await;
 
     Ok(file_records)
 }
@@ -257,7 +298,7 @@ pub async fn gather_filenames_with_tags(
             let pool = pool.clone();
             async move {
                 let query = format!(
-                    "SELECT rowid, filename, duration FROM {} WHERE filename LIKE '%' || ? || '%'",
+                    "SELECT rowid, filename, duration, filepath FROM {} WHERE filename LIKE '%' || ? || '%'",
                     TABLE
                 );
                 sqlx::query(&query).bind(tag).fetch_all(&pool).await // Return the result (Result<Vec<sqlx::sqlite::SqliteRow>, sqlx::Error>)
@@ -277,6 +318,7 @@ pub async fn gather_filenames_with_tags(
                         id: id as usize,
                         filename: row.get(1),
                         duration: row.try_get(2).unwrap_or("".to_string()), // Handle possible NULL in duration
+                        path: row.get(3),
                     };
                     file_records.insert(file_record);
                 }
@@ -326,6 +368,7 @@ pub async fn fetch_filerecords_from_database(
             id: id as usize,
             filename: row.get(1),
             duration: row.try_get(2).unwrap_or("".to_string()), // Handle possible NULL in duration
+            path: row.get(3),
         };
         file_records.insert(file_record);
     }
@@ -337,7 +380,7 @@ pub async fn fetch_all_filerecords_from_database(
     println!("Gathering all records from database");
     fetch_filerecords_from_database(
         pool,
-        &format!("SELECT rowid, filename, duration FROM {}", TABLE),
+        &format!("SELECT rowid, filename, duration, filepath FROM {}", TABLE),
     )
     .await
 }

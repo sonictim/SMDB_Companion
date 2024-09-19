@@ -1,7 +1,7 @@
 use crate::assets::*;
 use crate::processing::*;
 use eframe::egui::{self, RichText};
-// use rayon::prelude::*;
+use rayon::prelude::*;
 use serde::Deserialize;
 use sqlx::sqlite::SqlitePool;
 use std::collections::HashSet;
@@ -205,6 +205,7 @@ pub struct FileRecord {
     pub id: usize,
     pub filename: String,
     pub duration: String,
+    pub path: String,
 }
 
 pub enum ProgressMessage {
@@ -288,7 +289,9 @@ pub struct TemplateApp {
     column: String,
     find: String,
     replace: String,
+    search_replace_path: bool,
     dirty: bool,
+    case_sensitive: bool,
 
     main: Config,
     group: Config,
@@ -355,10 +358,12 @@ impl Default for TemplateApp {
             db: None,
             c_db: None,
             // total_records: 0,
-            column: "Filepath".to_owned(),
+            column: "Library".to_owned(),
             find: String::new(),
             replace: String::new(),
+            search_replace_path: true,
             dirty: true,
+            case_sensitive: true,
             main: Config::new(true),
             group: Config::new_option(false, "Show"),
             group_null: false,
@@ -738,7 +743,12 @@ impl TemplateApp {
     fn find_panel(&mut self, ui: &mut egui::Ui) {
         if let Some(db) = &self.db {
             ui.heading(RichText::new("Find and Replace").strong());
-            ui.label("Note: Search is Case Sensitive");
+            // ui.label("Note: Search is Case Sensitive");
+            empty_line(ui);
+            ui.horizontal(|ui| {
+                // ui.add_space(68.0);
+                ui.checkbox(&mut self.case_sensitive, "Case Sensitive");
+            });
             empty_line(ui);
             // ui.separator();
             ui.horizontal(|ui| {
@@ -752,29 +762,54 @@ impl TemplateApp {
             });
             ui.horizontal(|ui| {
                 ui.label("in Column: ");
-                combo_box(ui, "find_column", &mut self.column, &db.columns);
+                ui.radio_value(&mut self.search_replace_path, true, "FilePath");
+                ui.radio_value(&mut self.search_replace_path, false, "Other");
+                let filtered_columns: Vec<_> = db
+                    .columns
+                    .iter()
+                    .filter(|col| {
+                        col.as_str() != "FilePath"
+                            && col.as_str() != "Pathname"
+                            && col.as_str() != "Filename"
+                    })
+                    .collect();
+                egui::ComboBox::from_id_source("find_column")
+                    .selected_text(&self.column)
+                    .show_ui(ui, |ui| {
+                        for item in filtered_columns {
+                            ui.selectable_value(&mut self.column, item.clone(), item);
+                        }
+                    });
+                // combo_box(ui, "find_column", &mut self.column, &filtered_columns);
             });
             empty_line(ui);
             ui.separator();
             empty_line(ui);
-            ui.checkbox(&mut self.dirty, "Mark Records as Dirty?");
-            ui.label("Dirty Records are audio files with metadata that is not embedded");
-            empty_line(ui);
-            ui.separator();
-            empty_line(ui);
+            if !self.search_replace_path {
+                ui.checkbox(&mut self.dirty, "Mark Records as Dirty?");
+                ui.label("Dirty Records are audio files with metadata that is not embedded");
+                empty_line(ui);
+                ui.separator();
+                empty_line(ui);
+            }
 
             if self.find.is_empty() {
                 return;
             }
             if ui.button("Search").clicked() {
                 self.replace_safety = true;
-
+                if self.search_replace_path {
+                    self.column = "FilePath".to_string()
+                }
                 let tx = self.find_tx.clone().expect("tx channel exists");
                 let pool = db.pool.clone();
                 let mut find = self.find.clone();
                 let mut column = self.column.clone();
+                let case_sensitive = self.case_sensitive;
                 tokio::spawn(async move {
-                    let count = smreplace_get(&pool, &mut find, &mut column).await.unwrap();
+                    let count = smreplace_get(&pool, &mut find, &mut column, case_sensitive)
+                        .await
+                        .unwrap();
                     let _ = tx.send(count).await;
                 });
             }
@@ -796,19 +831,37 @@ impl TemplateApp {
                     return;
                 }
                 ui.label(format!("Replace with \"{}\" ?", self.replace));
-                ui.label("This is NOT undoable".to_string());
+                ui.horizontal(|ui| {
+                    ui.label("This is");
+                    ui.label(RichText::new("NOT").strong());
+                    ui.label("undoable");
+                });
+                if self.search_replace_path {
+                    ui.label("This does not alter your file system.");
+                }
                 ui.separator();
                 ui.horizontal(|ui| {
-                    if ui.button("Proceed").clicked() {
+                    if ui.button("Replace Records").clicked() {
                         // let tx = self.find_tx.clone().expect("tx channel exists");
                         let pool = db.pool.clone();
                         let mut find = self.find.clone();
                         let mut replace = self.replace.clone();
                         let mut column = self.column.clone();
                         let dirty = self.dirty;
+                        let filepath = self.search_replace_path;
+                        let case_sensitive = self.case_sensitive;
                         tokio::spawn(async move {
-                            smreplace_process(&pool, &mut find, &mut replace, &mut column, dirty)
-                                .await;
+                            smreplace_process(
+                                &pool,
+                                &mut find,
+                                &mut replace,
+                                &mut column,
+                                dirty,
+                                filepath,
+                                case_sensitive,
+                            )
+                            .await;
+
                             // if let Err(_) = tx.send(count).await {
                             //     eprintln!("Failed to send db");
                             // }
@@ -1010,13 +1063,14 @@ impl TemplateApp {
                 let mut marked_records: Vec<&str> = self
                     .main
                     .records
-                    .iter()
-                    .map(|s| s.filename.as_str()) // Convert &String to &str
+                    .par_iter() // Use parallel iterator
+                    .map(|s| s.path.as_str()) // Convert &String to &str
                     .collect();
 
-                marked_records.sort(); // Sorting the mutable vector of &str
+                // Sort in parallel
+                marked_records.par_sort(); // Rayon provides parallel sorting
 
-                // Join the sorted records with newline characters and assign to `self.marked_records`
+                // Join the sorted records with newline characters
                 self.marked_records = marked_records.join("\n");
 
                 self.scroll_to_top = true;
