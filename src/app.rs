@@ -504,7 +504,6 @@ impl eframe::App for TemplateApp {
                     self.db = Some(db);
                 }
             }
-
             if let Some(db) = &self.db {
                 ui.horizontal(|_| {});
 
@@ -538,29 +537,32 @@ impl eframe::App for TemplateApp {
 
             ui.horizontal(|_| {});
             ui.separator();
-            ui.horizontal(|_| {});
 
-            match self.my_panel {
-                Panel::Find => {
-                    self.find_panel(ui);
-                }
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                match self.my_panel {
+                    Panel::Find => {
+                        self.find_panel(ui);
+                    }
 
-                Panel::Duplicates => {
-                    self.duplictes_panel(ui);
-                }
+                    Panel::Duplicates => {
+                        self.duplictes_panel(ui);
+                    }
 
-                Panel::Order => {
-                    self.order_panel(ui);
-                }
+                    Panel::Order => {
+                        self.order_panel(ui);
+                    }
 
-                Panel::OrderText => {
-                    self.order_text_panel(ui);
-                }
+                    Panel::OrderText => {
+                        self.order_text_panel(ui);
+                    }
 
-                Panel::Tags => {
-                    self.tags_panel(ui);
+                    Panel::Tags => {
+                        self.tags_panel(ui);
+                    }
                 }
-            }
+                ui.horizontal(|_| {});
+            });
+
             // self.show_version_in_bottom_right(ctx);
         });
 
@@ -929,9 +931,9 @@ impl TemplateApp {
             order_help(ui)
         }
         ui.heading("Duplicate Filename Preservation Priority");
-        // ui.label("When duplicates are found, the one that will be saved will follow this logic");
-        ui.horizontal(|_| {});
-        order_toolbar2(ui, self);
+        ui.label("or... How to decide which file to keep when duplicates are found");
+        ui.label("Entries at the top of list take precedence to those below");
+        // ui.horizontal(|_| {});
         ui.separator();
 
         ui.with_layout(
@@ -944,6 +946,8 @@ impl TemplateApp {
                 egui::ScrollArea::vertical()
                     .max_height(500.0) // Set the maximum height of the scroll area
                     .show(ui, |ui| {
+                        order_toolbar2(ui, self);
+                        ui.separator();
                         // Create a container with the desired width and height
                         ui.horizontal(|ui| {
                             ui.set_min_width(width);
@@ -976,13 +980,12 @@ impl TemplateApp {
                                     }
                                 });
                         });
+                        ui.separator();
+
+                        order_toolbar(ui, self);
                     });
             },
         );
-
-        ui.separator();
-
-        order_toolbar(ui, self);
 
         // ui.separator();
     }
@@ -1047,30 +1050,30 @@ impl TemplateApp {
                         ui.end_row();
                     }
                 });
-        });
-        ui.separator();
-        ui.horizontal(|ui| {
-            if ui.button("Add Tag:").clicked() && !self.new_tag.is_empty() {
-                self.tags.list.push(self.new_tag.clone());
-                self.new_tag.clear(); // Clears the string
-                self.tags.list.sort_by_key(|s| s.to_lowercase());
-            }
-            ui.text_edit_singleline(&mut self.new_tag);
-        });
-        if ui.button("Remove Selected Tags").clicked() {
-            // Sort and remove elements based on `sel_tags`
-            let mut sorted_indices: Vec<usize> = self.sel_tags.clone();
-            sorted_indices.sort_by(|a, b| b.cmp(a)); // Sort in reverse order
-
-            for index in sorted_indices {
-                if index < self.tags.list.len() {
-                    self.tags.list.remove(index);
+            ui.separator();
+            ui.horizontal(|ui| {
+                if ui.button("Add Tag:").clicked() && !self.new_tag.is_empty() {
+                    self.tags.list.push(self.new_tag.clone());
+                    self.new_tag.clear(); // Clears the string
+                    self.tags.list.sort_by_key(|s| s.to_lowercase());
                 }
-            }
+                ui.text_edit_singleline(&mut self.new_tag);
+            });
+            if ui.button("Remove Selected Tags").clicked() {
+                // Sort and remove elements based on `sel_tags`
+                let mut sorted_indices: Vec<usize> = self.sel_tags.clone();
+                sorted_indices.sort_by(|a, b| b.cmp(a)); // Sort in reverse order
 
-            // Clear the selection list after removal
-            self.sel_tags.clear();
-        }
+                for index in sorted_indices {
+                    if index < self.tags.list.len() {
+                        self.tags.list.remove(index);
+                    }
+                }
+
+                // Clear the selection list after removal
+                self.sel_tags.clear();
+            }
+        });
     }
 
     // fn panel_chunk<F>(&mut self, ui: &mut egui::Ui, display: F, config: &Config)

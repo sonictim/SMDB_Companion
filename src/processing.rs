@@ -1,19 +1,18 @@
 #![allow(non_snake_case)]
-use futures::future::join_all;
-use futures::stream::{self, StreamExt};
-use rayon::prelude::*;
 use rfd::FileDialog;
 use sqlx::{sqlite::SqlitePool, Row};
 use std::collections::{HashMap, HashSet};
+
+use futures::future::join_all;
+use futures::stream::{self, StreamExt};
+use rayon::prelude::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
 use crate::app::*;
-use regex::Regex;
-
 use once_cell::sync::Lazy;
-// use regex::Regex;
+use regex::Regex;
 
 static FILENAME_REGEX: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^(?P<base>.+?)(\.\d+|\.\w+)+(?P<ext>\.\w+)$").unwrap());
@@ -766,7 +765,7 @@ pub fn tjf_order_friendly() -> Vec<String> {
     const TJF_ORDER_FRIENDLY: [&str; 22] = [
         "Pathname contains 'TJF RECORDINGS'",
         "Pathname contains 'LIBRARIES'",
-        "Pathname does not contain 'SHOWS/Tim Farrell'",
+        "Pathname does NOT contain 'SHOWS/Tim Farrell'",
         "Description is NOT Empty",
         "Pathname does NOT contain 'Audio Files'",
         "Pathname contains 'RECORD'",
