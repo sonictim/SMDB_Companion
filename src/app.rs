@@ -625,7 +625,8 @@ impl TemplateApp {
             }
             {
                 let checked = self.my_panel == Panel::Order;
-                let label = "Modify Duplicate Search Order";
+                let label = "Preservation Priority";
+                // let label = "Modify Duplicate Search Order";
                 let text = if checked {
                     RichText::new(label).size(size_big).strong()
                 } else {
@@ -638,7 +639,7 @@ impl TemplateApp {
             }
             {
                 let checked = self.my_panel == Panel::Tags;
-                let label = "Edit Tags List";
+                let label = "Tag Editor";
                 let text = if checked {
                     RichText::new(label).size(size_big).strong()
                 } else {
@@ -927,7 +928,9 @@ impl TemplateApp {
         if self.help {
             order_help(ui)
         }
-        ui.label("Top of the list is higher priority");
+        ui.heading("Duplicate Filename Preservation Priority");
+        // ui.label("When duplicates are found, the one that will be saved will follow this logic");
+        ui.horizontal(|_| {});
         order_toolbar2(ui, self);
         ui.separator();
 
@@ -994,10 +997,15 @@ impl TemplateApp {
             columns[0].text_edit_multiline(&mut self.order_text);
         });
         ui.separator();
-        if ui.button("Save").clicked() {
-            self.main.list = self.order_text.lines().map(|s| s.to_string()).collect();
-            self.my_panel = Panel::Order;
-        }
+        ui.horizontal(|ui| {
+            if ui.button("Save").clicked() {
+                self.main.list = self.order_text.lines().map(|s| s.to_string()).collect();
+                self.my_panel = Panel::Order;
+            }
+            if ui.button("Cancel").clicked() {
+                self.my_panel = Panel::Order;
+            }
+        });
     }
     fn tags_panel(&mut self, ui: &mut egui::Ui) {
         ui.heading("Tag Editor");
