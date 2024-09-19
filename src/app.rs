@@ -537,6 +537,7 @@ impl eframe::App for TemplateApp {
 
             ui.horizontal(|_| {});
             ui.separator();
+            ui.horizontal(|_| {});
 
             egui::ScrollArea::vertical().show(ui, |ui| {
                 match self.my_panel {
