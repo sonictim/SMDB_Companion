@@ -689,7 +689,7 @@ impl eframe::App for TemplateApp {
 impl TemplateApp {
     fn panel_tab_bar(&mut self, ui: &mut egui::Ui) {
         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-            let mut space = ui.available_width() / 2.0 - 335.0;
+            let mut space = ui.available_width() / 2.0 - 300.0;
             if space < 5.0 {
                 space = 0.0
             };
