@@ -1,6 +1,7 @@
 use crate::assets::*;
 use crate::processing::*;
 use eframe::egui::{self, RichText};
+// use egui::SelectableLabel;
 use rayon::prelude::*;
 use serde::Deserialize;
 use sqlx::sqlite::SqlitePool;
@@ -483,7 +484,15 @@ impl eframe::App for TemplateApp {
                         }
                     });
                     ui.label(RichText::new("|").weak());
+
                     self.panel_tab_bar(ui);
+
+                    if ui.available_width() > 105.0 {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                            egui::widgets::global_dark_light_mode_buttons(ui);
+                            ui.label(RichText::new("|").weak());
+                        });
+                    }
 
                     // ui.menu_button("View", |ui| {
                     //     if ui.button("Duplicates Search").clicked() {
@@ -522,10 +531,6 @@ impl eframe::App for TemplateApp {
                     //             // }
                     //         });
                     // }
-
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
-                        egui::widgets::global_dark_light_mode_buttons(ui);
-                    });
                 }
             });
         });
@@ -542,12 +547,22 @@ impl eframe::App for TemplateApp {
                 empty_line(ui);
 
                 ui.vertical_centered(|ui| {
-                    ui.heading(
-                        RichText::new(&db.name)
-                            .size(24.0)
-                            .strong()
-                            .extra_letter_spacing(5.0),
-                    );
+                    if ui
+                        .selectable_label(
+                            false,
+                            RichText::new(&db.name)
+                                .size(24.0)
+                                .strong()
+                                .extra_letter_spacing(5.0),
+                        )
+                        .clicked()
+                    {
+                        let tx = self.tx.clone().expect("tx channel exists");
+                        tokio::spawn(async move {
+                            let db = open_db().await.unwrap();
+                            let _ = tx.send(db).await;
+                        });
+                    };
                     ui.label(format!("{} records", &db.size));
                 });
             } else {
@@ -672,14 +687,13 @@ impl eframe::App for TemplateApp {
 
 impl TemplateApp {
     fn panel_tab_bar(&mut self, ui: &mut egui::Ui) {
-        // egui::Grid::new("Tags Grid")
-        //     .num_columns(4)
-        //     // .spacing([20.0, 8.0])
-        //     .striped(true)
-        //     .show(ui, |ui| {
-
-        //     });
-        ui.horizontal(|ui| {
+        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+            let mut space = ui.available_width() / 2.0 - 335.0;
+            if space < 5.0 {
+                space = 0.0
+            };
+            ui.add_space(space);
+            // self.panel_tab_bar(ui);
             let size_big = 16.0;
             let size_small = 16.0;
             let column_width = 1.0; // Set the fixed width for each column
@@ -737,6 +751,7 @@ impl TemplateApp {
                     self.my_panel = Panel::Tags;
                 }
             }
+            // egui::widgets::global_dark_light_mode_buttons(ui);
         });
     }
 
