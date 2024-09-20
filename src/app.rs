@@ -10,8 +10,41 @@ use std::fs::{self};
 use std::hash::Hash;
 use tokio::sync::mpsc;
 
+#[derive(serde::Deserialize, serde::Serialize, Default)]
+#[serde(default)]
+#[derive(Clone)]
+struct Registration {
+    name: String,
+    email: String,
+    key: String,
+    #[serde(skip)]
+    valid: Option<bool>,
+}
+
+// impl Default for Registration {
+//     fn default() -> Self {
+//         Self {
+//             name: String::new(),
+//             email: String::new(),
+//             key: String::new(),
+//             valid: None,
+//         }
+//     }
+// }
+
+impl Registration {
+    fn validate(&mut self) {
+        if generate_license_key(&self.name, &self.email) == self.key {
+            self.valid = Some(true);
+        } else {
+            self.valid = Some(false);
+        }
+    }
+}
+
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)]
+
 pub struct Config {
     pub search: bool,
     pub list: Vec<String>,
@@ -220,6 +253,7 @@ pub enum Panel {
     OrderText,
     Tags,
     Find,
+    KeyGen,
 }
 
 #[derive(PartialEq, serde::Serialize, Deserialize, Clone, Copy)]
@@ -293,7 +327,10 @@ pub struct TemplateApp {
     search_replace_path: bool,
     dirty: bool,
     case_sensitive: bool,
-
+    find_buf: String,
+    replace_buf: String,
+    // #[serde(skip)]
+    // searched: bool,
     main: Config,
     group: Config,
     group_null: bool,
@@ -338,6 +375,11 @@ pub struct TemplateApp {
     #[serde(skip)]
     records_window: bool,
     scroll_to_top: bool,
+
+    registered: Registration,
+    // reg_name: String,
+    // reg_email: String,
+    // reg_key: String,
 }
 
 impl Default for TemplateApp {
@@ -365,6 +407,9 @@ impl Default for TemplateApp {
             search_replace_path: true,
             dirty: true,
             case_sensitive: true,
+            find_buf: String::new(),
+            replace_buf: String::new(),
+            // searched: false,
             main: Config::new(true),
             group: Config::new_option(false, "Show"),
             group_null: false,
@@ -394,6 +439,11 @@ impl Default for TemplateApp {
             marked_records: String::new(),
             records_window: false,
             scroll_to_top: false,
+
+            registered: Registration::default(),
+            // reg_name: String::new(),
+            // reg_email: String::new(),
+            // reg_key: String::new(),
         };
         app.tags.list = default_tags();
         app.main.list = default_order();
@@ -417,16 +467,28 @@ impl TemplateApp {
 
         Default::default()
     }
-    fn reset_to_defaults(&mut self, db: Option<Database>, panel: Panel) {
+    fn reset_to_defaults(
+        &mut self,
+        db: Option<Database>,
+        panel: Panel,
+        registration: Registration,
+    ) {
         *self = Self::default();
         self.db = db;
         self.my_panel = panel;
+        self.registered = registration;
     }
 
-    fn reset_to_tjf_defaults(&mut self, db: Option<Database>, panel: Panel) {
+    fn reset_to_tjf_defaults(
+        &mut self,
+        db: Option<Database>,
+        panel: Panel,
+        registration: Registration,
+    ) {
         *self = Self::default();
         self.db = db;
         self.my_panel = panel;
+        self.registered = registration;
         self.main.list = tjf_order();
         self.order_friendly = tjf_order_friendly();
         self.tags.list = tjf_tags();
@@ -446,6 +508,9 @@ impl eframe::App for TemplateApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Put your widgets into a `SidePanel`, `TopBottomPanel`, `CentralPanel`, `Window` or `Area`.
         // For inspiration and more examples, go to https://emilk.github.io/egui
+        if self.registered.valid.is_none() {
+            self.registered.validate();
+        }
 
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             // The top panel is often a good place for a menu bar:
@@ -469,16 +534,93 @@ impl eframe::App for TemplateApp {
                             abort_all(self);
                             self.db = None;
                         }
+
                         ui.separator();
                         if ui.button("Restore Defaults").clicked() {
                             ui.close_menu();
-                            self.reset_to_defaults(self.db.clone(), self.my_panel);
+                            self.reset_to_defaults(
+                                self.db.clone(),
+                                self.my_panel,
+                                self.registered.clone(),
+                            );
                         }
                         if ui.input(|i| i.modifiers.alt) && ui.button("TJF Defaults").clicked() {
                             ui.close_menu();
-                            self.reset_to_tjf_defaults(self.db.clone(), self.my_panel);
+                            self.reset_to_tjf_defaults(
+                                self.db.clone(),
+                                self.my_panel,
+                                self.registered.clone(),
+                            );
                         }
                         egui::widgets::global_dark_light_mode_buttons(ui);
+                        ui.separator();
+                        if self.registered.valid.expect("some") {
+                            if ui.button(RichText::new("Unregister")).clicked() {
+                                self.registered.name.clear();
+                                self.registered.email.clear();
+                                self.registered.key.clear();
+                                self.registered.valid = Some(false);
+                                ui.close_menu();
+                            }
+                            // ui.label(RichText::new("Registered!").weak());
+                        } else {
+                            ui.menu_button("Register", |ui| {
+                                ui.horizontal(|ui| {
+                                    ui.label("Name: ");
+                                    ui.text_edit_singleline(&mut self.registered.name);
+                                });
+                                ui.horizontal(|ui| {
+                                    ui.label("Email: ");
+                                    ui.text_edit_singleline(&mut self.registered.email);
+                                });
+                                ui.horizontal(|ui| {
+                                    ui.label("License Key: ");
+                                    ui.text_edit_singleline(&mut self.registered.key);
+                                });
+                                // if ui.button(RichText::new("Register").strong()).clicked() {
+                                //     self.registered.validate();
+                                //     ui.close_menu();
+                                // }
+                                if ui.input(|i| i.modifiers.alt)
+                                    && ui.input(|i| i.modifiers.command)
+                                    && ui.input(|i| i.modifiers.shift)
+                                    && ui.input(|i| i.modifiers.ctrl)
+                                {
+                                    large_button(ui, "Register", || {
+                                        self.registered.key = generate_license_key(
+                                            &self.registered.name,
+                                            &self.registered.email,
+                                        );
+                                        self.registered.validate();
+                                    });
+                                } else {
+                                    large_button(ui, "Register", || self.registered.validate());
+                                }
+                                //     && self.reg_key
+                                //         == generate_license_key(&self.reg_name, &self.reg_email)
+                                // {
+                                //     self.registered = Some(Registration {
+                                //         name: self.reg_name.clone(),
+                                //         email: self.reg_email.clone(),
+                                //         key: self.reg_key.clone(),
+                                //     });
+                                //     self.reg_name.clear();
+                                //     self.reg_email.clear();
+                                //     self.reg_key.clear();
+                                //     ui.close_menu();
+                                // }
+                                // if ui.input(|i| i.modifiers.alt)
+                                //     && ui.input(|i| i.modifiers.command)
+                                //     && ui.input(|i| i.modifiers.shift)
+                                //     && ui.input(|i| i.modifiers.ctrl)
+                                // {
+                                //     ui.label(generate_license_key(
+                                //         &self.registered.name,
+                                //         &self.registered.email,
+                                //     ));
+                                // }
+                            });
+                        }
                         ui.separator();
                         if ui.button("Quit").clicked() {
                             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -610,6 +752,10 @@ impl eframe::App for TemplateApp {
                     Panel::Tags => {
                         self.tags_panel(ui);
                     }
+
+                    Panel::KeyGen => {
+                        self.keygen_panel(ui);
+                    }
                 }
                 empty_line(ui);
             });
@@ -667,6 +813,24 @@ impl eframe::App for TemplateApp {
             // self.show_version_in_bottom_right(ctx);
         });
 
+        let id2 = egui::Id::new("bottom panel registration");
+        egui::Area::new(id2)
+            .anchor(egui::Align2::LEFT_BOTTOM, egui::vec2(0.0, 0.0)) // Pin to bottom
+            // .default_width(500.0)
+            .show(ctx, |ui| {
+                let mut label = RichText::new("*****UNREGISTERED")
+                    .color(egui::Color32::from_rgb(255, 0, 0))
+                    .strong();
+                if let Some(valid) = self.registered.valid {
+                    if valid {
+                        let text = format!("Registered to: {}", &self.registered.name);
+                        label = RichText::new(text).weak();
+                    }
+                }
+                ui.horizontal(|ui| {
+                    ui.label(label);
+                });
+            });
         let id = egui::Id::new("bottom panel");
         egui::Area::new(id)
             .anchor(egui::Align2::RIGHT_BOTTOM, egui::vec2(0.0, 0.0)) // Pin to bottom-right
@@ -675,14 +839,6 @@ impl eframe::App for TemplateApp {
                 ui.label(RichText::new(version_text).weak());
                 // ui.label("This is the bottom panel.");
             });
-
-        // egui::TopBottomPanel::bottom("bottom_panel").resizable(false).show(ctx, |ui| {
-        //     ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
-
-        //         let version_text = format!("Version: {}", env!("CARGO_PKG_VERSION")); // Replace self.version with your version string
-        //         ui.label(RichText::new(version_text).weak());
-        //     });
-        // });
     }
 }
 
@@ -812,7 +968,11 @@ impl TemplateApp {
             if self.find.is_empty() {
                 return;
             }
-            if ui.button("Search").clicked() {
+            if ui
+                .button(RichText::new("Find Records").size(16.0))
+                .clicked()
+            {
+                // self.searched = true;
                 self.replace_safety = true;
                 if self.search_replace_path {
                     self.column = "FilePath".to_string()
@@ -835,6 +995,11 @@ impl TemplateApp {
                     self.count = count;
                 }
             }
+            if self.find != self.find_buf || self.replace != self.replace_buf {
+                self.replace_safety = false;
+                self.find_buf = self.find.clone();
+                self.replace_buf = self.replace.clone();
+            }
             if self.replace_safety {
                 ui.label(
                     RichText::new(format!(
@@ -844,6 +1009,16 @@ impl TemplateApp {
                     .strong(),
                 );
                 if self.count == 0 {
+                    return;
+                }
+
+                if self.registered.valid == Some(false) {
+                    ui.label(
+                        RichText::new(
+                            "\nUNREGISTERED!\nPlease Register to Continue with Replacement",
+                        )
+                        .strong(),
+                    );
                     return;
                 }
                 ui.label(format!("Replace with \"{}\" ?", self.replace));
@@ -857,7 +1032,10 @@ impl TemplateApp {
                 }
                 ui.separator();
                 ui.horizontal(|ui| {
-                    if ui.button("Replace Records").clicked() {
+                    if ui
+                        .button(RichText::new("Replace Records").size(16.0))
+                        .clicked()
+                    {
                         // let tx = self.find_tx.clone().expect("tx channel exists");
                         let pool = db.pool.clone();
                         let mut find = self.find.clone();
@@ -877,25 +1055,22 @@ impl TemplateApp {
                                 case_sensitive,
                             )
                             .await;
-
-                            // if let Err(_) = tx.send(count).await {
-                            //     eprintln!("Failed to send db");
-                            // }
                         });
                         self.replace_safety = false;
                     }
-                    if ui.button("Cancel").clicked() {
+                    if ui.button(RichText::new("Cancel").size(16.0)).clicked() {
                         self.count = 0;
                         self.replace_safety = false;
                     }
                 });
-            } else if self.count > 0 {
+            } else if self.count > 0 && self.registered.valid == Some(true) {
                 ui.label(format!("{} records replaced", self.count));
             }
         } else {
             ui.heading(RichText::new("No Open Database").weak());
         }
     }
+
     fn duplictes_panel(&mut self, ui: &mut egui::Ui) {
         if let Some(db) = &self.db {
             ui.heading(RichText::new("Search for Duplicate Records").strong());
@@ -1072,7 +1247,9 @@ impl TemplateApp {
                 }
                 ui.label(RichText::new(self.main.status.clone()).strong());
             });
-            if !handles_active(self)
+
+            if self.registered.valid == Some(true)
+                && !handles_active(self)
                 && !self.main.records.is_empty()
                 && ui.button("Show Records").clicked()
             {
@@ -1188,7 +1365,15 @@ impl TemplateApp {
                 self.my_panel = Panel::Order;
             }
             if ui.button("Cancel").clicked() {
-                self.my_panel = Panel::Order;
+                if ui.input(|i| i.modifiers.alt)
+                    && ui.input(|i| i.modifiers.command)
+                    && ui.input(|i| i.modifiers.shift)
+                    && ui.input(|i| i.modifiers.ctrl)
+                {
+                    self.my_panel = Panel::KeyGen;
+                } else {
+                    self.my_panel = Panel::Order;
+                }
             }
         });
     }
@@ -1256,6 +1441,25 @@ impl TemplateApp {
                 // Clear the selection list after removal
                 self.sel_tags.clear();
             }
+        });
+    }
+
+    fn keygen_panel(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label("Name: ");
+            ui.text_edit_singleline(&mut self.registered.name);
+        });
+        ui.horizontal(|ui| {
+            ui.label("Email: ");
+            ui.text_edit_singleline(&mut self.registered.email);
+        });
+        ui.horizontal(|ui| {
+            ui.label("License Key: ");
+            ui.label(generate_license_key(
+                &self.registered.name,
+                &self.registered.email,
+            ));
+            // ui.text_edit_singleline(&mut self.registered.key);
         });
     }
 
@@ -1537,6 +1741,11 @@ fn receive_async_data(app: &mut TemplateApp) {
 }
 
 fn remove_duplicates(app: &mut TemplateApp) {
+    if app.registered.valid == Some(false) {
+        app.main.records.clear();
+        app.main.status = "Unregistered!\nPlease Register to Remove Duplicates".to_string();
+        return;
+    }
     if let Some(db) = app.db.clone() {
         let mut work_db_path: Option<String> = Some(db.path.clone());
         let mut duplicate_db_path: Option<String> = None;
