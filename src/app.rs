@@ -478,6 +478,7 @@ impl eframe::App for TemplateApp {
                             ui.close_menu();
                             self.reset_to_tjf_defaults(self.db.clone(), self.my_panel);
                         }
+                        egui::widgets::global_dark_light_mode_buttons(ui);
                         ui.separator();
                         if ui.button("Quit").clicked() {
                             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -487,9 +488,9 @@ impl eframe::App for TemplateApp {
 
                     self.panel_tab_bar(ui);
 
-                    if ui.available_width() > 105.0 {
+                    if ui.available_width() > 20.0 {
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
-                            egui::widgets::global_dark_light_mode_buttons(ui);
+                            egui::widgets::global_dark_light_mode_switch(ui);
                             ui.label(RichText::new("|").weak());
                         });
                     }
