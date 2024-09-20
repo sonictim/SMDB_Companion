@@ -11,8 +11,18 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 
 use crate::app::*;
+// use hex;
 use once_cell::sync::Lazy;
 use regex::Regex;
+use sha2::{Digest, Sha256};
+
+pub fn generate_license_key(username: &str, email: &str) -> String {
+    let salt = "Valhalla Delay";
+    let mut hasher = Sha256::new();
+    hasher.update(format!("{}{}{}", username, email, salt).as_bytes());
+    let hash = hasher.finalize();
+    hex::encode_upper(hash)
+}
 
 static FILENAME_REGEX: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^(?P<base>.+?)(\.\d+|\.\w+)+(?P<ext>\.\w+)$").unwrap());
