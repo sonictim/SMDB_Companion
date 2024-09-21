@@ -506,175 +506,136 @@ impl eframe::App for TemplateApp {
 
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Put your widgets into a `SidePanel`, `TopBottomPanel`, `CentralPanel`, `Window` or `Area`.
-        // For inspiration and more examples, go to https://emilk.github.io/egui
         if self.registered.valid.is_none() {
             self.registered.validate();
         }
 
+        // Put your widgets into a `SidePanel`, `TopBottomPanel`, `CentralPanel`, `Window` or `Area`.
+        // For inspiration and more examples, go to https://emilk.github.io/egui
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             // The top panel is often a good place for a menu bar:
             egui::menu::bar(ui, |ui| {
                 // NOTE: no File->Quit on web pages!
 
-                let is_web = cfg!(target_arch = "wasm32");
-                if !is_web {
-                    ui.menu_button(RichText::new("File").weak(), |ui| {
-                        if ui.button("Open Database").clicked() {
-                            ui.close_menu();
+                ui.menu_button(RichText::new("File").weak(), |ui| {
+                    if ui.button("Open Database").clicked() {
+                        ui.close_menu();
 
-                            let tx = self.tx.clone().expect("tx channel exists");
-                            tokio::spawn(async move {
-                                let db = open_db().await.unwrap();
-                                let _ = tx.send(db).await;
+                        let tx = self.tx.clone().expect("tx channel exists");
+                        tokio::spawn(async move {
+                            let db = open_db().await.unwrap();
+                            let _ = tx.send(db).await;
+                        });
+                    }
+                    if ui.button("Close Database").clicked() {
+                        ui.close_menu();
+                        abort_all(self);
+                        self.db = None;
+                    }
+
+                    ui.separator();
+                    if ui.button("Restore Defaults").clicked() {
+                        ui.close_menu();
+                        self.reset_to_defaults(
+                            self.db.clone(),
+                            self.my_panel,
+                            self.registered.clone(),
+                        );
+                    }
+                    if ui.input(|i| i.modifiers.alt) && ui.button("TJF Defaults").clicked() {
+                        ui.close_menu();
+                        self.reset_to_tjf_defaults(
+                            self.db.clone(),
+                            self.my_panel,
+                            self.registered.clone(),
+                        );
+                    }
+                    egui::widgets::global_dark_light_mode_buttons(ui);
+                    ui.separator();
+                    if self.registered.valid.expect("some") {
+                        if ui.button(RichText::new("Unregister")).clicked() {
+                            self.registered.name.clear();
+                            self.registered.email.clear();
+                            self.registered.key.clear();
+                            self.registered.valid = Some(false);
+                            ui.close_menu();
+                        }
+                    } else {
+                        ui.menu_button("Register", |ui| {
+                            ui.horizontal(|ui| {
+                                ui.label("Name: ");
+                                ui.text_edit_singleline(&mut self.registered.name);
                             });
-                        }
-                        if ui.button("Close Database").clicked() {
-                            ui.close_menu();
-                            abort_all(self);
-                            self.db = None;
-                        }
+                            ui.horizontal(|ui| {
+                                ui.label("Email: ");
+                                ui.text_edit_singleline(&mut self.registered.email);
+                            });
+                            ui.horizontal(|ui| {
+                                ui.label("License Key: ");
+                                ui.text_edit_singleline(&mut self.registered.key);
+                            });
 
-                        ui.separator();
-                        if ui.button("Restore Defaults").clicked() {
-                            ui.close_menu();
-                            self.reset_to_defaults(
-                                self.db.clone(),
-                                self.my_panel,
-                                self.registered.clone(),
-                            );
-                        }
-                        if ui.input(|i| i.modifiers.alt) && ui.button("TJF Defaults").clicked() {
-                            ui.close_menu();
-                            self.reset_to_tjf_defaults(
-                                self.db.clone(),
-                                self.my_panel,
-                                self.registered.clone(),
-                            );
-                        }
-                        egui::widgets::global_dark_light_mode_buttons(ui);
-                        ui.separator();
-                        if self.registered.valid.expect("some") {
-                            if ui.button(RichText::new("Unregister")).clicked() {
-                                self.registered.name.clear();
-                                self.registered.email.clear();
-                                self.registered.key.clear();
-                                self.registered.valid = Some(false);
-                                ui.close_menu();
-                            }
-                            // ui.label(RichText::new("Registered!").weak());
-                        } else {
-                            ui.menu_button("Register", |ui| {
-                                ui.horizontal(|ui| {
-                                    ui.label("Name: ");
-                                    ui.text_edit_singleline(&mut self.registered.name);
-                                });
-                                ui.horizontal(|ui| {
-                                    ui.label("Email: ");
-                                    ui.text_edit_singleline(&mut self.registered.email);
-                                });
-                                ui.horizontal(|ui| {
-                                    ui.label("License Key: ");
-                                    ui.text_edit_singleline(&mut self.registered.key);
-                                });
-                                // if ui.button(RichText::new("Register").strong()).clicked() {
-                                //     self.registered.validate();
-                                //     ui.close_menu();
-                                // }
-                                if ui.input(|i| i.modifiers.alt)
-                                    && ui.input(|i| i.modifiers.command)
-                                    && ui.input(|i| i.modifiers.shift)
-                                    && ui.input(|i| i.modifiers.ctrl)
+                            if ui
+                                .add_sized(
+                                    [200.0, 50.0],
+                                    egui::Button::new(
+                                        RichText::new("Register").size(24.0).strong(),
+                                    ),
+                                )
+                                .clicked()
+                            {
+                                #[cfg(debug_assertions)]
                                 {
-                                    large_button(ui, "Register", || {
+                                    if ui.input(|i| i.modifiers.alt)
+                                    // && ui.input(|i| i.modifiers.command)
+                                    // && ui.input(|i| i.modifiers.shift)
+                                    // && ui.input(|i| i.modifiers.ctrl)
+                                    {
                                         self.registered.key = generate_license_key(
                                             &self.registered.name,
                                             &self.registered.email,
                                         );
-                                        self.registered.validate();
-                                    });
-                                } else {
-                                    large_button(ui, "Register", || self.registered.validate());
+                                    }
                                 }
-                                //     && self.reg_key
-                                //         == generate_license_key(&self.reg_name, &self.reg_email)
-                                // {
-                                //     self.registered = Some(Registration {
-                                //         name: self.reg_name.clone(),
-                                //         email: self.reg_email.clone(),
-                                //         key: self.reg_key.clone(),
-                                //     });
-                                //     self.reg_name.clear();
-                                //     self.reg_email.clear();
-                                //     self.reg_key.clear();
-                                //     ui.close_menu();
-                                // }
-                                // if ui.input(|i| i.modifiers.alt)
-                                //     && ui.input(|i| i.modifiers.command)
-                                //     && ui.input(|i| i.modifiers.shift)
-                                //     && ui.input(|i| i.modifiers.ctrl)
-                                // {
-                                //     ui.label(generate_license_key(
-                                //         &self.registered.name,
-                                //         &self.registered.email,
-                                //     ));
-                                // }
-                            });
-                        }
-                        ui.separator();
-                        if ui.button("Quit").clicked() {
-                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                        }
-                    });
-                    ui.label(RichText::new("|").weak());
-
-                    self.panel_tab_bar(ui);
-
-                    if ui.available_width() > 20.0 {
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
-                            egui::widgets::global_dark_light_mode_switch(ui);
-                            ui.label(RichText::new("|").weak());
+                                self.registered.validate();
+                            }
                         });
                     }
+                    #[cfg(debug_assertions)]
+                    {
+                        if ui.button("KeyGen").clicked() {
+                            ui.close_menu();
+                            self.my_panel = Panel::KeyGen;
+                        }
+                    }
+                    ui.separator();
+                    if ui.button("Quit").clicked() {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                });
+                ui.label(RichText::new("|").weak());
 
-                    // ui.menu_button("View", |ui| {
-                    //     if ui.button("Duplicates Search").clicked() {
-                    //         ui.close_menu();
-                    //         self.my_panel = Panel::Duplicates
-                    //     }
-                    //     if ui.button("Find & Replace").clicked() {
-                    //         ui.close_menu();
-                    //         self.my_panel = Panel::Find
-                    //     }
-                    //     ui.separator();
-                    //     if ui.button("Duplicate Search Logic").clicked() {
-                    //         ui.close_menu();
-                    //         self.my_panel = Panel::Order
-                    //     }
-                    //     if ui.button("Tag Editor").clicked() {
-                    //         ui.close_menu();
-                    //         self.my_panel = Panel::Tags
-                    //     }
-                    // });
-                    // ui.menu_button("Help", |ui| {
-                    //     if ui.button("Show Help").clicked {
-                    //         ui.close_menu();
-                    //         self.help = true;
-                    //     }
-                    // });
+                self.panel_tab_bar(ui);
 
-                    // // let mut show_help_window = self.help;
-                    // if self.help {
-                    //     egui::Window::new("Records Marked for Duplication")
-                    //         .open(&mut self.help) // Control whether the window is open
-                    //         .show(ctx, |ui| {
-                    //             ui.label("This is a dialog!");
-                    //             // if ui.button("Close").clicked() {
-                    //             //     self.help = false; // Close the window when clicked
-                    //             // }
-                    //         });
-                    // }
+                if ui.available_width() > 20.0 {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                        egui::widgets::global_dark_light_mode_switch(ui);
+                        ui.label(RichText::new("|").weak());
+                    });
                 }
+
+                // // let mut show_help_window = self.help;
+                // if self.help {
+                //     egui::Window::new("Records Marked for Duplication")
+                //         .open(&mut self.help) // Control whether the window is open
+                //         .show(ctx, |ui| {
+                //             ui.label("This is a dialog!");
+                //             // if ui.button("Close").clicked() {
+                //             //     self.help = false; // Close the window when clicked
+                //             // }
+                //         });
+                // }
+                // }
             });
         });
 
@@ -828,7 +789,16 @@ impl eframe::App for TemplateApp {
                     }
                 }
                 ui.horizontal(|ui| {
-                    ui.label(label);
+                    if ui.label(label).clicked()
+                        // && ui.input(|i| i.modifiers.command)
+                        // && ui.input(|i| i.modifiers.shift)
+                        && ui.input(|i| i.key_down(egui::Key::Tab))
+                        && ui.input(|i| i.key_down(egui::Key::R))
+                        && ui.input(|i| i.key_down(egui::Key::Space))
+                    // && ui.input(|i| i.key_pressed(egui::Key::Tab))
+                    {
+                        self.my_panel = Panel::KeyGen;
+                    };
                 });
             });
         let id = egui::Id::new("bottom panel");
@@ -1365,15 +1335,18 @@ impl TemplateApp {
                 self.my_panel = Panel::Order;
             }
             if ui.button("Cancel").clicked() {
-                if ui.input(|i| i.modifiers.alt)
-                    && ui.input(|i| i.modifiers.command)
-                    && ui.input(|i| i.modifiers.shift)
-                    && ui.input(|i| i.modifiers.ctrl)
+                #[cfg(debug_assertions)]
                 {
-                    self.my_panel = Panel::KeyGen;
-                } else {
-                    self.my_panel = Panel::Order;
+                    if ui.input(|i| i.modifiers.alt)
+                        && ui.input(|i| i.modifiers.command)
+                        && ui.input(|i| i.modifiers.shift)
+                        && ui.input(|i| i.modifiers.ctrl)
+                    {
+                        self.my_panel = Panel::KeyGen;
+                        return;
+                    }
                 }
+                self.my_panel = Panel::Order;
             }
         });
     }
@@ -1453,12 +1426,10 @@ impl TemplateApp {
             ui.label("Email: ");
             ui.text_edit_singleline(&mut self.registered.email);
         });
+        self.registered.key = generate_license_key(&self.registered.name, &self.registered.email);
         ui.horizontal(|ui| {
             ui.label("License Key: ");
-            ui.label(generate_license_key(
-                &self.registered.name,
-                &self.registered.email,
-            ));
+            ui.label(&self.registered.key);
             // ui.text_edit_singleline(&mut self.registered.key);
         });
     }
