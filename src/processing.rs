@@ -73,10 +73,7 @@ pub async fn smreplace_get(
     case_sensitive: bool,
 ) -> Result<usize, sqlx::Error> {
     let case = if case_sensitive { "GLOB" } else { "LIKE" };
-    let search_query = format!(
-        "SELECT COUNT(rowid) FROM {} WHERE {} {} ?",
-        TABLE, column, case
-    );
+    let search_query = format!("SELECT COUNT(rowid) FROM {TABLE} WHERE {column} {case} ?");
     let result: (i64,) = sqlx::query_as(&search_query)
         .bind(format!("%{}%", find))
         .fetch_one(pool)
@@ -155,18 +152,9 @@ pub async fn gather_duplicate_filenames_in_database(
                 println!("Grouping duplicate record search by {}", group);
             }
             let where_clause = if group_null {
-                if verbose {
-                    println!(
-                        "Records without a {} entry will be processed together.",
-                        group
-                    );
-                }
                 String::new()
             } else {
-                if verbose {
-                    println!("Records without a {} entry will be skipped.", group);
-                }
-                format!("WHERE {} IS NOT NULL AND {} != ''", group, group)
+                format!("WHERE {group} IS NOT NULL AND {group} != ''")
             };
             (format!("{}, filename", group), where_clause)
         }
@@ -298,7 +286,6 @@ pub async fn gather_filenames_with_tags(
     pool: SqlitePool,
     tags: Vec<String>,
 ) -> Result<HashSet<FileRecord>, sqlx::Error> {
-    println!("Tokio Start");
     let mut file_records = HashSet::new();
     let max_concurrency = 10; // Adjust based on your system's capacity and connection pool size
 
@@ -495,127 +482,19 @@ pub async fn create_duplicates_db(
     Ok(())
 }
 
-// use sqlx::{ Executor, Error};
-// use std::fs;
-// use std::path::Path;
-
-// pub async fn create_duplicates_db2(
-//     old_db_path: &str,
-//     new_db_path: &str,
-//     records: &HashSet<FileRecord>,
-// ) -> Result<(), Error> {
-//     println!("Starting new create dupes");
-//     // Ensure the new database file does not already exist
-//     if Path::new(new_db_path).exists() {
-//         fs::remove_file(new_db_path)?;
-//     }
-
-//     let record_ids_to_keep: Vec<i64> = records.into_iter().map(|record| record.id as i64).collect();
-//     let placeholders: Vec<String> = record_ids_to_keep.iter().map(|_| "?".to_string()).collect();
-//     let placeholder_str = placeholders.join(",");
-
-//     // Create a new database file (SQLite will automatically create it when connected)
-//     let new_db_pool = SqlitePool::connect(&format!("sqlite://{}", new_db_path)).await?;
-
-//     // Connect to the original database
-//     let old_db_pool = SqlitePool::connect(&format!("sqlite://{}", old_db_path)).await?;
-
-//     // Begin copying schema from the old database to the new database
-//     // Fetch the schema (DDL) from the old database
-//     let schema: Vec<(String,)> = sqlx::query_as(
-//         r#"
-//         SELECT sql
-//         FROM sqlite_master
-//         WHERE type='table' AND name != 'sqlite_sequence';
-//         "#,
-//     )
-//     .fetch_all(&old_db_pool)
-//     .await?;
-
-//     // Create tables in the new database by executing the schema DDL
-//     for (ddl,) in schema {
-//         new_db_pool.execute(ddl.as_str()).await?;  // Use `as_str()` to convert `String` to `&str`
-//     }
-
-//     // Copy records from the `justinmetadata` table
-//     // Only keep records with IDs in the `record_ids_to_keep`
-//     let query = format!(
-//         r#"
-//         INSERT INTO justinmetadata
-//         SELECT *
-//         FROM main.justinmetadata
-//         WHERE rowid IN ({});
-//         "#,
-//         placeholder_str
-//     );
-
-//     let mut query = sqlx::query(&query);
-
-//     for id in &record_ids_to_keep {
-//         query = query.bind(id);
-//     }
-
-//     query.execute(&new_db_pool).await?;
-
-//     // Optionally copy related records from other tables (if needed)
-//     // Example: Suppose there is a related table with a foreign key constraint
-//     // Here we assume related_table has a foreign key `foreign_key_id` pointing to `justinmetadata`
-//     // sqlx::query(
-//     //     r#"
-//     //     INSERT INTO related_table
-//     //     SELECT *
-//     //     FROM main.related_table
-//     //     WHERE foreign_key_id IN (
-//     //         SELECT rowid
-//     //         FROM justinmetadata
-//     //     );
-//     //     "#
-//     // )
-//     // .execute(&new_db_pool)
-//     // .await?;
-
-//     println!("Records cloned successfully into the new database");
-
-//     Ok(())
-// }
-
 pub async fn open_db() -> Option<Database> {
     if let Some(path) = FileDialog::new()
         .add_filter("SQLite Database", &["sqlite"])
         .pick_file()
     {
-        let db_path = path.display().to_string();
-        if db_path.ends_with(".sqlite") {
-            println!("Opening Database {}", db_path);
-            let db = Database::open(db_path).await;
-            return Some(db);
+        if path.ends_with(".sqlite") {
+            if let Some(db_path) = path.to_str() {
+                return Some(Database::open(db_path).await);
+            }
         }
     }
     None
 }
-
-// pub async fn open_db() -> Option<Database> {
-//     // Open file dialog and restrict to SQLite files
-//     if let Some(path) = FileDialog::new()
-//         .add_filter("SQLite Database", &["sqlite"])
-//         .pick_file()
-//     {
-//         let db_path = path.display().to_string();
-//         println!("Opening Database: {}", db_path);
-
-//         // Attempt to open the database and handle errors
-//         match Database::open(db_path).await {
-//             Ok(db) => Some(db),
-//             Err(e) => {
-//                 eprintln!("Failed to open database: {}", e);
-//                 None
-//             }
-//         }
-//     } else {
-//         eprintln!("No file was selected.");
-//         None
-//     }
-// }
 
 pub async fn get_db_size(pool: &SqlitePool) -> Result<usize, sqlx::Error> {
     let count: (i64,) = sqlx::query_as(&format!("SELECT COUNT(*) FROM {}", TABLE))

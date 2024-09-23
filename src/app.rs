@@ -214,14 +214,14 @@ pub struct Database {
 }
 
 impl Database {
-    pub async fn open(db_path: String) -> Self {
-        let db_pool = SqlitePool::connect(&db_path)
+    pub async fn open(db_path: &str) -> Self {
+        let db_pool = SqlitePool::connect(db_path)
             .await
             .expect("Pool did not open");
         let db_size = get_db_size(&db_pool).await.expect("get db size");
         let db_columns = get_columns(&db_pool).await.expect("get columns");
         Self {
-            path: db_path.clone(),
+            path: db_path.to_string(),
             pool: db_pool,
             name: db_path
                 .split('/')
@@ -296,6 +296,24 @@ impl OrderOperator {
     }
 }
 
+#[derive(PartialEq, serde::Serialize, Deserialize, Clone, Copy)]
+pub enum Delete {
+    Trash,
+    Permanent,
+}
+
+impl Delete {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Delete::Trash => "Move to Trash",
+            Delete::Permanent => "Permanently Delete",
+        }
+    }
+    fn variants() -> &'static [Delete] {
+        &[Delete::Trash, Delete::Permanent]
+    }
+}
+
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
@@ -329,8 +347,7 @@ pub struct TemplateApp {
     case_sensitive: bool,
     find_buf: String,
     replace_buf: String,
-    // #[serde(skip)]
-    // searched: bool,
+
     main: Config,
     group: Config,
     group_null: bool,
@@ -340,6 +357,8 @@ pub struct TemplateApp {
 
     safe: bool,
     dupes_db: bool,
+    remove_files: bool,
+    delete_action: Delete,
     #[serde(skip)]
     my_panel: Panel,
     #[serde(skip)]
@@ -420,6 +439,8 @@ impl Default for TemplateApp {
 
             safe: true,
             dupes_db: false,
+            remove_files: false,
+            delete_action: Delete::Trash,
             my_panel: Panel::Duplicates,
             new_tag: String::new(),
             sel_tags: Vec::new(),
@@ -1170,6 +1191,10 @@ impl TemplateApp {
             empty_line(ui);
             ui.checkbox(&mut self.safe, "Create Safety Database of Thinned Records");
             ui.checkbox(&mut self.dupes_db, "Create Database of Duplicate Records");
+            ui.horizontal(|ui| {
+                ui.checkbox(&mut self.remove_files, "Remove Dupicate files with Record?");
+                enum_combo_box2(ui, &mut self.delete_action);
+            });
             empty_line(ui);
             ui.separator();
 
@@ -1754,11 +1779,11 @@ pub async fn remove_duplicates_go(
     sender2: mpsc::Sender<String>,
 ) -> Result<HashSet<FileRecord>, sqlx::Error> {
     if let Some(main_path) = &main_db_path {
-        let main_db = Database::open(main_path.to_string()).await;
+        let main_db = Database::open(main_path).await;
         let _result =
             delete_file_records(&main_db.pool, &records, sender.clone(), sender2.clone()).await;
         if let Some(path) = dupe_db_path {
-            let dupes_db = Database::open(path).await;
+            let dupes_db = Database::open(&path).await;
             let _result =
                 create_duplicates_db(&dupes_db.pool, &records, sender.clone(), sender2.clone())
                     .await;
@@ -1788,6 +1813,15 @@ fn enum_combo_box(ui: &mut egui::Ui, selected_variant: &mut OrderOperator) {
         .selected_text(selected_variant.as_str())
         .show_ui(ui, |ui| {
             for variant in OrderOperator::variants() {
+                ui.selectable_value(selected_variant, *variant, variant.as_str());
+            }
+        });
+}
+fn enum_combo_box2(ui: &mut egui::Ui, selected_variant: &mut Delete) {
+    egui::ComboBox::from_id_source("variants")
+        .selected_text(selected_variant.as_str())
+        .show_ui(ui, |ui| {
+            for variant in Delete::variants() {
                 ui.selectable_value(selected_variant, *variant, variant.as_str());
             }
         });
