@@ -14,6 +14,14 @@ where
         action(); // Call the passed function when the button is clicked
     }
 }
+pub fn rt_button<F>(ui: &mut Ui, label: egui::RichText, action: F)
+where
+    F: FnOnce(),
+{
+    if ui.button(label).clicked() {
+        action(); // Call the passed function when the button is clicked
+    }
+}
 
 pub fn large_button<F>(ui: &mut Ui, label: &str, action: F)
 where

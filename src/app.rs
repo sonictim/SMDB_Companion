@@ -9,6 +9,8 @@ use std::collections::HashSet;
 use std::fs::{self};
 use std::hash::Hash;
 use tokio::sync::mpsc;
+// use trash;
+use std::path::Path;
 
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 #[serde(default)]
@@ -211,6 +213,7 @@ pub struct Database {
     pub name: String,
     pub size: usize,
     pub columns: Vec<String>,
+    pub file_extensions: Vec<String>,
 }
 
 impl Database {
@@ -220,6 +223,9 @@ impl Database {
             .expect("Pool did not open");
         let db_size = get_db_size(&db_pool).await.expect("get db size");
         let db_columns = get_columns(&db_pool).await.expect("get columns");
+        // let db_extensions = get_audio_file_types(&db_pool)
+        //     .await
+        //     .expect("get extensions");
         Self {
             path: db_path.to_string(),
             pool: db_pool,
@@ -230,6 +236,7 @@ impl Database {
                 .to_string(),
             size: db_size,
             columns: db_columns,
+            file_extensions: Vec::new(),
         }
     }
 }
@@ -312,6 +319,50 @@ impl Delete {
     fn variants() -> &'static [Delete] {
         &[Delete::Trash, Delete::Permanent]
     }
+    // fn delete_file(&self, file: &str) -> Result<(), Box<dyn std::error::Error>> {
+    //     println!("{file}");
+    //     let path_obj = Path::new(file);
+
+    //     if path_obj.exists() {
+    //         match self {
+    //             Delete::Trash => trash::delete(file)?,
+    //             Delete::Permanent => fs::remove_file(file)?,
+    //         }
+    //     }
+
+    //     Ok(())
+    // }
+    fn delete_files(&self, files: HashSet<&str>) -> Result<(), Box<dyn std::error::Error>> {
+        println!("Removing Files");
+
+        // Filter valid files directly and collect them into a Vec
+        let valid_files: Vec<&str> = files
+            .par_iter()
+            .filter(|&&file| Path::new(file).exists())
+            .cloned() // Convert &str to str for collection
+            .collect();
+
+        match self {
+            Delete::Trash => {
+                if !valid_files.is_empty() {
+                    trash::delete_all(&valid_files).map_err(|e| {
+                        eprintln!("Move to Trash Failed: {}", e);
+                        e
+                    })?;
+                }
+            }
+            Delete::Permanent => {
+                for file in valid_files {
+                    fs::remove_file(file).map_err(|e| {
+                        eprintln!("Failed to remove file {}: {}", file, e);
+                        e
+                    })?;
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
@@ -335,6 +386,10 @@ pub struct TemplateApp {
     #[serde(skip)]
     replace_rx: Option<mpsc::Receiver<HashSet<FileRecord>>>,
     #[serde(skip)]
+    extensions_tx: Option<mpsc::Sender<Vec<String>>>,
+    #[serde(skip)]
+    extensions_rx: Option<mpsc::Receiver<Vec<String>>>,
+    #[serde(skip)]
     db: Option<Database>,
     #[serde(skip)]
     c_db: Option<Database>,
@@ -353,8 +408,10 @@ pub struct TemplateApp {
     group_null: bool,
     tags: Config,
     deep: Config,
+    ignore_extension: bool,
+    sel_extension: String,
     compare: Config,
-
+    // extensions: Config,
     safe: bool,
     dupes_db: bool,
     remove_files: bool,
@@ -396,9 +453,6 @@ pub struct TemplateApp {
     scroll_to_top: bool,
 
     registered: Registration,
-    // reg_name: String,
-    // reg_email: String,
-    // reg_key: String,
 }
 
 impl Default for TemplateApp {
@@ -407,6 +461,7 @@ impl Default for TemplateApp {
         let (c_tx, c_rx) = mpsc::channel(1);
         let (find_tx, find_rx) = mpsc::channel(1);
         let (replace_tx, replace_rx) = mpsc::channel(1);
+        let (extensions_tx, extensions_rx) = mpsc::channel(1);
         let mut app = Self {
             // rt: tokio::runtime::Runtime::new().unwrap(),
             tx: Some(tx),
@@ -417,6 +472,8 @@ impl Default for TemplateApp {
             find_rx: Some(find_rx),
             replace_tx: Some(replace_tx),
             replace_rx: Some(replace_rx),
+            extensions_tx: Some(extensions_tx),
+            extensions_rx: Some(extensions_rx),
             db: None,
             c_db: None,
             // total_records: 0,
@@ -435,8 +492,10 @@ impl Default for TemplateApp {
 
             tags: Config::new_option(false, "-"),
             deep: Config::new(false),
+            ignore_extension: false,
+            sel_extension: String::new(),
             compare: Config::new(false),
-
+            // extensions: Config::new(false),
             safe: true,
             dupes_db: false,
             remove_files: false,
@@ -471,6 +530,31 @@ impl Default for TemplateApp {
         app.order_friendly = default_order_friendly();
 
         app
+    }
+}
+impl TemplateApp {
+    fn clear_status(&mut self) {
+        self.main.status.clear();
+        self.main.records.clear();
+        self.group.status.clear();
+        self.group.records.clear();
+        self.tags.status.clear();
+        self.tags.records.clear();
+        self.deep.status.clear();
+        self.deep.records.clear();
+        self.compare.status.clear();
+        self.compare.records.clear();
+    }
+    fn clear_nodes(&mut self) {
+
+        self.group.status.clear();
+        self.group.records.clear();
+        self.tags.status.clear();
+        self.tags.records.clear();
+        self.deep.status.clear();
+        self.deep.records.clear();
+        self.compare.status.clear();
+        self.compare.records.clear();
     }
 }
 
@@ -516,6 +600,7 @@ impl TemplateApp {
         self.deep.search = true;
         self.tags.search = true;
         self.dupes_db = true;
+        self.ignore_extension = true;
     }
 }
 
@@ -541,15 +626,17 @@ impl eframe::App for TemplateApp {
                 ui.menu_button(RichText::new("File").weak(), |ui| {
                     if ui.button("Open Database").clicked() {
                         ui.close_menu();
-
+                        // self.clear_status();
                         let tx = self.tx.clone().expect("tx channel exists");
                         tokio::spawn(async move {
                             let db = open_db().await.unwrap();
                             let _ = tx.send(db).await;
                         });
+
                     }
                     if ui.button("Close Database").clicked() {
                         ui.close_menu();
+                        self.clear_status();
                         abort_all(self);
                         self.db = None;
                     }
@@ -557,6 +644,7 @@ impl eframe::App for TemplateApp {
                     ui.separator();
                     if ui.button("Restore Defaults").clicked() {
                         ui.close_menu();
+                        self.clear_status();
                         self.reset_to_defaults(
                             self.db.clone(),
                             self.my_panel,
@@ -565,6 +653,7 @@ impl eframe::App for TemplateApp {
                     }
                     if ui.input(|i| i.modifiers.alt) && ui.button("TJF Defaults").clicked() {
                         ui.close_menu();
+                        self.clear_status();
                         self.reset_to_tjf_defaults(
                             self.db.clone(),
                             self.my_panel,
@@ -572,16 +661,10 @@ impl eframe::App for TemplateApp {
                         );
                     }
                     egui::widgets::global_dark_light_mode_buttons(ui);
-                    ui.separator();
-                    if self.registered.valid.expect("some") {
-                        if ui.button(RichText::new("Unregister")).clicked() {
-                            self.registered.name.clear();
-                            self.registered.email.clear();
-                            self.registered.key.clear();
-                            self.registered.valid = Some(false);
-                            ui.close_menu();
-                        }
-                    } else {
+                    if !self.registered.valid.expect("some") {
+                        ui.separator();
+                        
+                   
                         ui.menu_button("Register", |ui| {
                             ui.horizontal(|ui| {
                                 ui.label("Name: ");
@@ -624,6 +707,15 @@ impl eframe::App for TemplateApp {
                     }
                     #[cfg(debug_assertions)]
                     {
+                        ui.separator();
+                        if ui.button(RichText::new("Unregister")).clicked() {
+                            self.registered.name.clear();
+                            self.registered.email.clear();
+                            self.registered.key.clear();
+                            self.registered.valid = Some(false);
+                            ui.close_menu();
+                        }
+                    
                         if ui.button("KeyGen").clicked() {
                             ui.close_menu();
                             self.my_panel = Panel::KeyGen;
@@ -682,6 +774,7 @@ impl eframe::App for TemplateApp {
                         )
                         .clicked()
                     {
+                        
                         let tx = self.tx.clone().expect("tx channel exists");
                         tokio::spawn(async move {
                             let db = open_db().await.unwrap();
@@ -905,6 +998,10 @@ impl TemplateApp {
 
     fn find_panel(&mut self, ui: &mut egui::Ui) {
         if let Some(db) = &self.db {
+            if db.size == 0 {
+                ui.heading("No Records in Database");
+                return;
+            }
             ui.heading(RichText::new("Find and Replace").strong());
             // ui.label("Note: Search is Case Sensitive");
             empty_line(ui);
@@ -1063,7 +1160,11 @@ impl TemplateApp {
     }
 
     fn duplictes_panel(&mut self, ui: &mut egui::Ui) {
-        if let Some(db) = &self.db {
+        if let Some(db) = &mut self.db {
+            if db.size == 0 {
+                ui.heading("No Records in Database");
+                return;
+            }
             ui.heading(RichText::new("Search for Duplicate Records").strong());
 
             //GROUP GROUP GROUP GROUP
@@ -1099,6 +1200,68 @@ impl TemplateApp {
             //DEEP DIVE DEEP DIVE DEEP DIVE
             ui.checkbox(&mut self.deep.search, "Deep Dive Duplicates Search");
 
+            if let Some(rx) = self.extensions_rx.as_mut() {
+                if let Ok(records) = rx.try_recv() {
+                    db.file_extensions = records;
+                }
+            }
+            if db.file_extensions.is_empty() {
+                let pool = db.pool.clone();
+                if let Some(tx) = self.extensions_tx.clone() {
+                    let _handle = tokio::spawn(async move {
+                        println!("Inside Async Task");
+
+                        // let _results  = action(&pool, sender).await;
+                        let results = get_audio_file_types(&pool).await;
+
+                        if (tx.send(results.expect("Tokio Results Error HashSet")).await).is_err() {
+                            eprintln!("Failed to send db");
+                        }
+                    });
+                }
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.label("Gathering Filetypes from DB");
+                    self.clear_status();
+                });
+            }
+            else {
+
+                ui.horizontal(|ui| {
+                    ui.add_space(24.0);
+    
+                    if self.sel_extension.is_empty() {
+                        self.sel_extension = db.file_extensions[0].clone();
+                    }
+                    if db.file_extensions.len() > 1 {
+                        ui.checkbox(&mut self.ignore_extension, "Ignore Filetypes");
+    
+                        if self.ignore_extension {
+                            ui.label(
+                                RichText::new(
+                                    "('example.wav' and 'example.flac' will be considered duplicates)",
+                                ), // .weak(),
+                            );
+                            // ui.label("Prefer:");
+                            // combo_box(
+                            //     ui,
+                            //     "Extensions",
+                            //     &mut self.sel_extension,
+                            //     &db.file_extensions,
+                            // );
+                        } else {
+                            ui.label(
+                                RichText::new(
+                                    "('example.wav' and 'example.flac' will be considered unique)",
+                                ), // .weak(),
+                            );
+                        }
+                    } else {
+                        ui.label("All Records are of Filetype:");
+                        ui.label(&self.sel_extension);
+                    }
+                });
+            }
             ui.horizontal(|ui| {
                 ui.add_space(24.0);
                 ui.label(
@@ -1152,6 +1315,56 @@ impl TemplateApp {
             });
             ui.separator();
 
+            // //EXTENSIONS EXTENSIONS EXTENSIONS
+            // ui.checkbox(
+            //     &mut self.extensions.search,
+            //     "Search for Duplicates Among Different File Types",
+            // );
+
+            // ui.horizontal(|ui| {
+            //     ui.add_space(24.0);
+            //     ui.label("Prefer records of filetype:");
+            //     if self.extensions.selected.is_empty() {
+            //         self.extensions.selected = db.file_extensions[0].clone();
+            //     }
+            //     // if db.size > 0 && db.file_extensions.is_empty() {
+            //     //     db.file_extensions = get_extensions(&db.pool).await;
+            //     // }
+            //     if db.file_extensions.len() > 1 {
+            //         combo_box(
+            //             ui,
+            //             "Extensions",
+            //             &mut self.extensions.selected,
+            //             &db.file_extensions,
+            //         );
+            //     } else {
+            //         ui.label(&self.extensions.selected);
+            //     }
+            // });
+
+            // ui.horizontal(|ui| {
+            //     if self.extensions.working {
+            //         ui.spinner();
+            //     } else {
+            //         ui.add_space(24.0)
+            //     }
+            //     ui.label(RichText::new(self.extensions.status.clone()).strong());
+            // });
+
+            // if self.extensions.working {
+            //     ui.add(
+            //         egui::ProgressBar::new(self.extensions.progress.0 / self.extensions.progress.1)
+            //             // .text("progress")
+            //             .desired_height(4.0),
+            //     );
+            //     ui.label(format!(
+            //         "Progress: {} / {}",
+            //         self.extensions.progress.0, self.extensions.progress.1
+            //     ));
+            // }
+
+            // ui.separator();
+
             //COMPARE COMPARE COMPARE COMPARE
             ui.horizontal(|ui| {
                 ui.checkbox(&mut self.compare.search, "Compare against database: ");
@@ -1189,12 +1402,31 @@ impl TemplateApp {
 
             // DELETION PREFERENCES
             empty_line(ui);
-            ui.checkbox(&mut self.safe, "Create Safety Database of Thinned Records");
+            ui.horizontal(|ui| {
+                ui.checkbox(&mut self.safe, "Create Safety Database of Thinned Records");
+                if !&self.safe {
+                    ui.label(
+                        RichText::new("UNSAFE!")
+                            .color(egui::Color32::from_rgb(255, 0, 0))
+                            .strong(),
+                    );
+                    ui.label(RichText::new("Will remove records from current database").strong());
+                }
+            });
             ui.checkbox(&mut self.dupes_db, "Create Database of Duplicate Records");
             ui.horizontal(|ui| {
-                ui.checkbox(&mut self.remove_files, "Remove Dupicate files with Record?");
+                ui.checkbox(&mut self.remove_files, "Remove Dupicate Files?");
                 enum_combo_box2(ui, &mut self.delete_action);
+                if self.remove_files && self.delete_action == Delete::Permanent {
+                    ui.label(
+                        RichText::new("UNSAFE!")
+                            .color(egui::Color32::from_rgb(255, 0, 0))
+                            .strong(),
+                    );
+                    ui.label(RichText::new("This is NOT undoable").strong());
+                }
             });
+
             empty_line(ui);
             ui.separator();
 
@@ -1208,13 +1440,13 @@ impl TemplateApp {
                     self.go_replace = true;
 
                     if ui.input(|i| i.modifiers.alt) {
-                        button(ui, "Search and Remove Duplicates", || {
+                        rt_button(ui, RichText::new("Search and Remove Duplicates").size(16.0).strong(), || {
                             self.go_search = true;
                             self.go_replace = false;
                             gather_duplicates(self);
                         });
                     } else {
-                        button(ui, "Search for Duplicates", || gather_duplicates(self));
+                        rt_button(ui, RichText::new("Search for Duplicates").size(16.0), || gather_duplicates(self));
                     }
                 }
                 if !self.main.records.is_empty() && !handles_active(self) {
@@ -1222,8 +1454,8 @@ impl TemplateApp {
                         "{} total records marked for removal",
                         self.main.records.len()
                     );
-
-                    if ui.button("Remove Duplicates").clicked() {
+                    
+                    if ui.button(RichText::new("Remove Duplicates").strong().size(16.0)).clicked() {
                         remove_duplicates(self);
                     }
                 }
@@ -1664,10 +1896,11 @@ pub fn gather_duplicates(app: &mut TemplateApp) {
             if let Some(sender) = app.deep.progress_sender.clone() {
                 if let Some(sender2) = app.deep.status_sender.clone() {
                     let pool = pool.clone();
+                    let ignore = app.ignore_extension;
                     wrap_async(
                         &mut app.deep,
                         "Searching for Duplicates with similar Filenames",
-                        move || gather_deep_dive_records(pool, sender, sender2),
+                        move || gather_deep_dive_records(pool, sender, sender2, ignore),
                     )
                 }
             }
@@ -1710,8 +1943,9 @@ pub fn gather_duplicates(app: &mut TemplateApp) {
 
 fn receive_async_data(app: &mut TemplateApp) {
     if let Some(records) = app.main.receive_hashset() {
+        app.clear_status();
         app.main.status = format! {"Removed {} duplicates", records.len()};
-        app.main.records.clear();
+        // app.main.records.clear();
     }
 
     if let Some(records) = app.group.receive_hashset() {
@@ -1767,6 +2001,22 @@ fn remove_duplicates(app: &mut TemplateApp) {
                     remove_duplicates_go(records, work_db_path, duplicate_db_path, sender, sender2)
                 })
             }
+        }
+        if app.remove_files {
+            println!("Removing Files");
+            let files: HashSet<&str> = app
+                .main
+                .records
+                .par_iter()
+                .map(|record| record.path.as_str())
+                .collect();
+
+            let _ = app.delete_action.delete_files(files);
+            // for path in files {
+            //     app.delete_action
+            //         .delete_file(path)
+            //         .expect("all files should be valid")
+            // }
         }
     }
 }

@@ -1,13 +1,16 @@
 #![allow(non_snake_case)]
 use rfd::FileDialog;
+// use sqlx::Sqlite;
 use sqlx::{sqlite::SqlitePool, Row};
 use std::collections::{HashMap, HashSet};
+use std::result::Result;
 
-use futures::future::join_all;
+// use futures::future::join_all;
 use futures::stream::{self, StreamExt};
 use rayon::prelude::*;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::path::Path;
+// use std::sync::atomic::{AtomicUsize, Ordering};
+// use std::sync::Arc;
 use tokio::sync::mpsc;
 
 use crate::app::*;
@@ -25,14 +28,31 @@ pub fn generate_license_key(username: &str, email: &str) -> String {
 }
 
 static FILENAME_REGEX: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^(?P<base>.+?)(\.\d+|\.\w+)+(?P<ext>\.\w+)$").unwrap());
+    Lazy::new(|| Regex::new(r"^(?P<base>.+?)(?:\.(?:\d+|M))*$").unwrap());
 
-fn get_root_filename(filename: &str) -> Option<String> {
-    if let Some(caps) = FILENAME_REGEX.captures(filename) {
-        Some(format!("{}{}", &caps["base"], &caps["ext"]))
+fn get_root_filename(filename: &str, ignore_extension: bool) -> Option<String> {
+    let path = Path::new(filename);
+    let mut name = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_string();
+
+    let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+
+    // Use the regex to capture the base name
+    if let Some(caps) = FILENAME_REGEX.captures(&name) {
+        name = caps["base"].to_string();
     } else {
-        Some(filename.to_string())
+        println!("{} Did not match Regex", filename);
     }
+
+    if ignore_extension {
+        return Some(name);
+    }
+
+    // Reattach the extension if it's not being ignored
+    Some(format!("{name}.{extension}"))
 }
 
 const TABLE: &str = "justinmetadata";
@@ -210,6 +230,7 @@ pub async fn gather_deep_dive_records(
     pool: SqlitePool,
     progress_sender: mpsc::Sender<ProgressMessage>,
     status_sender: mpsc::Sender<String>,
+    ignore_extension: bool,
 ) -> Result<HashSet<FileRecord>, sqlx::Error> {
     let mut file_groups: HashMap<String, Vec<FileRecord>> = HashMap::new();
 
@@ -234,7 +255,7 @@ pub async fn gather_deep_dive_records(
                 path: row.get(3),
             };
 
-            let base_filename = get_root_filename(&file_record.filename)
+            let base_filename = get_root_filename(&file_record.filename, ignore_extension)
                 .unwrap_or_else(|| file_record.filename.clone());
 
             (base_filename, file_record)
@@ -268,9 +289,28 @@ pub async fn gather_deep_dive_records(
             continue;
         }
 
-        let root_found = records.iter().any(|record| record.filename == root);
+        let root_found = records.iter().any(|record| {
+            if ignore_extension {
+                let name = Path::new(&record.filename)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap();
+                return name == root;
+            }
+
+            record.filename == root
+        });
         if root_found {
-            file_records.extend(records.into_iter().filter(|record| record.filename != root));
+            file_records.extend(records.into_iter().filter(|record| {
+                if ignore_extension {
+                    let name = Path::new(&record.filename)
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap();
+                    return name != root;
+                }
+                record.filename != root
+            }));
         } else {
             file_records.extend(records.into_iter().skip(1));
         }
@@ -389,6 +429,14 @@ fn extract_filenames_set_from_records(file_records: &HashSet<FileRecord>) -> Has
         .collect()
 }
 
+// use futures::future::join_all;
+// use sqlx::Error;
+// use std::sync::{
+//     atomic::{AtomicUsize, Ordering},
+//     Arc,
+// };
+// use tokio::task::JoinHandle;
+
 pub async fn delete_file_records(
     pool: &SqlitePool,
     records: &HashSet<FileRecord>,
@@ -404,53 +452,51 @@ pub async fn delete_file_records(
     }
 
     let total = records.len();
-    let counter = Arc::new(AtomicUsize::new(0)); // Atomic counter for progress tracking
-    let mut tasks = Vec::new();
+    let mut current_count = 0;
 
     for chunk in ids.chunks(CHUNK_SIZE) {
-        let chunk: Vec<i64> = chunk.to_vec(); // Clone the chunk to move it into the async block
-        let pool = pool.clone();
-        let progress_sender = progress_sender.clone();
-        let status_sender = status_sender.clone();
-        let counter = counter.clone(); // Clone the Arc to share between tasks
+        let chunk: Vec<i64> = chunk.to_vec(); // Clone the chunk for the query
 
-        let task = tokio::spawn(async move {
-            // Construct the SQL query with placeholders for the chunk
-            let query = format!(
-                "DELETE FROM {} WHERE rowid IN ({})",
-                TABLE,
-                chunk.iter().map(|_| "?").collect::<Vec<&str>>().join(", ")
-            );
+        // Construct the SQL query with placeholders for the chunk
+        let query = format!(
+            "DELETE FROM {} WHERE rowid IN ({})",
+            TABLE,
+            chunk.iter().map(|_| "?").collect::<Vec<&str>>().join(", ")
+        );
 
-            // Prepare the query with bound parameters
-            let mut query = sqlx::query(&query);
-            for id in chunk {
-                query = query.bind(id);
+        // Prepare the query with bound parameters
+        let mut query = sqlx::query(&query);
+        for id in &chunk {
+            query = query.bind(*id);
+        }
+
+        // Execute the query
+        match query.execute(pool).await {
+            Ok(result) => {
+                let rows_deleted = result.rows_affected();
+                println!("Deleted {} records", rows_deleted);
             }
+            Err(err) => {
+                eprintln!("Failed to delete records: {:?}", err);
+            }
+        }
 
-            let _result = query.execute(&pool).await;
+        // Update the current count and send progress
+        current_count += chunk.len();
+        let progress = std::cmp::min(current_count, total);
 
-            // Update the counter atomically and send progress
-            let current_count = counter.fetch_add(CHUNK_SIZE, Ordering::SeqCst) + CHUNK_SIZE;
-            let progress = std::cmp::min(current_count, total); // Ensure we don't exceed total
-
-            let _ = progress_sender
-                .send(ProgressMessage::Update(progress, total))
-                .await;
-            let _ = status_sender
-                .send(format!("Processed {} / {}", progress, total))
-                .await;
-        });
-
-        tasks.push(task);
+        let _ = progress_sender
+            .send(ProgressMessage::Update(progress, total))
+            .await;
+        let _ = status_sender
+            .send(format!("Processed {} / {}", progress, total))
+            .await;
     }
-
-    // Await all tasks
-    let _results = join_all(tasks).await;
 
     // After all deletions, perform the cleanup
     let _ = status_sender.send("Cleaning Up Database".to_string()).await;
     let _result = sqlx::query("VACUUM").execute(pool).await;
+
     println!("VACUUM done inside delete function");
 
     Ok(())
@@ -462,13 +508,18 @@ pub async fn create_duplicates_db(
     progress_sender: mpsc::Sender<ProgressMessage>,
     status_sender: mpsc::Sender<String>,
 ) -> Result<(), sqlx::Error> {
-    println!("Generating Duplicates Only Database.  This can take awhile.");
+    println!("Generating Duplicates Only Database. This can take a while.");
     let _ = status_sender
-        .send("Creating Dupliates Only Database.  This can be slow.".to_string())
+        .send("Creating Duplicates Only Database. This can be slow.".to_string())
         .await;
 
-    if let Ok(mut dupe_records_to_delete) = fetch_all_filerecords_from_database(pool).await {
-        dupe_records_to_delete.retain(|record| !dupe_records_to_keep.contains(record));
+    if let Ok(all_records) = fetch_all_filerecords_from_database(pool).await {
+        // Use a parallel iterator to process records
+        let dupe_records_to_delete: HashSet<FileRecord> = all_records
+            .par_iter() // Parallel iterator
+            .filter(|record| !dupe_records_to_keep.contains(record)) // Filter out records to keep
+            .cloned() // Clone the records to create a new HashSet
+            .collect(); // Collect into a HashSet
 
         let _result = delete_file_records(
             pool,
@@ -487,10 +538,11 @@ pub async fn open_db() -> Option<Database> {
         .add_filter("SQLite Database", &["sqlite"])
         .pick_file()
     {
-        if path.ends_with(".sqlite") {
-            if let Some(db_path) = path.to_str() {
-                return Some(Database::open(db_path).await);
-            }
+        let db_path = path.display().to_string();
+        if db_path.ends_with(".sqlite") {
+            println!("Opening Database {}", db_path);
+            let db = Database::open(&db_path).await;
+            return Some(db);
         }
     }
     None
@@ -526,8 +578,22 @@ pub async fn get_columns(pool: &SqlitePool) -> Result<Vec<String>, sqlx::Error> 
     Ok(sorted_columns)
 }
 
+pub async fn get_audio_file_types(pool: &SqlitePool) -> Result<Vec<String>, sqlx::Error> {
+    let rows = sqlx::query("SELECT DISTINCT AudioFileType FROM justinmetadata")
+        .fetch_all(pool)
+        .await?;
+
+    let audio_file_types: Vec<String> = rows
+        .iter()
+        .filter_map(|row| row.get::<Option<String>, _>("AudioFileType")) // Access the column directly
+        .collect();
+
+    Ok(audio_file_types)
+}
+
 pub fn default_tags() -> Vec<String> {
-    const DEFAULT_TAGS_VEC: [&str; 44] = [
+    const DEFAULT_TAGS_VEC: [&str; 45] = [
+        "-1eqa_",
         "-6030_",
         "-7eqa_",
         "-A2sA_",
@@ -577,7 +643,8 @@ pub fn default_tags() -> Vec<String> {
 }
 
 pub fn tjf_tags() -> Vec<String> {
-    const TJF_TAGS_VEC: [&str; 48] = [
+    const TJF_TAGS_VEC: [&str; 49] = [
+        "-1eqa_",
         "-6030_",
         "-7eqa_",
         "-A2sA_",
