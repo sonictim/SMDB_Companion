@@ -545,17 +545,6 @@ impl TemplateApp {
         self.compare.status.clear();
         self.compare.records.clear();
     }
-    fn clear_nodes(&mut self) {
-
-        self.group.status.clear();
-        self.group.records.clear();
-        self.tags.status.clear();
-        self.tags.records.clear();
-        self.deep.status.clear();
-        self.deep.records.clear();
-        self.compare.status.clear();
-        self.compare.records.clear();
-    }
 }
 
 impl TemplateApp {
