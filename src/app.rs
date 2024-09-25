@@ -1,7 +1,6 @@
 use crate::assets::*;
 use crate::processing::*;
 use eframe::egui::{self, RichText};
-// use egui::SelectableLabel;
 use rayon::prelude::*;
 use serde::Deserialize;
 use sqlx::sqlite::SqlitePool;
@@ -9,7 +8,6 @@ use std::collections::HashSet;
 use std::fs::{self};
 use std::hash::Hash;
 use tokio::sync::mpsc;
-// use trash;
 use std::path::Path;
 
 #[derive(serde::Deserialize, serde::Serialize, Default)]
@@ -23,16 +21,6 @@ struct Registration {
     valid: Option<bool>,
 }
 
-// impl Default for Registration {
-//     fn default() -> Self {
-//         Self {
-//             name: String::new(),
-//             email: String::new(),
-//             key: String::new(),
-//             valid: None,
-//         }
-//     }
-// }
 
 impl Registration {
     fn validate(&mut self) {
@@ -46,6 +34,43 @@ impl Registration {
 
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)]
+pub struct AsyncTunnel<T> {
+    #[serde(skip)]
+    pub tx: Option<mpsc::Sender<T>>,
+    #[serde(skip)]
+    pub rx: Option<mpsc::Receiver<T>>,
+}
+
+impl<T> AsyncTunnel<T> {
+    // Make `new` an associated function, and use `Self` for the return type
+    pub fn new(channels: usize) -> AsyncTunnel<T> {
+        let (tx, rx) = mpsc::channel(channels);
+        AsyncTunnel {
+            tx: Some(tx),
+            rx: Some(rx),
+        }
+    }
+
+    // You might want to add methods to send and receive messages
+    // pub async fn send(&self, item: T) -> Result<(), mpsc::error::SendError<T>> {
+    //     if let Some(tx) = &self.tx {
+    //         tx.send(item).await
+    //     } else {
+    //         Err(mpsc::error::SendError(item))
+    //     }
+    // }
+
+    // pub async fn receive(&self) -> Option<T> {
+    //     if let Some(rx) = &self.rx {
+    //         rx.recv().await.ok()
+    //     } else {
+    //         None
+    //     }
+    // }
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+#[serde(default)]
 
 pub struct Config {
     pub search: bool,
@@ -54,21 +79,16 @@ pub struct Config {
     #[serde(skip)]
     pub status: String,
     #[serde(skip)]
-    pub status_sender: Option<mpsc::Sender<String>>,
-    #[serde(skip)]
-    pub status_receiver: Option<mpsc::Receiver<String>>,
+    pub status_io: AsyncTunnel<String>,
     #[serde(skip)]
     pub records: HashSet<FileRecord>,
     #[serde(skip)]
     pub working: bool,
+
     #[serde(skip)]
-    pub tx: Option<mpsc::Sender<HashSet<FileRecord>>>,
+    pub records_io: AsyncTunnel<HashSet<FileRecord>>,
     #[serde(skip)]
-    pub rx: Option<mpsc::Receiver<HashSet<FileRecord>>>,
-    #[serde(skip)]
-    pub progress_sender: Option<mpsc::Sender<ProgressMessage>>,
-    #[serde(skip)]
-    pub progress_receiver: Option<mpsc::Receiver<ProgressMessage>>,
+    pub progress_io: AsyncTunnel<ProgressMessage>,
     #[serde(skip)]
     pub progress: (f32, f32),
     #[serde(skip)]
@@ -77,22 +97,16 @@ pub struct Config {
 
 impl Clone for Config {
     fn clone(&self) -> Self {
-        let (tx, rx) = mpsc::channel(1);
-        let (progress_sender, progress_receiver) = mpsc::channel(32);
-        let (status_sender, status_receiver) = mpsc::channel(1);
         Config {
             search: self.search,
             list: self.list.clone(),
             selected: self.selected.clone(),
             status: self.status.clone(),
-            status_sender: Some(status_sender),
-            status_receiver: Some(status_receiver),
+            status_io: AsyncTunnel::new(1),
             records: self.records.clone(),
             working: self.working,
-            tx: Some(tx),
-            rx: Some(rx),
-            progress_sender: Some(progress_sender),
-            progress_receiver: Some(progress_receiver),
+            records_io: AsyncTunnel::new(1),
+            progress_io: AsyncTunnel::new(32),
             progress: self.progress,
             handle: None, // JoinHandle does not implement Clone
         }
@@ -100,22 +114,16 @@ impl Clone for Config {
 }
 impl Default for Config {
     fn default() -> Self {
-        let (tx, rx) = mpsc::channel(1);
-        let (progress_sender, progress_receiver) = mpsc::channel(32);
-        let (status_sender, status_receiver) = mpsc::channel(1);
         Self {
             search: false,
             list: Vec::new(),
             selected: String::new(),
             status: String::new(),
-            status_sender: Some(status_sender),
-            status_receiver: Some(status_receiver),
+            status_io: AsyncTunnel::new(1),
             records: HashSet::new(),
             working: false,
-            tx: Some(tx),
-            rx: Some(rx),
-            progress_sender: Some(progress_sender),
-            progress_receiver: Some(progress_receiver),
+            records_io: AsyncTunnel::new(1),
+            progress_io: AsyncTunnel::new(32),
             progress: (0.0, 0.0),
             handle: None,
         }
@@ -124,43 +132,32 @@ impl Default for Config {
 
 impl Config {
     fn new(on: bool) -> Self {
-        let (tx, rx) = mpsc::channel(1);
-        let (progress_sender, progress_receiver) = mpsc::channel(32);
-        let (status_sender, status_receiver) = mpsc::channel(1);
         Self {
             search: on,
             list: Vec::new(),
             selected: String::new(),
             status: String::new(),
-            status_sender: Some(status_sender),
-            status_receiver: Some(status_receiver),
+            status_io: AsyncTunnel::new(1),
             records: HashSet::new(),
             working: false,
-            tx: Some(tx),
-            rx: Some(rx),
-            progress_sender: Some(progress_sender),
-            progress_receiver: Some(progress_receiver),
+            records_io: AsyncTunnel::new(1),
+            progress_io: AsyncTunnel::new(32),
             progress: (0.0, 0.0),
             handle: None,
         }
     }
     fn new_option(on: bool, o: &str) -> Self {
-        let (tx, rx) = mpsc::channel(1);
-        let (progress_sender, progress_receiver) = mpsc::channel(32);
-        let (status_sender, status_receiver) = mpsc::channel(1);
+
         Self {
             search: on,
             list: Vec::new(),
             selected: o.to_string(),
             status: String::new(),
-            status_sender: Some(status_sender),
-            status_receiver: Some(status_receiver),
+            status_io: AsyncTunnel::new(1),
             records: HashSet::new(),
             working: false,
-            tx: Some(tx),
-            rx: Some(rx),
-            progress_sender: Some(progress_sender),
-            progress_receiver: Some(progress_receiver),
+            records_io: AsyncTunnel::new(1),
+            progress_io: AsyncTunnel::new(32),
             progress: (0.0, 0.0),
             handle: None,
         }
@@ -177,7 +174,7 @@ impl Config {
     }
 
     fn receive_hashset(&mut self) -> Option<HashSet<FileRecord>> {
-        if let Some(rx) = self.rx.as_mut() {
+        if let Some(rx) = self.records_io.rx.as_mut() {
             if let Ok(records) = rx.try_recv() {
                 self.records = records.clone();
                 self.handle = None;
@@ -190,7 +187,7 @@ impl Config {
         None
     }
     fn receive_progress(&mut self) {
-        if let Some(progress_receiver) = &mut self.progress_receiver {
+        if let Some(progress_receiver) = &mut self.progress_io.rx {
             while let Ok(message) = progress_receiver.try_recv() {
                 let ProgressMessage::Update(current, total) = message;
                 self.progress = (current as f32, total as f32);
@@ -198,7 +195,7 @@ impl Config {
         }
     }
     fn receive_status(&mut self) {
-        if let Some(status_receiver) = &mut self.status_receiver {
+        if let Some(status_receiver) = &mut self.status_io.rx {
             while let Ok(message) = status_receiver.try_recv() {
                 self.status = message;
             }
@@ -319,19 +316,7 @@ impl Delete {
     fn variants() -> &'static [Delete] {
         &[Delete::Trash, Delete::Permanent]
     }
-    // fn delete_file(&self, file: &str) -> Result<(), Box<dyn std::error::Error>> {
-    //     println!("{file}");
-    //     let path_obj = Path::new(file);
-
-    //     if path_obj.exists() {
-    //         match self {
-    //             Delete::Trash => trash::delete(file)?,
-    //             Delete::Permanent => fs::remove_file(file)?,
-    //         }
-    //     }
-
-    //     Ok(())
-    // }
+ 
     fn delete_files(&self, files: HashSet<&str>) -> Result<(), Box<dyn std::error::Error>> {
         println!("Removing Files");
 
@@ -368,27 +353,19 @@ impl Delete {
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
-pub struct TemplateApp {
+pub struct App {
     #[serde(skip)]
-    tx: Option<mpsc::Sender<Database>>,
+    db_io: AsyncTunnel<Database>,
     #[serde(skip)]
-    rx: Option<mpsc::Receiver<Database>>,
+    cdb_io: AsyncTunnel<Database>,
     #[serde(skip)]
-    c_tx: Option<mpsc::Sender<Database>>,
+    find_io: AsyncTunnel<usize>,
     #[serde(skip)]
-    c_rx: Option<mpsc::Receiver<Database>>,
+    replace_io: AsyncTunnel<HashSet<FileRecord>>,
     #[serde(skip)]
-    find_tx: Option<mpsc::Sender<usize>>,
+    extensions_io: AsyncTunnel<Vec<String>>,
     #[serde(skip)]
-    find_rx: Option<mpsc::Receiver<usize>>,
-    #[serde(skip)]
-    replace_tx: Option<mpsc::Sender<HashSet<FileRecord>>>,
-    #[serde(skip)]
-    replace_rx: Option<mpsc::Receiver<HashSet<FileRecord>>>,
-    #[serde(skip)]
-    extensions_tx: Option<mpsc::Sender<Vec<String>>>,
-    #[serde(skip)]
-    extensions_rx: Option<mpsc::Receiver<Vec<String>>>,
+    gathering_extensions: bool,
     #[serde(skip)]
     db: Option<Database>,
     #[serde(skip)]
@@ -411,7 +388,7 @@ pub struct TemplateApp {
     ignore_extension: bool,
     sel_extension: String,
     compare: Config,
-    // extensions: Config,
+   
     safe: bool,
     dupes_db: bool,
     remove_files: bool,
@@ -455,28 +432,19 @@ pub struct TemplateApp {
     registered: Registration,
 }
 
-impl Default for TemplateApp {
+impl Default for App {
     fn default() -> Self {
-        let (tx, rx) = mpsc::channel(1);
-        let (c_tx, c_rx) = mpsc::channel(1);
-        let (find_tx, find_rx) = mpsc::channel(1);
-        let (replace_tx, replace_rx) = mpsc::channel(1);
-        let (extensions_tx, extensions_rx) = mpsc::channel(1);
+      
         let mut app = Self {
-            // rt: tokio::runtime::Runtime::new().unwrap(),
-            tx: Some(tx),
-            rx: Some(rx),
-            c_tx: Some(c_tx),
-            c_rx: Some(c_rx),
-            find_tx: Some(find_tx),
-            find_rx: Some(find_rx),
-            replace_tx: Some(replace_tx),
-            replace_rx: Some(replace_rx),
-            extensions_tx: Some(extensions_tx),
-            extensions_rx: Some(extensions_rx),
+            db_io: AsyncTunnel::new(1),
+            cdb_io: AsyncTunnel::new(1),
+            find_io: AsyncTunnel::new(1),
+            replace_io: AsyncTunnel::new(1),
+            extensions_io: AsyncTunnel::new(1),
+            gathering_extensions: false,
             db: None,
             c_db: None,
-            // total_records: 0,
+          
             column: "Library".to_owned(),
             find: String::new(),
             replace: String::new(),
@@ -485,7 +453,7 @@ impl Default for TemplateApp {
             case_sensitive: true,
             find_buf: String::new(),
             replace_buf: String::new(),
-            // searched: false,
+           
             main: Config::new(true),
             group: Config::new_option(false, "Show"),
             group_null: false,
@@ -495,7 +463,7 @@ impl Default for TemplateApp {
             ignore_extension: false,
             sel_extension: String::new(),
             compare: Config::new(false),
-            // extensions: Config::new(false),
+           
             safe: true,
             dupes_db: false,
             remove_files: false,
@@ -521,9 +489,6 @@ impl Default for TemplateApp {
             scroll_to_top: false,
 
             registered: Registration::default(),
-            // reg_name: String::new(),
-            // reg_email: String::new(),
-            // reg_key: String::new(),
         };
         app.tags.list = default_tags();
         app.main.list = default_order();
@@ -532,7 +497,7 @@ impl Default for TemplateApp {
         app
     }
 }
-impl TemplateApp {
+impl App {
     fn clear_status(&mut self) {
         self.main.status.clear();
         self.main.records.clear();
@@ -544,10 +509,11 @@ impl TemplateApp {
         self.deep.records.clear();
         self.compare.status.clear();
         self.compare.records.clear();
+        self.gathering_extensions = false;
     }
 }
 
-impl TemplateApp {
+impl App {
     /// Called once before the first frame.
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         // This is also where you can customize the look and feel of egui using
@@ -593,7 +559,7 @@ impl TemplateApp {
     }
 }
 
-impl eframe::App for TemplateApp {
+impl eframe::App for App {
     /// Called by the frame work to save state before shutdown.
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         eframe::set_value(storage, eframe::APP_KEY, self);
@@ -616,7 +582,7 @@ impl eframe::App for TemplateApp {
                     if ui.button("Open Database").clicked() {
                         ui.close_menu();
                         // self.clear_status();
-                        let tx = self.tx.clone().expect("tx channel exists");
+                        let tx = self.db_io.tx.clone().expect("tx channel exists");
                         tokio::spawn(async move {
                             let db = open_db().await.unwrap();
                             let _ = tx.send(db).await;
@@ -744,7 +710,7 @@ impl eframe::App for TemplateApp {
         // The central panel the region left after adding TopPanel's and SidePanel's
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            if let Some(rx) = self.rx.as_mut() {
+            if let Some(rx) = self.db_io.rx.as_mut() {
                 if let Ok(db) = rx.try_recv() {
                     self.db = Some(db);
                 }
@@ -764,7 +730,7 @@ impl eframe::App for TemplateApp {
                         .clicked()
                     {
                         
-                        let tx = self.tx.clone().expect("tx channel exists");
+                        let tx = self.db_io.tx.clone().expect("tx channel exists");
                         tokio::spawn(async move {
                             let db = open_db().await.unwrap();
                             let _ = tx.send(db).await;
@@ -776,7 +742,7 @@ impl eframe::App for TemplateApp {
                 empty_line(ui);
                 ui.vertical_centered(|ui| {
                     large_button(ui, "Open Database", || {
-                        let tx = self.tx.clone().expect("tx channel exists");
+                        let tx = self.db_io.tx.clone().expect("tx channel exists");
                         tokio::spawn(async move {
                             let db = open_db().await.unwrap();
                             let _ = tx.send(db).await;
@@ -915,7 +881,7 @@ impl eframe::App for TemplateApp {
     }
 }
 
-impl TemplateApp {
+impl App {
     fn panel_tab_bar(&mut self, ui: &mut egui::Ui) {
         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
             let mut space = ui.available_width() / 2.0 - 300.0;
@@ -1054,7 +1020,7 @@ impl TemplateApp {
                 if self.search_replace_path {
                     self.column = "FilePath".to_string()
                 }
-                let tx = self.find_tx.clone().expect("tx channel exists");
+                let tx = self.find_io.tx.clone().expect("tx channel exists");
                 let pool = db.pool.clone();
                 let mut find = self.find.clone();
                 let mut column = self.column.clone();
@@ -1067,7 +1033,7 @@ impl TemplateApp {
                 });
             }
             empty_line(ui);
-            if let Some(rx) = self.find_rx.as_mut() {
+            if let Some(rx) = self.find_io.rx.as_mut() {
                 if let Ok(count) = rx.try_recv() {
                     self.count = count;
                 }
@@ -1189,18 +1155,16 @@ impl TemplateApp {
             //DEEP DIVE DEEP DIVE DEEP DIVE
             ui.checkbox(&mut self.deep.search, "Deep Dive Duplicates Search");
 
-            if let Some(rx) = self.extensions_rx.as_mut() {
+            if let Some(rx) = self.extensions_io.rx.as_mut() {
                 if let Ok(records) = rx.try_recv() {
                     db.file_extensions = records;
                 }
             }
-            if db.file_extensions.is_empty() {
+            if db.file_extensions.is_empty() && !self.gathering_extensions {
+                self.gathering_extensions = true;
                 let pool = db.pool.clone();
-                if let Some(tx) = self.extensions_tx.clone() {
+                if let Some(tx) = self.extensions_io.tx.clone() {
                     let _handle = tokio::spawn(async move {
-                        println!("Inside Async Task");
-
-                        // let _results  = action(&pool, sender).await;
                         let results = get_audio_file_types(&pool).await;
 
                         if (tx.send(results.expect("Tokio Results Error HashSet")).await).is_err() {
@@ -1362,13 +1326,13 @@ impl TemplateApp {
                 }
 
                 button(ui, "Select DB", || {
-                    let tx = self.c_tx.clone().expect("tx channel exists");
+                    let tx = self.cdb_io.tx.clone().expect("tx channel exists");
                     tokio::spawn(async move {
                         let db = open_db().await.unwrap();
                         let _ = tx.send(db).await;
                     });
                 });
-                if let Some(rx) = self.c_rx.as_mut() {
+                if let Some(rx) = self.cdb_io.rx.as_mut() {
                     if let Ok(db) = rx.try_recv() {
                         self.c_db = Some(db);
                     }
@@ -1704,7 +1668,7 @@ impl TemplateApp {
     // }
 }
 
-// pub async fn records_window_display(ctx: &egui::Context, app: &mut TemplateApp) {
+// pub async fn records_window_display(ctx: &egui::Context, app: &mut App) {
 //     egui::Window::new("Records Marked for Duplication")
 //         .open(&mut app.records_window) // Control whether the window is open
 //         .show(ctx, |ui| {
@@ -1733,7 +1697,7 @@ impl TemplateApp {
 //         });
 // }
 
-pub fn order_toolbar(ui: &mut egui::Ui, app: &mut TemplateApp) {
+pub fn order_toolbar(ui: &mut egui::Ui, app: &mut App) {
     ui.horizontal(|ui| {
         if ui.button("Move Up").clicked() {
             if let Some(index) = app.sel_line {
@@ -1776,7 +1740,7 @@ pub fn order_toolbar(ui: &mut egui::Ui, app: &mut TemplateApp) {
         // }
     });
 }
-pub fn order_toolbar2(ui: &mut egui::Ui, app: &mut TemplateApp) {
+pub fn order_toolbar2(ui: &mut egui::Ui, app: &mut App) {
     ui.horizontal(|ui| {
         // ui.label("Add Line: ");
         if let Some(db) = &app.db.clone() {
@@ -1851,19 +1815,18 @@ pub fn order_toolbar2(ui: &mut egui::Ui, app: &mut TemplateApp) {
         //     app.help = !app.help
         // }
     });
-    // ui.separator();
-    // }
+  
 }
 
-pub fn gather_duplicates(app: &mut TemplateApp) {
+pub fn gather_duplicates(app: &mut App) {
     abort_all(app);
     app.main.records.clear();
     if let Some(db) = app.db.clone() {
         let pool = db.pool.clone();
 
-        //  app.main.status = format!("Opening {}", db.name);
+      
         app.main.status = "Searching for Duplicates".to_string();
-        // let mut conn = Connection::open(&source_db_path).unwrap();
+       
 
         if app.main.search {
             let pool = pool.clone();
@@ -1872,7 +1835,7 @@ pub fn gather_duplicates(app: &mut TemplateApp) {
             if app.group.search {
                 group_sort = Some(app.group.selected.clone())
             }
-            // let config = app.group.clone();
+           
             let group_null = app.group_null;
             wrap_async(
                 &mut app.group,
@@ -1882,8 +1845,8 @@ pub fn gather_duplicates(app: &mut TemplateApp) {
         }
 
         if app.deep.search {
-            if let Some(sender) = app.deep.progress_sender.clone() {
-                if let Some(sender2) = app.deep.status_sender.clone() {
+            if let Some(sender) = app.deep.progress_io.tx.clone() {
+                if let Some(sender2) = app.deep.status_io.tx.clone() {
                     let pool = pool.clone();
                     let ignore = app.ignore_extension;
                     wrap_async(
@@ -1909,10 +1872,10 @@ pub fn gather_duplicates(app: &mut TemplateApp) {
             if let Some(cdb) = &app.c_db {
                 app.compare.working = true;
                 app.compare.status = format!("Comparing against {}", cdb.name);
-                if app.compare.tx.is_none() {
+                if app.compare.records_io.tx.is_none() {
                     println!("compare tx is none");
                 }
-                if let Some(tx) = app.compare.tx.clone() {
+                if let Some(tx) = app.compare.records_io.tx.clone() {
                     println!("if let some");
                     let p = pool.clone();
                     let c_pool = cdb.pool.clone();
@@ -1930,7 +1893,7 @@ pub fn gather_duplicates(app: &mut TemplateApp) {
     }
 }
 
-fn receive_async_data(app: &mut TemplateApp) {
+fn receive_async_data(app: &mut App) {
     if let Some(records) = app.main.receive_hashset() {
         app.clear_status();
         app.main.status = format! {"Removed {} duplicates", records.len()};
@@ -1959,7 +1922,7 @@ fn receive_async_data(app: &mut TemplateApp) {
     app.deep.receive_status();
 }
 
-fn remove_duplicates(app: &mut TemplateApp) {
+fn remove_duplicates(app: &mut App) {
     if app.registered.valid == Some(false) {
         app.main.records.clear();
         app.main.status = "Unregistered!\nPlease Register to Remove Duplicates".to_string();
@@ -1984,8 +1947,8 @@ fn remove_duplicates(app: &mut TemplateApp) {
             duplicate_db_path = Some(path);
         }
 
-        if let Some(sender) = app.main.progress_sender.clone() {
-            if let Some(sender2) = app.main.status_sender.clone() {
+        if let Some(sender) = app.main.progress_io.tx.clone() {
+            if let Some(sender2) = app.main.status_io.tx.clone() {
                 wrap_async(&mut app.main, "Performing Record Removal", move || {
                     remove_duplicates_go(records, work_db_path, duplicate_db_path, sender, sender2)
                 })
@@ -2031,7 +1994,7 @@ pub async fn remove_duplicates_go(
     Ok(records)
 }
 
-fn abort_all(app: &mut TemplateApp) {
+fn abort_all(app: &mut App) {
     app.main.abort();
     app.group.abort();
     app.deep.abort();
@@ -2039,7 +2002,7 @@ fn abort_all(app: &mut TemplateApp) {
     app.compare.abort();
 }
 
-fn handles_active(app: &TemplateApp) -> bool {
+fn handles_active(app: &App) -> bool {
     app.main.handle.is_some()
         || app.group.handle.is_some()
         || app.deep.handle.is_some()

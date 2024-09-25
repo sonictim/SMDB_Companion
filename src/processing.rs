@@ -67,7 +67,7 @@ where
     config.working = true;
     config.status = label.to_string();
     // let records = config.records.clone();
-    if let Some(tx) = config.tx.clone() {
+    if let Some(tx) = config.records_io.tx.clone() {
         // if let Some(sender) = config.progress_sender.clone() {
         // let pool = pool.clone();
 

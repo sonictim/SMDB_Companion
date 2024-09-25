@@ -24,6 +24,6 @@ async fn main() -> eframe::Result {
     eframe::run_native(
         "SMDB Companion",
         native_options,
-        Box::new(|cc| Ok(Box::new(SMDB_Companion::TemplateApp::new(cc)))),
+        Box::new(|cc| Ok(Box::new(SMDB_Companion::App::new(cc)))),
     )
 }
