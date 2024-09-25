@@ -591,6 +591,56 @@ pub async fn get_audio_file_types(pool: &SqlitePool) -> Result<Vec<String>, sqlx
     Ok(audio_file_types)
 }
 
+pub fn parse_to_sql(column: String, operator: OrderOperator, input: String) -> String {
+    match operator {
+        OrderOperator::Largest => format! {"{} DESC", column.to_lowercase()},
+        OrderOperator::Smallest => format!("{} ASC", column.to_lowercase()),
+        OrderOperator::Is => format!(
+            "CASE WHEN {} IS '%{}%' THEN 0 ELSE 1 END ASC",
+            column.to_lowercase(),
+            input
+        ),
+        OrderOperator::IsNot => format!(
+            "CASE WHEN {} IS '%{}%' THEN 1 ELSE 0 END ASC",
+            column.to_lowercase(),
+            input
+        ),
+        OrderOperator::Contains => format!(
+            "CASE WHEN {} LIKE '%{}%' THEN 0 ELSE 1 END ASC",
+            column.to_lowercase(),
+            input
+        ),
+        OrderOperator::DoesNotContain => format!(
+            "CASE WHEN {} LIKE '%{}%' THEN 1 ELSE 0 END ASC",
+            column.to_lowercase(),
+            input
+        ),
+        OrderOperator::IsEmpty => format!(
+            "CASE WHEN {} IS NOT NULL AND {} != '' THEN 1 ELSE 0 END ASC",
+            column.to_lowercase(),
+            column.to_lowercase()
+        ),
+        OrderOperator::IsNotEmpty => format!(
+            "CASE WHEN {} IS NOT NULL AND {} != '' THEN 0 ELSE 1 END ASC",
+            column.to_lowercase(),
+            column.to_lowercase()
+        ),
+    }
+}
+
+pub fn parse_to_user_friendly(column: String, operator: OrderOperator, input: String) -> String {
+    match operator {
+        OrderOperator::Largest => format! {"Largest {}", column},
+        OrderOperator::Smallest => format!("Smallest {} ", column),
+        OrderOperator::Is => format!("{} is '{}'", column, input),
+        OrderOperator::IsNot => format!("{} is NOT '{}'", column, input),
+        OrderOperator::Contains => format!("{} contains '{}'", column, input),
+        OrderOperator::DoesNotContain => format!("{} does NOT contain '{}'", column, input),
+        OrderOperator::IsEmpty => format!("{} is empty", column,),
+        OrderOperator::IsNotEmpty => format!("{} is NOT empty", column,),
+    }
+}
+
 pub fn default_tags() -> Vec<String> {
     const DEFAULT_TAGS_VEC: [&str; 45] = [
         "-1eqa_",

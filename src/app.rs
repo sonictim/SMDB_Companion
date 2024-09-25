@@ -220,9 +220,7 @@ impl Database {
             .expect("Pool did not open");
         let db_size = get_db_size(&db_pool).await.expect("get db size");
         let db_columns = get_columns(&db_pool).await.expect("get columns");
-        // let db_extensions = get_audio_file_types(&db_pool)
-        //     .await
-        //     .expect("get extensions");
+
         Self {
             path: db_path.to_string(),
             pool: db_pool,
@@ -886,44 +884,25 @@ impl App {
         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
             let mut space = ui.available_width() / 2.0 - 300.0;
             if space < 5.0 {
-                space = 0.0
-            };
+                space = 0.0;
+            }
             ui.add_space(space);
-            // self.panel_tab_bar(ui);
+    
             let size_big = 16.0;
             let size_small = 16.0;
-            let column_width = 1.0; // Set the fixed width for each column
-            {
-                let checked = self.my_panel == Panel::Find;
-                let label = "Find & Replace";
-                let text = if checked {
-                    RichText::new(label).size(size_big).strong()
-                } else {
-                    RichText::new(label).size(size_small).weak()
-                };
-                ui.allocate_exact_size(egui::vec2(column_width, 20.0), egui::Sense::click());
-
-                if ui.selectable_label(checked, text).clicked() {
-                    self.my_panel = Panel::Find;
-                }
-            }
-            {
-                let checked = self.my_panel == Panel::Duplicates;
-                let label = "Search for Duplicates";
-                let text = if checked {
-                    RichText::new(label).size(size_big).strong()
-                } else {
-                    RichText::new(label).size(size_small).weak()
-                };
-                ui.allocate_exact_size(egui::vec2(column_width, 20.0), egui::Sense::click());
-                if ui.selectable_label(checked, text).clicked() {
-                    self.my_panel = Panel::Duplicates;
-                }
-            }
-            {
-                let checked = self.my_panel == Panel::Order;
-                let label = "Preservation Priority";
-                // let label = "Modify Duplicate Search Order";
+            let column_width = 1.0;
+    
+            // Define a helper function to avoid repeating the logic for each panel
+            fn add_tab_button(
+                ui: &mut egui::Ui,
+                current_panel: &mut Panel,
+                panel: Panel,
+                label: &str,
+                size_big: f32,
+                size_small: f32,
+                column_width: f32,
+            ) {
+                let checked = *current_panel == panel;
                 let text = if checked {
                     RichText::new(label).size(size_big).strong()
                 } else {
@@ -931,23 +910,15 @@ impl App {
                 };
                 ui.allocate_exact_size(egui::vec2(column_width, 20.0), egui::Sense::click());
                 if ui.selectable_label(checked, text).clicked() {
-                    self.my_panel = Panel::Order;
+                    *current_panel = panel;
                 }
             }
-            {
-                let checked = self.my_panel == Panel::Tags;
-                let label = "Tag Editor";
-                let text = if checked {
-                    RichText::new(label).size(size_big).strong()
-                } else {
-                    RichText::new(label).size(size_small).weak()
-                };
-                ui.allocate_exact_size(egui::vec2(column_width, 20.0), egui::Sense::click());
-                if ui.selectable_label(checked, text).clicked() {
-                    self.my_panel = Panel::Tags;
-                }
-            }
-            // egui::widgets::global_dark_light_mode_buttons(ui);
+    
+            // Add tab buttons for each panel
+            add_tab_button(ui, &mut self.my_panel, Panel::Find, "Find & Replace", size_big, size_small, column_width);
+            add_tab_button(ui, &mut self.my_panel, Panel::Duplicates, "Search for Duplicates", size_big, size_small, column_width);
+            add_tab_button(ui, &mut self.my_panel, Panel::Order, "Preservation Priority", size_big, size_small, column_width);
+            add_tab_button(ui, &mut self.my_panel, Panel::Tags, "Tag Editor", size_big, size_small, column_width);
         });
     }
 
@@ -1268,56 +1239,6 @@ impl App {
             });
             ui.separator();
 
-            // //EXTENSIONS EXTENSIONS EXTENSIONS
-            // ui.checkbox(
-            //     &mut self.extensions.search,
-            //     "Search for Duplicates Among Different File Types",
-            // );
-
-            // ui.horizontal(|ui| {
-            //     ui.add_space(24.0);
-            //     ui.label("Prefer records of filetype:");
-            //     if self.extensions.selected.is_empty() {
-            //         self.extensions.selected = db.file_extensions[0].clone();
-            //     }
-            //     // if db.size > 0 && db.file_extensions.is_empty() {
-            //     //     db.file_extensions = get_extensions(&db.pool).await;
-            //     // }
-            //     if db.file_extensions.len() > 1 {
-            //         combo_box(
-            //             ui,
-            //             "Extensions",
-            //             &mut self.extensions.selected,
-            //             &db.file_extensions,
-            //         );
-            //     } else {
-            //         ui.label(&self.extensions.selected);
-            //     }
-            // });
-
-            // ui.horizontal(|ui| {
-            //     if self.extensions.working {
-            //         ui.spinner();
-            //     } else {
-            //         ui.add_space(24.0)
-            //     }
-            //     ui.label(RichText::new(self.extensions.status.clone()).strong());
-            // });
-
-            // if self.extensions.working {
-            //     ui.add(
-            //         egui::ProgressBar::new(self.extensions.progress.0 / self.extensions.progress.1)
-            //             // .text("progress")
-            //             .desired_height(4.0),
-            //     );
-            //     ui.label(format!(
-            //         "Progress: {} / {}",
-            //         self.extensions.progress.0, self.extensions.progress.1
-            //     ));
-            // }
-
-            // ui.separator();
-
             //COMPARE COMPARE COMPARE COMPARE
             ui.horizontal(|ui| {
                 ui.checkbox(&mut self.compare.search, "Compare against database: ");
@@ -1530,9 +1451,6 @@ impl App {
     }
 
     fn order_text_panel(&mut self, ui: &mut egui::Ui) {
-        // if self.help {
-        //     order_help(ui)
-        // }
 
         ui.columns(1, |columns| {
             // columns[0].heading("Duplicate Filename Keeper Priority Order:");
@@ -1644,58 +1562,8 @@ impl App {
         });
     }
 
-    // fn panel_chunk<F>(&mut self, ui: &mut egui::Ui, display: F, config: &Config)
-    // where
-    // F: FnOnce(),
-    // {
-    //     display();
-
-    //     ui.horizontal( |ui| {
-    //         if config.working {ui.spinner();}
-    //         else {ui.add_space(24.0)}
-    //         ui.label(RichText::new(config.status.clone()).strong());
-
-    //     });
-
-    //     if config.working{
-    //         ui.add( egui::ProgressBar::new(config.progress.0 / config.progress.1)
-    //                 // .text("progress")
-    //                 .desired_height(4.0)
-    //             );
-    //         ui.label(format!("Progress: {} / {}", config.progress.0, config.progress.1));
-    //     }
-    //     ui.separator();
-    // }
 }
 
-// pub async fn records_window_display(ctx: &egui::Context, app: &mut App) {
-//     egui::Window::new("Records Marked for Duplication")
-//         .open(&mut app.records_window) // Control whether the window is open
-//         .show(ctx, |ui| {
-//             ui.label("To Be Implemented");
-//             let width = ui.available_width();
-//             let height = ui.available_height();
-
-//             egui::ScrollArea::vertical()
-//                 .max_height(height) // Set the maximum height of the scroll area
-//                 .show(ui, |ui| {
-//                     ui.horizontal(|ui| {
-//                         ui.set_min_width(width);
-
-//                         egui::Grid::new("Dupe Records")
-//                             .spacing([20.0, 8.0])
-//                             .striped(true)
-//                             .show(ui, |ui| {
-//                                 // Use par_iter() to process in parallel
-//                                 app.marked_records.par_iter().for_each(|filename| {
-//                                     ui.label(filename); // Display each filename
-//                                     ui.end_row(); // Move to the next row
-//                                 });
-//                             });
-//                     });
-//                 });
-//         });
-// }
 
 pub fn order_toolbar(ui: &mut egui::Ui, app: &mut App) {
     ui.horizontal(|ui| {
@@ -1729,15 +1597,7 @@ pub fn order_toolbar(ui: &mut egui::Ui, app: &mut App) {
             app.order_text = app.main.list.join("\n");
             app.my_panel = Panel::OrderText;
         }
-        // if ui.button("Add Line:").clicked && !app.new_line.is_empty() {
-        //     app.main.list.insert(0, app.new_line.clone());
-        //     app.new_line.clear();
-        // }
 
-        // ui.text_edit_singleline(&mut app.new_line);
-        // if ui.button("Help").clicked {
-        //     app.help = !app.help
-        // }
     });
 }
 pub fn order_toolbar2(ui: &mut egui::Ui, app: &mut App) {
@@ -1811,9 +1671,7 @@ pub fn order_toolbar2(ui: &mut egui::Ui, app: &mut App) {
                 }
             }
         }
-        // if ui.button("Help").clicked {
-        //     app.help = !app.help
-        // }
+   
     });
   
 }
@@ -1964,11 +1822,7 @@ fn remove_duplicates(app: &mut App) {
                 .collect();
 
             let _ = app.delete_action.delete_files(files);
-            // for path in files {
-            //     app.delete_action
-            //         .delete_file(path)
-            //         .expect("all files should be valid")
-            // }
+      
         }
     }
 }
@@ -2029,52 +1883,3 @@ fn enum_combo_box2(ui: &mut egui::Ui, selected_variant: &mut Delete) {
         });
 }
 
-pub fn parse_to_sql(column: String, operator: OrderOperator, input: String) -> String {
-    match operator {
-        OrderOperator::Largest => format! {"{} DESC", column.to_lowercase()},
-        OrderOperator::Smallest => format!("{} ASC", column.to_lowercase()),
-        OrderOperator::Is => format!(
-            "CASE WHEN {} IS '%{}%' THEN 0 ELSE 1 END ASC",
-            column.to_lowercase(),
-            input
-        ),
-        OrderOperator::IsNot => format!(
-            "CASE WHEN {} IS '%{}%' THEN 1 ELSE 0 END ASC",
-            column.to_lowercase(),
-            input
-        ),
-        OrderOperator::Contains => format!(
-            "CASE WHEN {} LIKE '%{}%' THEN 0 ELSE 1 END ASC",
-            column.to_lowercase(),
-            input
-        ),
-        OrderOperator::DoesNotContain => format!(
-            "CASE WHEN {} LIKE '%{}%' THEN 1 ELSE 0 END ASC",
-            column.to_lowercase(),
-            input
-        ),
-        OrderOperator::IsEmpty => format!(
-            "CASE WHEN {} IS NOT NULL AND {} != '' THEN 1 ELSE 0 END ASC",
-            column.to_lowercase(),
-            column.to_lowercase()
-        ),
-        OrderOperator::IsNotEmpty => format!(
-            "CASE WHEN {} IS NOT NULL AND {} != '' THEN 0 ELSE 1 END ASC",
-            column.to_lowercase(),
-            column.to_lowercase()
-        ),
-    }
-}
-
-pub fn parse_to_user_friendly(column: String, operator: OrderOperator, input: String) -> String {
-    match operator {
-        OrderOperator::Largest => format! {"Largest {}", column},
-        OrderOperator::Smallest => format!("Smallest {} ", column),
-        OrderOperator::Is => format!("{} is '{}'", column, input),
-        OrderOperator::IsNot => format!("{} is NOT '{}'", column, input),
-        OrderOperator::Contains => format!("{} contains '{}'", column, input),
-        OrderOperator::DoesNotContain => format!("{} does NOT contain '{}'", column, input),
-        OrderOperator::IsEmpty => format!("{} is empty", column,),
-        OrderOperator::IsNotEmpty => format!("{} is NOT empty", column,),
-    }
-}
