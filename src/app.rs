@@ -30,6 +30,15 @@ impl Registration {
             self.valid = Some(false);
         }
     }
+    fn clear(&mut self) {
+       
+            self.name.clear();
+            self.email.clear();
+            self.key.clear();
+            self.valid = Some(false);
+    
+        
+    }
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -557,7 +566,10 @@ impl App {
         self.dupes_db = true;
         self.ignore_extension = true;
     }
+
 }
+
+
 
 impl eframe::App for App {
     /// Called by the frame work to save state before shutdown.
@@ -660,16 +672,16 @@ impl eframe::App for App {
                             }
                         });
                     }
-                    #[cfg(debug_assertions)]
-                    {
+                    if ui.input(|i| i.modifiers.alt) && self.registered.valid == Some(true)  {
+
                         ui.separator();
                         if ui.button(RichText::new("Unregister")).clicked() {
-                            self.registered.name.clear();
-                            self.registered.email.clear();
-                            self.registered.key.clear();
-                            self.registered.valid = Some(false);
+                            self.registered.clear();
                             ui.close_menu();
                         }
+                    }
+                    #[cfg(debug_assertions)]
+                    {
                     
                         if ui.button("KeyGen").clicked() {
                             ui.close_menu();
@@ -1353,6 +1365,9 @@ impl App {
             });
             ui.separator();
 
+            if !self.main.records.is_empty() && !handles_active(self) {
+
+            }
             // DELETION PREFERENCES
             empty_line(ui);
             ui.horizontal(|ui| {
@@ -1400,16 +1415,16 @@ impl App {
                         });
                     } else {
                         rt_button(ui, RichText::new("Search for Duplicates").size(16.0), || gather_duplicates(self));
-                    }
-                }
-                if !self.main.records.is_empty() && !handles_active(self) {
-                    self.main.status = format!(
-                        "{} total records marked for removal",
-                        self.main.records.len()
-                    );
-                    
-                    if ui.button(RichText::new("Remove Duplicates").strong().size(16.0)).clicked() {
-                        remove_duplicates(self);
+                        if !self.main.records.is_empty() && !handles_active(self) {
+                            self.main.status = format!(
+                                "{} total records marked for removal",
+                                self.main.records.len()
+                            );
+                            
+                            if ui.button(RichText::new("Remove Duplicates").strong().size(16.0)).clicked() {
+                                remove_duplicates(self);
+                            }
+                        }
                     }
                 }
 
