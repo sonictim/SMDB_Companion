@@ -642,7 +642,7 @@ pub fn parse_to_user_friendly(column: String, operator: OrderOperator, input: St
 }
 
 pub fn default_tags() -> Vec<String> {
-    const DEFAULT_TAGS_VEC: [&str; 45] = [
+    const DEFAULT_TAGS_VEC: [&str; 43] = [
         "-1eqa_",
         "-6030_",
         "-7eqa_",
@@ -668,9 +668,7 @@ pub fn default_tags() -> Vec<String> {
         "-PnTPro_",
         "-ProQ2_",
         "-PSh_",
-        "-Reverse_",
         "-RVRS_",
-        "-RING_",
         "-RX7Cnct_",
         "-spce_",
         "-TCEX_",

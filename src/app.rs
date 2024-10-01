@@ -457,7 +457,7 @@ impl Default for App {
             replace: String::new(),
             search_replace_path: true,
             dirty: true,
-            case_sensitive: true,
+            case_sensitive: false,
             find_buf: String::new(),
             replace_buf: String::new(),
            
@@ -552,10 +552,11 @@ impl App {
         panel: Panel,
         registration: Registration,
     ) {
-        *self = Self::default();
-        self.db = db;
-        self.my_panel = panel;
-        self.registered = registration;
+        // *self = Self::default();
+        // self.db = db;
+        // self.my_panel = panel;
+        // self.registered = registration;
+        self.reset_to_defaults(db, panel, registration);
         self.main.list = tjf_order();
         self.order_friendly = tjf_order_friendly();
         self.tags.list = tjf_tags();
@@ -941,11 +942,13 @@ impl App {
                 return;
             }
             ui.heading(RichText::new("Find and Replace").strong());
-            // ui.label("Note: Search is Case Sensitive");
+        
             empty_line(ui);
             ui.horizontal(|ui| {
                 // ui.add_space(68.0);
-                ui.checkbox(&mut self.case_sensitive, "Case Sensitive");
+                let mut text = RichText::new("Case Sensitive").size(14.0);
+                if self.case_sensitive {text = text.color(egui::Color32::from_rgb(255, 0, 0)).strong()}
+                ui.checkbox(&mut self.case_sensitive, text);
             });
             empty_line(ui);
             // ui.separator();
@@ -1009,6 +1012,7 @@ impl App {
                 let mut column = self.column.clone();
                 let case_sensitive = self.case_sensitive;
                 tokio::spawn(async move {
+                    println!("Inside Find Async");
                     let count = smreplace_get(&pool, &mut find, &mut column, case_sensitive)
                         .await
                         .unwrap();
@@ -1151,7 +1155,7 @@ impl App {
                         let results = get_audio_file_types(&pool).await;
 
                         if (tx.send(results.expect("Tokio Results Error HashSet")).await).is_err() {
-                            eprintln!("Failed to send db");
+                            eprintln!("Failed to send db while gathering extensions");
                         }
                     });
                 }
@@ -1286,9 +1290,7 @@ impl App {
             });
             ui.separator();
 
-            if !self.main.records.is_empty() && !handles_active(self) {
-
-            }
+            // if !self.main.records.is_empty() && !handles_active(self) {}
             // DELETION PREFERENCES
             empty_line(ui);
             ui.horizontal(|ui| {
