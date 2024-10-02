@@ -9,6 +9,7 @@ use std::fs::{self};
 use std::hash::Hash;
 use tokio::sync::mpsc;
 use std::path::Path;
+use clipboard::{ClipboardContext, ClipboardProvider};
 
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 #[serde(default)]
@@ -1577,10 +1578,28 @@ impl App {
             ui.label(&self.registered.key);
             // ui.text_edit_singleline(&mut self.registered.key);
         });
+
+        ui.horizontal(|ui|{
+            if ui.button("Register").clicked() {
+                self.registered.validate();
+            }
+            if ui.button("Copy to Clipboard").clicked() {
+                copy_to_clipboard(format!("Name: {}\nEmail: {}\nKey: {}", self.registered.name, self.registered.email, self.registered.key));
+        
+            }
+        });
     }
 
 }
 
+fn copy_to_clipboard(text: String) {
+    let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
+
+    ctx.set_contents(text).unwrap();
+
+    println!("Text copied to clipboard!");
+
+}
 
 pub fn order_toolbar(ui: &mut egui::Ui, app: &mut App) {
     ui.horizontal(|ui| {

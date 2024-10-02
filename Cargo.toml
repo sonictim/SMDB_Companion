@@ -51,6 +51,7 @@ atomic = "0.6.0"
 sha2 = "0.10.8"
 hex = "0.4.3"
 trash = "5.1.1"
+clipboard = "0.5.0"
 
 
 # native:
