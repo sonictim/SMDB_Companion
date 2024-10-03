@@ -150,16 +150,12 @@ pub async fn smreplace_process(
 
 pub async fn gather_duplicate_filenames_in_database(
     pool: SqlitePool,
-    // config: Config,
     order: Vec<String>,
     group_sort: Option<String>,
     group_null: bool,
+    duration: bool, // New option for duration-based grouping
 ) -> Result<HashSet<FileRecord>, sqlx::Error> {
     let verbose = true;
-    // let order = config.list;
-    // let mut group_sort = None;
-    // if config.search {group_sort = Some(config.selected)}
-
     let mut file_records = HashSet::new();
 
     // Construct the ORDER BY clause dynamically
@@ -176,9 +172,23 @@ pub async fn gather_duplicate_filenames_in_database(
             } else {
                 format!("WHERE {group} IS NOT NULL AND {group} != ''")
             };
-            (format!("{}, filename", group), where_clause)
+            // If duration is true, partition by both group, filename, and duration
+            let partition_by = if duration {
+                format!("{}, filename, duration", group)
+            } else {
+                format!("{}, filename", group)
+            };
+            (partition_by, where_clause)
         }
-        None => ("filename".to_string(), String::new()),
+        None => {
+            // If duration is true, partition by filename and duration
+            let partition_by = if duration {
+                "filename, duration".to_string()
+            } else {
+                "filename".to_string()
+            };
+            (partition_by, String::new())
+        }
     };
 
     let sql = format!(

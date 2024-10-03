@@ -391,6 +391,7 @@ pub struct App {
     main: Config,
     group: Config,
     group_null: bool,
+    duration_check: bool,
     tags: Config,
     deep: Config,
     ignore_extension: bool,
@@ -465,6 +466,7 @@ impl Default for App {
             main: Config::new(true),
             group: Config::new_option(false, "Show"),
             group_null: false,
+            duration_check: false,
 
             tags: Config::new_option(false, "-"),
             deep: Config::new(false),
@@ -1113,6 +1115,11 @@ impl App {
             //GROUP GROUP GROUP GROUP
             ui.checkbox(&mut self.main.search, "Basic Duplicate Filename Search");
 
+            ui.horizontal(|ui|{
+                ui.add_space(24.0);
+                ui.checkbox(&mut self.duration_check, "Only Filenames with identical duration will be considered duplicates");
+            });
+
             ui.horizontal(|ui| {
                 ui.add_space(24.0);
                 ui.checkbox(
@@ -1731,10 +1738,11 @@ pub fn gather_duplicates(app: &mut App) {
             }
            
             let group_null = app.group_null;
+            let duration = app.duration_check;
             wrap_async(
                 &mut app.group,
                 "Searching For Duplicate Filenames",
-                move || gather_duplicate_filenames_in_database(pool, order, group_sort, group_null),
+                move || gather_duplicate_filenames_in_database(pool, order, group_sort, group_null, duration),
             )
         }
 
