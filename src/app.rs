@@ -1584,7 +1584,7 @@ impl App {
                 self.registered.validate();
             }
             if ui.button("Copy to Clipboard").clicked() {
-                copy_to_clipboard(format!("Name: {}\nEmail: {}\nKey: {}", self.registered.name, self.registered.email, self.registered.key));
+                copy_to_clipboard(format!("SMDB COMPANION\nDownload Link: https://drive.google.com/open?id=1qdGqoUMqq_xCrbA6IxUTYliZUmd3Tn3i&usp=drive_fs\n\nRegistration Info\nName: {}\nEmail: {}\nKey: {}\n\n", self.registered.name, self.registered.email, self.registered.key));
         
             }
         });
