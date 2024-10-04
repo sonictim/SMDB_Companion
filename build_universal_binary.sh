@@ -6,6 +6,8 @@
 BINARY_NAME="SMDB_Companion"
 VERSION=$(awk '/\[package\]/ {flag=1} flag && /^version =/ {print $3; exit}' Cargo.toml | tr -d '"')
 
+export MACOSX_DEPLOYMENT_TARGET=12.0
+
 echo Building and Bundling Version: $VERSION
 
 # Add the necessary targets

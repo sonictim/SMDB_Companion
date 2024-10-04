@@ -1131,8 +1131,8 @@ impl App {
 
             ui.horizontal(|ui| {
                 ui.add_space(44.0);
-                ui.label("Records without group entry: ");
-                ui.radio_value(&mut self.group_null, false, "Skip/Ignore");
+                ui.label("Records without group metadata: ");
+                ui.radio_value(&mut self.group_null, false, "Ignore");
                 ui.radio_value(&mut self.group_null, true, "Process Together");
             });
 
@@ -1187,7 +1187,7 @@ impl App {
                         if self.ignore_extension {
                             ui.label(
                                 RichText::new(
-                                    "('example.wav' and 'example.flac' will be considered duplicates)",
+                                    "(Checked: 'example.wav' and 'example.flac' will be considered duplicate filenames)",
                                 ), // .weak(),
                             );
                             // ui.label("Prefer:");
@@ -1200,7 +1200,7 @@ impl App {
                         } else {
                             ui.label(
                                 RichText::new(
-                                    "('example.wav' and 'example.flac' will be considered unique)",
+                                    "(Unchecked: 'example.wav' and 'example.flac' will be considered unique filenames)",
                                 ), // .weak(),
                             );
                         }
@@ -1649,11 +1649,13 @@ pub fn order_toolbar2(ui: &mut egui::Ui, app: &mut App) {
         if let Some(db) = &app.db.clone() {
             combo_box(ui, "order_column", &mut app.order_column, &db.columns);
         } else {
+            // let empty = vec!["no database".to_string()];
             combo_box(
                 ui,
                 "order_column",
                 &mut "no database".to_string(),
-                &app.group.list,
+                &vec!["no database".to_string()],
+         
             );
         }
         enum_combo_box(ui, &mut app.order_operator);

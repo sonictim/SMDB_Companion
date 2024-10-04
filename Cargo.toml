@@ -1,11 +1,14 @@
 [package]
 name = "SMDB_Companion"
-version = "0.2.1"
+version = "0.2.2"
 authors = ["Tim Farrell <soundguru@gmail.com>"]
 edition = "2021"
 include = ["LICENSE-APACHE", "LICENSE-MIT", "**/*.rs", "Cargo.toml"]
 rust-version = "1.76"
 #build = "build.rs"
+
+[package.metadata]
+macos_deployment_target = "12.0"
 
 [package.metadata.docs.rs]
 all-features = true
