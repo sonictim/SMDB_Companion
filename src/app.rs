@@ -1312,9 +1312,9 @@ impl App {
                     ui.label(RichText::new("Will remove records from current database").strong());
                 }
             });
-            ui.checkbox(&mut self.dupes_db, "Create Database of Duplicate Records");
+            ui.checkbox(&mut self.dupes_db, "Create New Database of Duplicate Records");
             ui.horizontal(|ui| {
-                ui.checkbox(&mut self.remove_files, "Remove Dupicate Files?");
+                ui.checkbox(&mut self.remove_files, "Remove Duplicate Files?");
                 enum_combo_box2(ui, &mut self.delete_action);
                 if self.remove_files && self.delete_action == Delete::Permanent {
                     ui.label(
