@@ -26,6 +26,7 @@ dependencies = [
  "trash",
  "wasm-bindgen-futures",
  "web-sys",
+ "webbrowser",
 ]
 
 [[package]]

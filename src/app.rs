@@ -10,6 +10,7 @@ use std::hash::Hash;
 use tokio::sync::mpsc;
 use std::path::Path;
 use clipboard::{ClipboardContext, ClipboardProvider};
+use webbrowser;
 
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 #[serde(default)]
@@ -694,6 +695,12 @@ impl eframe::App for App {
                             ui.close_menu();
                             self.my_panel = Panel::KeyGen;
                         }
+                    }
+                    ui.separator();
+                    if ui.button("Open Download URL").clicked() {
+                        ui.close_menu();
+                        let url = r#"https://drive.google.com/open?id=1qdGqoUMqq_xCrbA6IxUTYliZUmd3Tn3i&usp=drive_fs"#;
+                        let _ = webbrowser::open(url).is_ok();
                     }
                     ui.separator();
                     if ui.button("Quit").clicked() {
