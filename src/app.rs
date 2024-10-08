@@ -1126,9 +1126,9 @@ impl App {
                     &mut self.group.search,
                     "Duplicate Match Criteria: ",
                 );
-                // combo_box(ui, "group", &mut self.group.selected, &db.columns);
-                // button(ui, "+", ||{self.group.list.push(self.group.selected.clone());});
-                // button(ui, "-", ||{self.group.list.pop();});
+                combo_box(ui, "group", &mut self.group.selected, &db.columns);
+                button(ui, "+", ||{self.group.list.push(self.group.selected.clone());});
+                button(ui, "-", ||{self.group.list.pop();});
             });
             // THIS IS THE LIST IDEA... NEEDS WORK STILL
             ui.horizontal(|ui|{
@@ -1185,12 +1185,12 @@ impl App {
 
             });
 
-            ui.horizontal(|ui| {
-                ui.add_space(44.0);
-                ui.label("Records without group metadata: ");
-                ui.radio_value(&mut self.group_null, false, "Ignore");
-                ui.radio_value(&mut self.group_null, true, "Process Together");
-            });
+            // ui.horizontal(|ui| {
+            //     ui.add_space(44.0);
+            //     ui.label("Records without group metadata: ");
+            //     ui.radio_value(&mut self.group_null, false, "Ignore");
+            //     ui.radio_value(&mut self.group_null, true, "Process Together");
+            // });
 
             ui.horizontal(|ui| {
                 if self.group.working {
@@ -1368,9 +1368,9 @@ impl App {
                     ui.label(RichText::new("Will remove records from current database").strong());
                 }
             });
-            ui.checkbox(&mut self.dupes_db, "Create Database of Duplicate Records");
+            ui.checkbox(&mut self.dupes_db, "Create New Database of Duplicate Records");
             ui.horizontal(|ui| {
-                ui.checkbox(&mut self.remove_files, "Remove Dupicate Files?");
+                ui.checkbox(&mut self.remove_files, "Remove Duplicate Files?");
                 enum_combo_box2(ui, &mut self.delete_action);
                 if self.remove_files && self.delete_action == Delete::Permanent {
                     ui.label(
