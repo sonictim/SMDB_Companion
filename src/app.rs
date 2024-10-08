@@ -390,6 +390,8 @@ pub struct App {
 
     main: Config,
     group: Config,
+    #[serde(skip)]
+    sel_groups: Vec<usize>,
     group_null: bool,
     duration_check: bool,
     tags: Config,
@@ -464,7 +466,8 @@ impl Default for App {
             replace_buf: String::new(),
            
             main: Config::new(true),
-            group: Config::new_option(false, "Show"),
+            group: Config::new(false),
+            sel_groups: Vec::new(),
             group_null: false,
             duration_check: false,
 
@@ -500,6 +503,7 @@ impl Default for App {
 
             registered: Registration::default(),
         };
+        app.group.list = vec!["Filename".to_owned(), "Duration".to_owned(), "Channels".to_owned()];
         app.tags.list = default_tags();
         app.main.list = default_order();
         app.order_friendly = default_order_friendly();
@@ -567,6 +571,7 @@ impl App {
         self.tags.search = true;
         self.dupes_db = true;
         self.ignore_extension = true;
+        self.group.list = vec!("Filename".to_owned());
     }
 
 }
@@ -904,8 +909,8 @@ impl App {
             }
             ui.add_space(space);
     
-            let size_big = 16.0;
-            let size_small = 16.0;
+            let size_big = 20.0;
+            let size_small = 20.0;
             let column_width = 1.0;
     
             // Define a helper function to avoid repeating the logic for each panel
@@ -1113,7 +1118,7 @@ impl App {
             ui.heading(RichText::new("Search for Duplicate Records").strong());
 
             //GROUP GROUP GROUP GROUP
-            ui.checkbox(&mut self.main.search, "Basic Duplicate Filename Search");
+            ui.checkbox(&mut self.main.search, "Basic Duplicate Search");
 
             // ui.horizontal(|ui|{
             //     ui.add_space(24.0);
@@ -1122,75 +1127,110 @@ impl App {
 
             ui.horizontal(|ui| {
                 ui.add_space(24.0);
-                ui.checkbox(
-                    &mut self.group.search,
-                    "Duplicate Match Criteria: ",
-                );
+                // ui.checkbox(
+                //     &mut self.group.search,
+                //     "Duplicate Match Criteria: ",
+                // );
+                ui.label("Duplicate Match Criteria: ");
                 combo_box(ui, "group", &mut self.group.selected, &db.columns);
-                button(ui, "+", ||{self.group.list.push(self.group.selected.clone());});
-                button(ui, "-", ||{self.group.list.pop();});
-            });
-            // THIS IS THE LIST IDEA... NEEDS WORK STILL
-            ui.horizontal(|ui|{
-                ui.add_space(44.0);
-                let num_columns = 4;
-                // use egui::{Frame, RichText, Stroke, Rounding};
+                button(ui, "+", ||{
+                    if !self.group.selected.is_empty() {
 
-// Frame::group(&ui.style()) // Create a framed group
-//     .outer_margin(egui::Margin::same(10.0)) // Set margin around the grid
-//     .rounding(Rounding::same(5.0)) // Optional: Rounded corners for the box
-//     .stroke(Stroke::new(1.0, egui::Color32::BLACK)) // Set stroke width and color for the box
-//     .show(ui, |ui| {
-        egui::Grid::new("Tags Grid")
-            .num_columns(num_columns)
-            .spacing([20.0, 8.0])
-            .striped(true)
-            .show(ui, |ui| {
-                for (index, tag) in self.group.list.iter_mut().enumerate() {
-                    // Check if current index is in `sel_tags`
-                    let is_selected = self.sel_tags.contains(&index);
-
-                    if ui
-                        .selectable_label(is_selected, RichText::new(tag.clone()).size(14.0))
-                        .clicked()
-                    {
-                        if is_selected {
-                            // Deselect
-                            self.sel_tags.retain(|&i| i != index);
-                        } else {
-                            // Select
-                            self.sel_tags.push(index);
+                        let item = self.group.selected.clone();
+                        if !self.group.list.contains(&item) {
+    
+                            self.group.list.push(item);
+                            self.group.selected.clear();
                         }
                     }
+                       
+                });
+                button(ui, "-", ||{
 
-                    if (index + 1) % num_columns == 0 {
-                        ui.end_row(); // Move to the next row after 4 columns
+                        // Sort and remove elements based on `sel_tags`
+                    let mut sorted_indices: Vec<usize> = self.sel_groups.clone();
+                    sorted_indices.sort_by(|a, b| b.cmp(a)); // Sort in reverse order
+
+                    for index in sorted_indices {
+                        if index < self.group.list.len() {
+                            self.group.list.remove(index);
+                        }
                     }
-                }
+                    self.sel_groups.clear();
+                    self.group.selected.clear();
 
-                // End the last row if not fully filled
-                if self.tags.list.len() % num_columns != 0 {
-                    ui.end_row();
-                }
+                    if self.group.list.is_empty() {self.group.selected = "Filename".to_owned()}
+             
+                });
             });
-    // });
-
-            });
+            
 
             ui.horizontal(|ui|{
-                ui.add_space(44.0);
-                combo_box(ui, "group", &mut self.group.selected, &db.columns);
-                button(ui, "+", ||{self.group.list.push(self.group.selected.clone());});
-                button(ui, "-", ||{self.group.list.pop();});
+                ui.add_space(24.0);
+
+
+                if self.group.list.is_empty() {
+                    let text = RichText::new("Must Add Match Criteria to Enable Search").strong().color(egui::Color32::from_rgb(255, 0, 0));
+                    ui.label(text);
+                    self.main.search = false;
+                
+                } else {
+
+                    let num_columns = 3;
+                    egui::Grid::new("Match Grid")
+                        .num_columns(num_columns)
+                        .spacing([20.0, 8.0])
+                        // .striped(true)
+                        .show(ui, |ui| {
+                            for (index, group) in self.group.list.iter_mut().enumerate() {
+                                // Check if current index is in `sel_tags`
+                                let is_selected = self.sel_groups.contains(&index);
+    
+                                if ui
+                                    .selectable_label(is_selected, RichText::new(group.clone()).size(14.0))
+                                    .clicked()
+                                {
+                                    if is_selected {
+                                        // Deselect
+                                        self.sel_groups.retain(|&i| i != index);
+                                    } else {
+                                        // Select
+                                        self.sel_groups.push(index);
+                                    }
+                                }
+    
+                                if (index + 1) % num_columns == 0 {
+                                    ui.end_row(); // Move to the next row after 4 columns
+                                }
+                            }
+    
+                            // End the last row if not fully filled
+                            if self.group.list.len() % num_columns != 0 {
+                                ui.end_row();
+                            }
+                        });
+                }
+
+
 
             });
 
-            // ui.horizontal(|ui| {
-            //     ui.add_space(44.0);
-            //     ui.label("Records without group metadata: ");
-            //     ui.radio_value(&mut self.group_null, false, "Ignore");
-            //     ui.radio_value(&mut self.group_null, true, "Process Together");
+            // ui.horizontal(|ui|{
+            //     ui.add_space(24.0);
+            //     button(ui, "Add:", ||{self.group.list.push(self.group.selected.clone());});
+            //     combo_box(ui, "group", &mut self.group.selected, &db.columns);
+            //     button(ui, "Remove Selected", ||{self.group.list.pop();});
             // });
+
+            if ui.input(|i| i.modifiers.alt) {
+               
+                ui.horizontal(|ui| {
+                    ui.add_space(24.0);
+                    ui.label("Unmatched Records: ");
+                    ui.radio_value(&mut self.group_null, false, "Ignore");
+                    ui.radio_value(&mut self.group_null, true, "Process Together");
+                });
+            } 
 
             ui.horizontal(|ui| {
                 if self.group.working {
@@ -1204,7 +1244,7 @@ impl App {
             ui.separator();
 
             //DEEP DIVE DEEP DIVE DEEP DIVE
-            ui.checkbox(&mut self.deep.search, "Deep Dive Duplicates Search");
+            ui.checkbox(&mut self.deep.search, "Similar Filename Duplicates Search");
 
             if let Some(rx) = self.extensions_io.rx.as_mut() {
                 if let Ok(records) = rx.try_recv() {
@@ -1299,7 +1339,7 @@ impl App {
             //TAGS TAGS TAGS TAGS
             ui.checkbox(
                 &mut self.tags.search,
-                "Search for Records with AudioSuite Tags",
+                "Search for Records with AudioSuite Tags in Filename",
             );
 
             ui.horizontal(|ui| {
@@ -1370,7 +1410,7 @@ impl App {
             });
             ui.checkbox(&mut self.dupes_db, "Create New Database of Duplicate Records");
             ui.horizontal(|ui| {
-                ui.checkbox(&mut self.remove_files, "Remove Duplicate Files?");
+                ui.checkbox(&mut self.remove_files, "Remove Duplicate Files: ");
                 enum_combo_box2(ui, &mut self.delete_action);
                 if self.remove_files && self.delete_action == Delete::Permanent {
                     ui.label(
@@ -1393,26 +1433,29 @@ impl App {
                     button(ui, "Cancel", || abort_all(self));
                 } else {
                     self.go_replace = true;
+                    if search_eligible(self) {
 
-                    if ui.input(|i| i.modifiers.alt) {
-                        rt_button(ui, RichText::new("Search and Remove Duplicates").size(16.0).strong(), || {
-                            self.go_search = true;
-                            self.go_replace = false;
-                            gather_duplicates(self);
-                        });
-                    } else {
-                        rt_button(ui, RichText::new("Search for Duplicates").size(16.0), || gather_duplicates(self));
-                        if !self.main.records.is_empty() && !handles_active(self) {
-                            self.main.status = format!(
-                                "{} total records marked for removal",
-                                self.main.records.len()
-                            );
-                            
-                            if ui.button(RichText::new("Remove Duplicates").strong().size(16.0)).clicked() {
-                                remove_duplicates(self);
+                        if ui.input(|i| i.modifiers.alt) {
+                            rt_button(ui, RichText::new("Search and Remove Duplicates").size(16.0).strong(), || {
+                                self.go_search = true;
+                                self.go_replace = false;
+                                gather_duplicates(self);
+                            });
+                        } else {
+                            rt_button(ui, RichText::new("Search for Duplicates").size(16.0), || gather_duplicates(self));
+                            if !self.main.records.is_empty() && !handles_active(self) {
+                                self.main.status = format!(
+                                    "{} total records marked for removal",
+                                    self.main.records.len()
+                                );
+                                
+                                if ui.button(RichText::new("Remove Duplicates").strong().size(16.0)).clicked() {
+                                    remove_duplicates(self);
+                                }
                             }
                         }
                     }
+
                 }
 
                 if self.go_replace && self.go_search {
@@ -1608,22 +1651,20 @@ impl App {
                     self.tags.list.sort_by_key(|s| s.to_lowercase());
                 }
                 ui.text_edit_singleline(&mut self.new_tag);
-            });
-            if ui.button("Remove Selected Tags").clicked() {
-                // Sort and remove elements based on `sel_tags`
-                let mut sorted_indices: Vec<usize> = self.sel_tags.clone();
-                sorted_indices.sort_by(|a, b| b.cmp(a)); // Sort in reverse order
+                });
+                if ui.button("Remove Selected Tags").clicked() {
+                    // Sort and remove elements based on `sel_tags`
+                    let mut sorted_indices: Vec<usize> = self.sel_tags.clone();
+                    sorted_indices.sort_by(|a, b| b.cmp(a)); // Sort in reverse order
 
-                for index in sorted_indices {
-                    if index < self.tags.list.len() {
-                        self.tags.list.remove(index);
+                    for index in sorted_indices {
+                        if index < self.tags.list.len() {
+                            self.tags.list.remove(index);
+                        }
                     }
+                    self.sel_tags.clear();
                 }
-
-                // Clear the selection list after removal
-                self.sel_tags.clear();
-            }
-        });
+            });
     }
 
     fn keygen_panel(&mut self, ui: &mut egui::Ui) {
@@ -1790,17 +1831,18 @@ pub fn gather_duplicates(app: &mut App) {
         if app.main.search {
             let pool = pool.clone();
             let order = app.main.list.clone();
-            let mut group_sort = None;
-            if app.group.search {
-                group_sort = Some(app.group.selected.clone())
-            }
+            // let mut group_sort = None;
+            // if app.group.search {
+            //     group_sort = Some(app.group.selected.clone())
+            // }
+            let groups = app.group.list.clone();
            
             let group_null = app.group_null;
-            let duration = app.duration_check;
+            // let duration = app.duration_check;
             wrap_async(
                 &mut app.group,
-                "Searching For Duplicate Filenames",
-                move || gather_duplicate_filenames_in_database(pool, order, group_sort, group_null, duration),
+                "Searching For Duplicate Records",
+                move || gather_duplicate_filenames_in_database(pool, order, groups, group_null),
             )
         }
 
@@ -1964,6 +2006,10 @@ fn handles_active(app: &App) -> bool {
         || app.deep.handle.is_some()
         || app.tags.handle.is_some()
         || app.compare.handle.is_some()
+}
+
+fn search_eligible(app: &App) -> bool {
+    app.main.search || app.group.search || app.deep.search || app.tags.search || app.compare.search 
 }
 
 fn enum_combo_box(ui: &mut egui::Ui, selected_variant: &mut OrderOperator) {

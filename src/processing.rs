@@ -149,47 +149,115 @@ pub async fn smreplace_process(
     }
 }
 
+// // OLD VERSION
+
+// pub async fn gather_duplicate_filenames_in_database(
+//     pool: SqlitePool,
+//     order: Vec<String>,
+//     group_sort: Option<String>,
+//     group_null: bool,
+//     duration: bool, // New option for duration-based grouping
+// ) -> Result<HashSet<FileRecord>, sqlx::Error> {
+//     let verbose = true;
+//     let mut file_records = HashSet::new();
+
+//     // Construct the ORDER BY clause dynamically
+//     let order_clause = order.join(", ");
+
+//     // Build the SQL query based on whether a group_sort is provided
+//     let (partition_by, where_clause) = match group_sort {
+//         Some(group) => {
+//             if verbose {
+//                 println!("Grouping duplicate record search by {}", group);
+//             }
+//             let where_clause = if group_null {
+//                 String::new()
+//             } else {
+//                 format!("WHERE {group} IS NOT NULL AND {group} != ''")
+//             };
+//             // If duration is true, partition by both group, filename, and duration
+//             let partition_by = if duration {
+//                 format!("{}, filename, duration", group)
+//             } else {
+//                 format!("{}, filename", group)
+//             };
+//             (partition_by, where_clause)
+//         }
+//         None => {
+//             // If duration is true, partition by filename and duration
+//             let partition_by = if duration {
+//                 "filename, duration".to_string()
+//             } else {
+//                 "filename".to_string()
+//             };
+//             (partition_by, String::new())
+//         }
+//     };
+
+//     let sql = format!(
+//         "
+//         WITH ranked AS (
+//             SELECT
+//                 rowid AS id,
+//                 filename,
+//                 duration,
+//                 filepath,
+//                 ROW_NUMBER() OVER (
+//                     PARTITION BY {}
+//                     ORDER BY {}
+//                 ) as rn
+//             FROM {}
+//             {}
+//         )
+//         SELECT id, filename, duration, filepath FROM ranked WHERE rn > 1
+//         ",
+//         partition_by, order_clause, TABLE, where_clause
+//     );
+
+//     // Execute the query and fetch the results
+//     let rows = sqlx::query(&sql).fetch_all(&pool).await?;
+
+//     // Iterate through the rows and insert them into the hashset
+//     for row in rows {
+//         let id: u32 = row.get(0);
+//         let file_record = FileRecord {
+//             id: id as usize,
+//             filename: row.get(1),
+//             duration: row.try_get(2).unwrap_or("".to_string()), // Handle possible NULL in duration
+//             path: row.get(3),
+//         };
+//         file_records.insert(file_record);
+//     }
+
+//     if verbose {
+//         println!(
+//             "Marked {} duplicate records for deletion.",
+//             file_records.len()
+//         );
+//     }
+
+//     Ok(file_records)
+// }
+
 pub async fn gather_duplicate_filenames_in_database(
     pool: SqlitePool,
     order: Vec<String>,
-    group_sort: Option<String>,
+    groups: Vec<String>,
     group_null: bool,
-    duration: bool, // New option for duration-based grouping
 ) -> Result<HashSet<FileRecord>, sqlx::Error> {
-    let verbose = true;
     let mut file_records = HashSet::new();
 
     // Construct the ORDER BY clause dynamically
     let order_clause = order.join(", ");
-
-    // Build the SQL query based on whether a group_sort is provided
-    let (partition_by, where_clause) = match group_sort {
-        Some(group) => {
-            if verbose {
-                println!("Grouping duplicate record search by {}", group);
-            }
-            let where_clause = if group_null {
-                String::new()
-            } else {
-                format!("WHERE {group} IS NOT NULL AND {group} != ''")
-            };
-            // If duration is true, partition by both group, filename, and duration
-            let partition_by = if duration {
-                format!("{}, filename, duration", group)
-            } else {
-                format!("{}, filename", group)
-            };
-            (partition_by, where_clause)
-        }
-        None => {
-            // If duration is true, partition by filename and duration
-            let partition_by = if duration {
-                "filename, duration".to_string()
-            } else {
-                "filename".to_string()
-            };
-            (partition_by, String::new())
-        }
+    let partition_by_clause = groups.join(", ");
+    let where_clause = if group_null || groups.is_empty() {
+        String::new()
+    } else {
+        let non_null_conditions: Vec<String> = groups
+            .iter()
+            .map(|group| format!("{group} IS NOT NULL AND {group} !=''"))
+            .collect();
+        format!("WHERE {}", non_null_conditions.join(" AND "))
     };
 
     let sql = format!(
@@ -209,7 +277,7 @@ pub async fn gather_duplicate_filenames_in_database(
         )
         SELECT id, filename, duration, filepath FROM ranked WHERE rn > 1
         ",
-        partition_by, order_clause, TABLE, where_clause
+        partition_by_clause, order_clause, TABLE, where_clause
     );
 
     // Execute the query and fetch the results
@@ -225,13 +293,6 @@ pub async fn gather_duplicate_filenames_in_database(
             path: row.get(3),
         };
         file_records.insert(file_record);
-    }
-
-    if verbose {
-        println!(
-            "Marked {} duplicate records for deletion.",
-            file_records.len()
-        );
     }
 
     Ok(file_records)
