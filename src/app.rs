@@ -1115,18 +1115,74 @@ impl App {
             //GROUP GROUP GROUP GROUP
             ui.checkbox(&mut self.main.search, "Basic Duplicate Filename Search");
 
-            ui.horizontal(|ui|{
-                ui.add_space(24.0);
-                ui.checkbox(&mut self.duration_check, "Only Filenames with identical duration will be considered duplicates");
-            });
+            // ui.horizontal(|ui|{
+            //     ui.add_space(24.0);
+            //     ui.checkbox(&mut self.duration_check, "Only Filenames with identical duration will be considered duplicates");
+            // });
 
             ui.horizontal(|ui| {
                 ui.add_space(24.0);
                 ui.checkbox(
                     &mut self.group.search,
-                    "Group Duplicate Filename Search by: ",
+                    "Duplicate Match Criteria: ",
                 );
+                // combo_box(ui, "group", &mut self.group.selected, &db.columns);
+                // button(ui, "+", ||{self.group.list.push(self.group.selected.clone());});
+                // button(ui, "-", ||{self.group.list.pop();});
+            });
+            // THIS IS THE LIST IDEA... NEEDS WORK STILL
+            ui.horizontal(|ui|{
+                ui.add_space(44.0);
+                let num_columns = 4;
+                // use egui::{Frame, RichText, Stroke, Rounding};
+
+// Frame::group(&ui.style()) // Create a framed group
+//     .outer_margin(egui::Margin::same(10.0)) // Set margin around the grid
+//     .rounding(Rounding::same(5.0)) // Optional: Rounded corners for the box
+//     .stroke(Stroke::new(1.0, egui::Color32::BLACK)) // Set stroke width and color for the box
+//     .show(ui, |ui| {
+        egui::Grid::new("Tags Grid")
+            .num_columns(num_columns)
+            .spacing([20.0, 8.0])
+            .striped(true)
+            .show(ui, |ui| {
+                for (index, tag) in self.group.list.iter_mut().enumerate() {
+                    // Check if current index is in `sel_tags`
+                    let is_selected = self.sel_tags.contains(&index);
+
+                    if ui
+                        .selectable_label(is_selected, RichText::new(tag.clone()).size(14.0))
+                        .clicked()
+                    {
+                        if is_selected {
+                            // Deselect
+                            self.sel_tags.retain(|&i| i != index);
+                        } else {
+                            // Select
+                            self.sel_tags.push(index);
+                        }
+                    }
+
+                    if (index + 1) % num_columns == 0 {
+                        ui.end_row(); // Move to the next row after 4 columns
+                    }
+                }
+
+                // End the last row if not fully filled
+                if self.tags.list.len() % num_columns != 0 {
+                    ui.end_row();
+                }
+            });
+    // });
+
+            });
+
+            ui.horizontal(|ui|{
+                ui.add_space(44.0);
                 combo_box(ui, "group", &mut self.group.selected, &db.columns);
+                button(ui, "+", ||{self.group.list.push(self.group.selected.clone());});
+                button(ui, "-", ||{self.group.list.pop();});
+
             });
 
             ui.horizontal(|ui| {

@@ -6,6 +6,7 @@ use std::collections::{HashMap, HashSet};
 use std::result::Result;
 
 // use futures::future::join_all;
+use dirs::home_dir;
 use futures::stream::{self, StreamExt};
 use rayon::prelude::*;
 use std::path::Path;
@@ -544,15 +545,37 @@ pub async fn create_duplicates_db(
 }
 
 pub async fn open_db() -> Option<Database> {
-    if let Some(path) = FileDialog::new()
-        .add_filter("SQLite Database", &["sqlite"])
-        .pick_file()
-    {
-        let db_path = path.display().to_string();
-        if db_path.ends_with(".sqlite") {
-            println!("Opening Database {}", db_path);
-            let db = Database::open(&db_path).await;
-            return Some(db);
+    let home_dir = home_dir();
+    match home_dir {
+        Some(home_dir) => {
+            println!("Found SMDB dir");
+            let db_dir = home_dir.join("Library/Application Support/SoundminerV6/Databases");
+            if let Some(path) = FileDialog::new()
+                .add_filter("SQLite Database", &["sqlite"])
+                .set_directory(db_dir)
+                .pick_file()
+            {
+                let db_path = path.display().to_string();
+                if db_path.ends_with(".sqlite") {
+                    println!("Opening Database {}", db_path);
+                    let db = Database::open(&db_path).await;
+                    return Some(db);
+                }
+            }
+        }
+        None => {
+            println!("did not find SMDB dir");
+            if let Some(path) = FileDialog::new()
+                .add_filter("SQLite Database", &["sqlite"])
+                .pick_file()
+            {
+                let db_path = path.display().to_string();
+                if db_path.ends_with(".sqlite") {
+                    println!("Opening Database {}", db_path);
+                    let db = Database::open(&db_path).await;
+                    return Some(db);
+                }
+            }
         }
     }
     None
