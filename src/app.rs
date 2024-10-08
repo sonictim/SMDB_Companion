@@ -1,6 +1,7 @@
 use crate::assets::*;
 use crate::processing::*;
 use eframe::egui::{self, RichText};
+// use egui::Response;
 use rayon::prelude::*;
 use serde::Deserialize;
 use sqlx::sqlite::SqlitePool;
@@ -10,7 +11,7 @@ use std::hash::Hash;
 use tokio::sync::mpsc;
 use std::path::Path;
 use clipboard::{ClipboardContext, ClipboardProvider};
-use webbrowser;
+// use webbrowser;
 
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 #[serde(default)]
@@ -591,6 +592,8 @@ impl eframe::App for App {
             self.registered.validate();
         }
 
+        
+
         // Put your widgets into a `SidePanel`, `TopBottomPanel`, `CentralPanel`, `Window` or `Area`.
         // For inspiration and more examples, go to https://emilk.github.io/egui
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
@@ -736,6 +739,13 @@ impl eframe::App for App {
         // The central panel the region left after adding TopPanel's and SidePanel's
 
         egui::CentralPanel::default().show(ctx, |ui| {
+
+            // let mut new_visuals = ui.visuals().clone();
+            // new_visuals.window_stroke.color = egui::Color32::from_rgb(0, 255, 0);
+            // ui.style_mut().visuals = new_visuals;
+
+          
+
             if let Some(rx) = self.db_io.rx.as_mut() {
                 if let Ok(db) = rx.try_recv() {
                     self.db = Some(db);
@@ -1120,8 +1130,11 @@ impl App {
             }
             ui.heading(RichText::new("Search for Duplicate Records").strong());
 
-            //GROUP GROUP GROUP GROUP
             ui.checkbox(&mut self.main.search, "Basic Duplicate Search");
+            
+
+            //GROUP GROUP GROUP GROUP
+          
 
             // ui.horizontal(|ui|{
             //     ui.add_space(24.0);
@@ -1171,6 +1184,7 @@ impl App {
 
             
             if self.group.list.is_empty() {
+                self.main.search = false;
                 // empty_line(ui);
                 ui.horizontal(|ui|{
                     ui.add_space(24.0);
@@ -1747,32 +1761,32 @@ impl App {
             });
     }
 
-    fn keygen_panel(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            ui.label("Name: ");
-            ui.text_edit_singleline(&mut self.registered.name);
-        });
-        ui.horizontal(|ui| {
-            ui.label("Email: ");
-            ui.text_edit_singleline(&mut self.registered.email);
-        });
-        self.registered.key = generate_license_key(&self.registered.name, &self.registered.email);
-        ui.horizontal(|ui| {
-            ui.label("License Key: ");
-            ui.label(&self.registered.key);
-            // ui.text_edit_singleline(&mut self.registered.key);
-        });
+    // fn keygen_panel(&mut self, ui: &mut egui::Ui) {
+    //     ui.horizontal(|ui| {
+    //         ui.label("Name: ");
+    //         ui.text_edit_singleline(&mut self.registered.name);
+    //     });
+    //     ui.horizontal(|ui| {
+    //         ui.label("Email: ");
+    //         ui.text_edit_singleline(&mut self.registered.email);
+    //     });
+    //     self.registered.key = generate_license_key(&self.registered.name, &self.registered.email);
+    //     ui.horizontal(|ui| {
+    //         ui.label("License Key: ");
+    //         ui.label(&self.registered.key);
+    //         // ui.text_edit_singleline(&mut self.registered.key);
+    //     });
 
-        ui.horizontal(|ui|{
-            if ui.button("Register").clicked() {
-                self.registered.validate();
-            }
-            if ui.button("Copy to Clipboard").clicked() {
-                copy_to_clipboard(format!("SMDB COMPANION\nDownload Link: https://drive.google.com/open?id=1qdGqoUMqq_xCrbA6IxUTYliZUmd3Tn3i&usp=drive_fs\n\nRegistration Info\nName: {}\nEmail: {}\nKey: {}\n\n", self.registered.name, self.registered.email, self.registered.key));
+    //     ui.horizontal(|ui|{
+    //         if ui.button("Register").clicked() {
+    //             self.registered.validate();
+    //         }
+    //         if ui.button("Copy to Clipboard").clicked() {
+    //             copy_to_clipboard(format!("SMDB COMPANION\nDownload Link: https://drive.google.com/open?id=1qdGqoUMqq_xCrbA6IxUTYliZUmd3Tn3i&usp=drive_fs\n\nRegistration Info\nName: {}\nEmail: {}\nKey: {}\n\n", self.registered.name, self.registered.email, self.registered.key));
         
-            }
-        });
-    }
+    //         }
+    //     });
+    // }
 
 }
 
