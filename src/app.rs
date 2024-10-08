@@ -478,7 +478,7 @@ impl Default for App {
             compare: Config::new(false),
            
             safe: true,
-            dupes_db: false,
+            dupes_db: true,
             remove_files: false,
             delete_action: Delete::Trash,
             my_panel: Panel::Duplicates,
@@ -597,7 +597,7 @@ impl eframe::App for App {
             egui::menu::bar(ui, |ui| {
                 // NOTE: no File->Quit on web pages!
 
-                ui.menu_button(RichText::new("File").weak(), |ui| {
+                ui.menu_button(RichText::new("File").weak().size(18.0), |ui| {
                     if ui.button("Open Database").clicked() {
                         ui.close_menu();
                         // self.clear_status();
@@ -700,14 +700,14 @@ impl eframe::App for App {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
                 });
-                ui.label(RichText::new("|").weak());
+                ui.label(RichText::new("|").weak().size(18.0));
 
                 self.panel_tab_bar(ui);
 
                 if ui.available_width() > 20.0 {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
                         egui::widgets::global_dark_light_mode_switch(ui);
-                        ui.label(RichText::new("|").weak());
+                        ui.label(RichText::new("|").weak().size(18.0));
                     });
                 }
 
@@ -770,11 +770,7 @@ impl eframe::App for App {
                 });
             }
 
-            //empty_line(ui);
-            // ui.separator();
-            //empty_line(ui);
-
-            // self.panel_tab_bar(ui);
+   
 
             empty_line(ui);
             ui.separator();
@@ -803,7 +799,7 @@ impl eframe::App for App {
                     }
 
                     Panel::KeyGen => {
-                        self.keygen_panel(ui);
+                        keygen_panel2(ui, &mut self.registered);
                     }
                 }
                 empty_line(ui);
@@ -903,7 +899,7 @@ impl eframe::App for App {
 impl App {
     fn panel_tab_bar(&mut self, ui: &mut egui::Ui) {
         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-            let mut space = ui.available_width() / 2.0 - 300.0;
+            let mut space = ui.available_width() / 2.0 - 350.0;
             if space < 5.0 {
                 space = 0.0;
             }
@@ -1132,22 +1128,148 @@ impl App {
                 //     "Duplicate Match Criteria: ",
                 // );
                 ui.label("Duplicate Match Criteria: ");
-                combo_box(ui, "group", &mut self.group.selected, &db.columns);
-                button(ui, "+", ||{
-                    if !self.group.selected.is_empty() {
+               
 
-                        let item = self.group.selected.clone();
-                        if !self.group.list.contains(&item) {
+                // button(ui, "+", ||{
+                //     if !self.group.selected.is_empty() {
+
+                //         let item = self.group.selected.clone();
+                //         if !self.group.list.contains(&item) {
     
-                            self.group.list.push(item);
-                            self.group.selected.clear();
-                        }
-                    }
+                //             self.group.list.push(item);
+                //             self.group.selected.clear();
+                //         }
+                //     }
                        
-                });
-                button(ui, "-", ||{
+                // });
+                // button(ui, "Remove Selected", ||{
 
-                        // Sort and remove elements based on `sel_tags`
+                //         // Sort and remove elements based on `sel_tags`
+                //     let mut sorted_indices: Vec<usize> = self.sel_groups.clone();
+                //     sorted_indices.sort_by(|a, b| b.cmp(a)); // Sort in reverse order
+
+                //     for index in sorted_indices {
+                //         if index < self.group.list.len() {
+                //             self.group.list.remove(index);
+                //         }
+                //     }
+                //     self.sel_groups.clear();
+                //     self.group.selected.clear();
+
+                //     if self.group.list.is_empty() {self.group.selected = "Filename".to_owned()}
+             
+                // });
+
+            });
+
+            
+            if self.group.list.is_empty() {
+                // empty_line(ui);
+                ui.horizontal(|ui|{
+                    ui.add_space(24.0);
+    
+                    let text = RichText::new("Add Match Criteria to Enable Search").strong().size(14.0).color(egui::Color32::from_rgb(255, 0, 0));
+                    ui.label(text);
+                    
+                    
+                    
+    
+                });
+                ui.horizontal(|ui|{
+                    ui.add_space(24.0);
+                    
+                    
+                    button(ui, "Restore Defaults", ||{self.group.list = vec!{"Filename".to_owned(), "Duration".to_owned(), "Channels".to_owned()} });
+                    
+                    
+                    
+                });
+                empty_line(ui);
+            
+            } else {
+
+                
+                ui.horizontal(|ui|{
+                    ui.add_space(24.0);
+                    
+                    let num_columns = 3;
+                    egui::Frame::none() // Use Frame to create a custom bordered area
+                    .inner_margin(egui::vec2(8.0, 8.0)) // Inner margin for padding
+                    .show(ui, |ui| {
+                        ui.group(|ui| {
+                            // Draw a border
+                            // ui.label("Bordered Grid");
+                            ui.horizontal(|ui| {
+                                // Drawing a border manually
+                                ui.add_space(2.0);
+                                ui.horizontal(|ui| {
+                                   
+                                    egui::Grid::new("Match Grid")
+                                        .num_columns(num_columns)
+                                        .spacing([20.0, 8.0])
+                                        .striped(true)
+                                        .show(ui, |ui| {
+                                            for (index, group) in self.group.list.iter_mut().enumerate() {
+                                                // Check if current index is in `sel_tags`
+                                                let is_selected = self.sel_groups.contains(&index);
+                
+                                                if ui
+                                                    .selectable_label(is_selected, RichText::new(group.clone()).size(14.0))
+                                                    .clicked()
+                                                {
+                                                    if is_selected {
+                                                        // Deselect
+                                                        self.sel_groups.retain(|&i| i != index);
+                                                    } else {
+                                                        // Select
+                                                        self.sel_groups.push(index);
+                                                    }
+                                                }
+                
+                                                if (index + 1) % num_columns == 0 {
+                                                    ui.end_row(); // Move to the next row after `num_columns`
+                                                }
+                                            }
+                
+                                            // End the last row if not fully filled
+                                            if self.group.list.len() % num_columns != 0 {
+                                                ui.end_row();
+                                            }
+                                        });
+                                });
+                                ui.add_space(2.0);
+                            });
+                        });
+                    });
+    
+    
+    
+    
+                });
+            }
+            
+            
+
+            ui.horizontal(|ui|{
+                ui.add_space(24.0);
+                ui.label(RichText::new("Add:"));
+
+                let mut filtered_list = db.columns.clone();
+                filtered_list.retain(|item| !&self.group.list.contains(item));     
+
+                combo_box(ui, "group", &mut self.group.selected, &filtered_list);
+          
+                if !self.group.selected.is_empty() {
+
+                    let item = self.group.selected.clone();
+                    self.group.selected.clear();
+                    if !self.group.list.contains(&item) {
+
+                        self.group.list.push(item);
+                    }
+                }
+            
+                button(ui, "Remove Selected", ||{
                     let mut sorted_indices: Vec<usize> = self.sel_groups.clone();
                     sorted_indices.sort_by(|a, b| b.cmp(a)); // Sort in reverse order
 
@@ -1159,68 +1281,12 @@ impl App {
                     self.sel_groups.clear();
                     self.group.selected.clear();
 
-                    if self.group.list.is_empty() {self.group.selected = "Filename".to_owned()}
+                    // if self.group.list.is_empty() {self.group.selected = "Filename".to_owned()}
              
+
+
                 });
             });
-            
-
-            ui.horizontal(|ui|{
-                ui.add_space(24.0);
-
-
-                if self.group.list.is_empty() {
-                    let text = RichText::new("Must Add Match Criteria to Enable Search").strong().color(egui::Color32::from_rgb(255, 0, 0));
-                    ui.label(text);
-                    self.main.search = false;
-                
-                } else {
-
-                    let num_columns = 3;
-                    egui::Grid::new("Match Grid")
-                        .num_columns(num_columns)
-                        .spacing([20.0, 8.0])
-                        // .striped(true)
-                        .show(ui, |ui| {
-                            for (index, group) in self.group.list.iter_mut().enumerate() {
-                                // Check if current index is in `sel_tags`
-                                let is_selected = self.sel_groups.contains(&index);
-    
-                                if ui
-                                    .selectable_label(is_selected, RichText::new(group.clone()).size(14.0))
-                                    .clicked()
-                                {
-                                    if is_selected {
-                                        // Deselect
-                                        self.sel_groups.retain(|&i| i != index);
-                                    } else {
-                                        // Select
-                                        self.sel_groups.push(index);
-                                    }
-                                }
-    
-                                if (index + 1) % num_columns == 0 {
-                                    ui.end_row(); // Move to the next row after 4 columns
-                                }
-                            }
-    
-                            // End the last row if not fully filled
-                            if self.group.list.len() % num_columns != 0 {
-                                ui.end_row();
-                            }
-                        });
-                }
-
-
-
-            });
-
-            // ui.horizontal(|ui|{
-            //     ui.add_space(24.0);
-            //     button(ui, "Add:", ||{self.group.list.push(self.group.selected.clone());});
-            //     combo_box(ui, "group", &mut self.group.selected, &db.columns);
-            //     button(ui, "Remove Selected", ||{self.group.list.pop();});
-            // });
 
             if ui.input(|i| i.modifiers.alt) {
                
@@ -1398,7 +1464,7 @@ impl App {
             // DELETION PREFERENCES
             empty_line(ui);
             ui.horizontal(|ui| {
-                ui.checkbox(&mut self.safe, "Create Safety Database of Thinned Records");
+                ui.checkbox(&mut self.safe, "Create New Safety Database of Thinned Records");
                 if !&self.safe {
                     ui.label(
                         RichText::new("UNSAFE!")
@@ -1410,16 +1476,23 @@ impl App {
             });
             ui.checkbox(&mut self.dupes_db, "Create New Database of Duplicate Records");
             ui.horizontal(|ui| {
-                ui.checkbox(&mut self.remove_files, "Remove Duplicate Files: ");
-                enum_combo_box2(ui, &mut self.delete_action);
-                if self.remove_files && self.delete_action == Delete::Permanent {
-                    ui.label(
-                        RichText::new("UNSAFE!")
-                            .color(egui::Color32::from_rgb(255, 0, 0))
-                            .strong(),
-                    );
-                    ui.label(RichText::new("This is NOT undoable").strong());
+                let mut text = RichText::new("Remove Duplicate Files ");
+                if self.remove_files {text = text.strong().size(16.0).color(egui::Color32::from_rgb(255, 0, 0))}
+                ui.checkbox(&mut self.remove_files, text);
+
+                if self.remove_files {
+                    enum_combo_box2(ui, &mut self.delete_action);
+                    if self.remove_files && self.delete_action == Delete::Permanent {
+                        ui.label(
+                            RichText::new("UNSAFE!")
+                                .color(egui::Color32::from_rgb(255, 0, 0))
+                                .strong(),
+                        );
+                        ui.label(RichText::new("This is NOT undoable").strong());
+                    }
+
                 }
+
             });
 
             empty_line(ui);
@@ -1695,6 +1768,38 @@ impl App {
     }
 
 }
+
+
+fn keygen_panel2(ui: &mut egui::Ui, k: &mut Registration) {
+    ui.horizontal(|ui| {
+        ui.label("Name: ");
+        ui.text_edit_singleline(&mut k.name);
+    });
+    ui.horizontal(|ui| {
+        ui.label("Email: ");
+        ui.text_edit_singleline(&mut k.email);
+    });
+    k.key = generate_license_key(&k.name, &k.email);
+    ui.horizontal(|ui| {
+        ui.label("License Key: ");
+        ui.label(&k.key);
+        // ui.text_edit_singleline(&mut self.registered.key);
+    });
+
+    ui.horizontal(|ui|{
+        if ui.button("Register").clicked() {
+            k.validate();
+        }
+        if ui.button("Copy to Clipboard").clicked() {
+            copy_to_clipboard(format!("SMDB COMPANION\nDownload Link: https://drive.google.com/open?id=1qdGqoUMqq_xCrbA6IxUTYliZUmd3Tn3i&usp=drive_fs\n\nRegistration Info\nName: {}\nEmail: {}\nKey: {}\n\n", k.name, k.email, k.key));
+    
+        }
+    });
+}
+
+
+
+
 
 fn copy_to_clipboard(text: String) {
     let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
