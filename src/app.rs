@@ -1,7 +1,6 @@
 use crate::assets::*;
 use crate::processing::*;
 use eframe::egui::{self, RichText};
-// use egui::Response;
 use rayon::prelude::*;
 use serde::Deserialize;
 use sqlx::sqlite::SqlitePool;
@@ -11,7 +10,7 @@ use std::hash::Hash;
 use tokio::sync::mpsc;
 use std::path::Path;
 use clipboard::{ClipboardContext, ClipboardProvider};
-// use webbrowser;
+
 
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 #[serde(default)]
