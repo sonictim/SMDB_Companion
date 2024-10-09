@@ -84,7 +84,7 @@ impl<T> AsyncTunnel<T> {
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)]
 
-pub struct Config {
+pub struct NodeConfig {
     pub search: bool,
     pub list: Vec<String>,
     pub selected: String,
@@ -107,9 +107,9 @@ pub struct Config {
     pub handle: Option<tokio::task::JoinHandle<()>>,
 }
 
-impl Clone for Config {
+impl Clone for NodeConfig {
     fn clone(&self) -> Self {
-        Config {
+        NodeConfig {
             search: self.search,
             list: self.list.clone(),
             selected: self.selected.clone(),
@@ -124,7 +124,7 @@ impl Clone for Config {
         }
     }
 }
-impl Default for Config {
+impl Default for NodeConfig {
     fn default() -> Self {
         Self {
             search: false,
@@ -142,7 +142,7 @@ impl Default for Config {
     }
 }
 
-impl Config {
+impl NodeConfig {
     fn new(on: bool) -> Self {
         Self {
             search: on,
@@ -310,6 +310,20 @@ impl OrderOperator {
     }
 }
 
+#[derive(serde::Deserialize, serde::Serialize, Clone)]
+// #[serde(default)] 
+
+pub struct PreservationLogic {
+    pub friendly: String,
+    pub sql: String,
+}
+
+pub fn extract_sql(logics: Vec<PreservationLogic>) -> Vec<String> {
+    logics.iter()
+        .map(|logic| logic.sql.clone())
+        .collect()
+}
+
 #[derive(PartialEq, serde::Serialize, Deserialize, Clone, Copy)]
 pub enum Delete {
     Trash,
@@ -390,17 +404,17 @@ pub struct App {
     find_buf: String,
     replace_buf: String,
 
-    main: Config,
-    group: Config,
+    main: NodeConfig,
+    group: NodeConfig,
     #[serde(skip)]
     sel_groups: Vec<usize>,
     group_null: bool,
-    duration_check: bool,
-    tags: Config,
-    deep: Config,
+    // duration_check: bool,
+    tags: NodeConfig,
+    deep: NodeConfig,
     ignore_extension: bool,
     sel_extension: String,
-    compare: Config,
+    compare: NodeConfig,
    
     safe: bool,
     dupes_db: bool,
@@ -431,7 +445,7 @@ pub struct App {
     #[serde(skip)]
     go_replace: bool,
 
-    order_friendly: Vec<String>,
+    order: Vec<PreservationLogic>,
     order_column: String,
     order_operator: OrderOperator,
     #[serde(skip)]
@@ -467,17 +481,17 @@ impl Default for App {
             find_buf: String::new(),
             replace_buf: String::new(),
            
-            main: Config::new(true),
-            group: Config::new(false),
+            main: NodeConfig::new(true),
+            group: NodeConfig::new(false),
             sel_groups: Vec::new(),
             group_null: false,
-            duration_check: false,
+            // duration_check: false,
 
-            tags: Config::new_option(false, "-"),
-            deep: Config::new(false),
+            tags: NodeConfig::new_option(false, "-"),
+            deep: NodeConfig::new(false),
             ignore_extension: false,
             sel_extension: String::new(),
-            compare: Config::new(false),
+            compare: NodeConfig::new(false),
            
             safe: true,
             dupes_db: true,
@@ -495,7 +509,7 @@ impl Default for App {
             gather_dupes: false,
             go_search: false,
             go_replace: false,
-            order_friendly: Vec::new(),
+            order: Vec::new(),
             order_column: "Pathname".to_owned(),
             order_operator: OrderOperator::Contains,
             order_input: String::new(),
@@ -507,8 +521,8 @@ impl Default for App {
         };
         app.group.list = vec!["Filename".to_owned(), "Duration".to_owned(), "Channels".to_owned()];
         app.tags.list = default_tags();
-        app.main.list = default_order();
-        app.order_friendly = default_order_friendly();
+ 
+        app.order = get_default_struct_order();
 
         app
     }
@@ -561,13 +575,10 @@ impl App {
         panel: Panel,
         registration: Registration,
     ) {
-        // *self = Self::default();
-        // self.db = db;
-        // self.my_panel = panel;
-        // self.registered = registration;
+    
         self.reset_to_defaults(db, panel, registration);
-        self.main.list = tjf_order();
-        self.order_friendly = tjf_order_friendly();
+      
+        self.order = get_tjf_struct_order();
         self.tags.list = tjf_tags();
         self.deep.search = true;
         self.tags.search = true;
@@ -638,7 +649,7 @@ impl eframe::App for App {
                             self.registered.clone(),
                         );
                     }
-                    egui::widgets::global_dark_light_mode_buttons(ui);
+                    egui::widgets::global_theme_preference_buttons(ui);
                     if !self.registered.valid.expect("some") {
                         ui.separator();
                         
@@ -716,35 +727,18 @@ impl eframe::App for App {
 
                 if ui.available_width() > 20.0 {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
-                        egui::widgets::global_dark_light_mode_switch(ui);
+                        egui::widgets::global_theme_preference_switch(ui);
                         ui.label(RichText::new("|").weak().size(18.0));
                     });
                 }
 
-                // // let mut show_help_window = self.help;
-                // if self.help {
-                //     egui::Window::new("Records Marked for Duplication")
-                //         .open(&mut self.help) // Control whether the window is open
-                //         .show(ctx, |ui| {
-                //             ui.label("This is a dialog!");
-                //             // if ui.button("Close").clicked() {
-                //             //     self.help = false; // Close the window when clicked
-                //             // }
-                //         });
-                // }
-                // }
+ 
             });
         });
 
         // The central panel the region left after adding TopPanel's and SidePanel's
 
         egui::CentralPanel::default().show(ctx, |ui| {
-
-            // let mut new_visuals = ui.visuals().clone();
-            // new_visuals.window_stroke.color = egui::Color32::from_rgb(0, 255, 0);
-            // ui.style_mut().visuals = new_visuals;
-
-          
 
             if let Some(rx) = self.db_io.rx.as_mut() {
                 if let Ok(db) = rx.try_recv() {
@@ -871,8 +865,6 @@ impl eframe::App for App {
                         }
                     });
             }
-
-            // self.show_version_in_bottom_right(ctx);
         });
 
         let id2 = egui::Id::new("bottom panel registration");
@@ -948,7 +940,6 @@ impl App {
                 }
             }
     
-            // Add tab buttons for each panel
             add_tab_button(ui, &mut self.my_panel, Panel::Find, "Find & Replace", size_big, size_small, column_width);
             add_tab_button(ui, &mut self.my_panel, Panel::Duplicates, "Search for Duplicates", size_big, size_small, column_width);
             add_tab_button(ui, &mut self.my_panel, Panel::Order, "Preservation Priority", size_big, size_small, column_width);
@@ -995,14 +986,14 @@ impl App {
                             && col.as_str() != "Filename"
                     })
                     .collect();
-                egui::ComboBox::from_id_source("find_column")
+                egui::ComboBox::from_id_salt("find_column")
                     .selected_text(&self.column)
                     .show_ui(ui, |ui| {
                         for item in filtered_columns {
                             ui.selectable_value(&mut self.column, item.clone(), item);
                         }
                     });
-                // combo_box(ui, "find_column", &mut self.column, &filtered_columns);
+               
             });
             empty_line(ui);
             ui.separator();
@@ -1022,7 +1013,7 @@ impl App {
                 .button(RichText::new("Find Records").size(16.0))
                 .clicked()
             {
-                // self.searched = true;
+               
                 self.replace_safety = true;
                 if self.search_replace_path {
                     self.column = "FilePath".to_string()
@@ -1143,42 +1134,10 @@ impl App {
 
             ui.horizontal(|ui| {
                 ui.add_space(24.0);
-                // ui.checkbox(
-                //     &mut self.group.search,
-                //     "Duplicate Match Criteria: ",
-                // );
+      
                 ui.label("Duplicate Match Criteria: ");
                
 
-                // button(ui, "+", ||{
-                //     if !self.group.selected.is_empty() {
-
-                //         let item = self.group.selected.clone();
-                //         if !self.group.list.contains(&item) {
-    
-                //             self.group.list.push(item);
-                //             self.group.selected.clear();
-                //         }
-                //     }
-                       
-                // });
-                // button(ui, "Remove Selected", ||{
-
-                //         // Sort and remove elements based on `sel_tags`
-                //     let mut sorted_indices: Vec<usize> = self.sel_groups.clone();
-                //     sorted_indices.sort_by(|a, b| b.cmp(a)); // Sort in reverse order
-
-                //     for index in sorted_indices {
-                //         if index < self.group.list.len() {
-                //             self.group.list.remove(index);
-                //         }
-                //     }
-                //     self.sel_groups.clear();
-                //     self.group.selected.clear();
-
-                //     if self.group.list.is_empty() {self.group.selected = "Filename".to_owned()}
-             
-                // });
 
             });
 
@@ -1212,52 +1171,18 @@ impl App {
                 
                 ui.horizontal(|ui|{
                     ui.add_space(24.0);
-                    
-                    let num_columns = 3;
+                
                     egui::Frame::none() // Use Frame to create a custom bordered area
                     .inner_margin(egui::vec2(8.0, 8.0)) // Inner margin for padding
                     .show(ui, |ui| {
                         ui.group(|ui| {
-                            // Draw a border
-                            // ui.label("Bordered Grid");
+                         
+                          
                             ui.horizontal(|ui| {
                                 // Drawing a border manually
                                 ui.add_space(2.0);
-                                ui.horizontal(|ui| {
-                                   
-                                    egui::Grid::new("Match Grid")
-                                        .num_columns(num_columns)
-                                        .spacing([20.0, 8.0])
-                                        .striped(true)
-                                        .show(ui, |ui| {
-                                            for (index, group) in self.group.list.iter_mut().enumerate() {
-                                                // Check if current index is in `sel_tags`
-                                                let is_selected = self.sel_groups.contains(&index);
-                
-                                                if ui
-                                                    .selectable_label(is_selected, RichText::new(group.clone()).size(14.0))
-                                                    .clicked()
-                                                {
-                                                    if is_selected {
-                                                        // Deselect
-                                                        self.sel_groups.retain(|&i| i != index);
-                                                    } else {
-                                                        // Select
-                                                        self.sel_groups.push(index);
-                                                    }
-                                                }
-                
-                                                if (index + 1) % num_columns == 0 {
-                                                    ui.end_row(); // Move to the next row after `num_columns`
-                                                }
-                                            }
-                
-                                            // End the last row if not fully filled
-                                            if self.group.list.len() % num_columns != 0 {
-                                                ui.end_row();
-                                            }
-                                        });
-                                });
+                                selectable_grid(ui, "Match Grid", 4, &mut self.sel_groups, &mut self.group.list);
+                               
                                 ui.add_space(2.0);
                             });
                         });
@@ -1302,10 +1227,7 @@ impl App {
                     self.sel_groups.clear();
                     self.group.selected.clear();
 
-                    // if self.group.list.is_empty() {self.group.selected = "Filename".to_owned()}
-             
-
-
+            
                 });
             });
 
@@ -1318,17 +1240,8 @@ impl App {
                     ui.radio_value(&mut self.group_null, true, "Process Together");
                 });
             } 
-
-            ui.horizontal(|ui| {
-                if self.group.working {
-                    ui.spinner();
-                } else {
-                    ui.add_space(24.0);
-                }
-                ui.label(RichText::new(self.group.status.clone()).strong());
-            });
-
-            ui.separator();
+            node_progress_bar(ui, &self.group);
+          
 
             //DEEP DIVE DEEP DIVE DEEP DIVE
             ui.checkbox(&mut self.deep.search, "Similar Filename Duplicates Search");
@@ -1373,13 +1286,7 @@ impl App {
                                     "(Checked: 'example.wav' and 'example.flac' will be considered duplicate filenames)",
                                 ), // .weak(),
                             );
-                            // ui.label("Prefer:");
-                            // combo_box(
-                            //     ui,
-                            //     "Extensions",
-                            //     &mut self.sel_extension,
-                            //     &db.file_extensions,
-                            // );
+                  
                         } else {
                             ui.label(
                                 RichText::new(
@@ -1400,28 +1307,10 @@ impl App {
                 );
             });
 
-            ui.horizontal(|ui| {
-                if self.deep.working {
-                    ui.spinner();
-                } else {
-                    ui.add_space(24.0)
-                }
-                ui.label(RichText::new(self.deep.status.clone()).strong());
-            });
+            node_progress_bar(ui, &self.deep);
 
-            if self.deep.working {
-                ui.add(
-                    egui::ProgressBar::new(self.deep.progress.0 / self.deep.progress.1)
-                        // .text("progress")
-                        .desired_height(4.0),
-                );
-                ui.label(format!(
-                    "Progress: {} / {}",
-                    self.deep.progress.0, self.deep.progress.1
-                ));
-            }
+          
 
-            ui.separator();
 
             //TAGS TAGS TAGS TAGS
             ui.checkbox(
@@ -1436,15 +1325,10 @@ impl App {
                 )
             });
 
-            ui.horizontal(|ui| {
-                if self.tags.working {
-                    ui.spinner();
-                } else {
-                    ui.add_space(24.0);
-                }
-                ui.label(RichText::new(self.tags.status.clone()).strong());
-            });
-            ui.separator();
+            node_progress_bar(ui, &self.tags);
+         
+
+            // ui.separator();
 
             //COMPARE COMPARE COMPARE COMPARE
             ui.horizontal(|ui| {
@@ -1471,15 +1355,9 @@ impl App {
                         ui.add_space(24.0);
                         ui.label("Filenames from Target Database found in Comparison Database will be Marked for Removal");
                     });
-            ui.horizontal(|ui| {
-                if self.compare.working {
-                    ui.spinner();
-                } else {
-                    ui.add_space(24.0)
-                }
-                ui.label(RichText::new(self.compare.status.clone()).strong());
-            });
-            ui.separator();
+
+            node_progress_bar(ui, &self.compare);
+           
 
             // if !self.main.records.is_empty() && !handles_active(self) {}
             // DELETION PREFERENCES
@@ -1634,8 +1512,8 @@ impl App {
                                 .spacing([20.0, 8.0])
                                 .striped(true)
                                 .show(ui, |ui| {
-                                    // for (index, line) in self.main.list.iter_mut().enumerate() {
-                                    for (index, line) in self.order_friendly.iter_mut().enumerate()
+                                 
+                                    for (index, line) in self.order.iter_mut().enumerate()
                                     {
                                         let checked = self.sel_line == Some(index);
                                         if ui
@@ -1644,7 +1522,7 @@ impl App {
                                                 RichText::new(format!(
                                                     "{:02} : {}",
                                                     index + 1,
-                                                    line.clone()
+                                                    line.friendly.clone()
                                                 ))
                                                 .size(14.0),
                                             )
@@ -1702,40 +1580,8 @@ impl App {
         ui.label("You can enter any string of text and if it is a match, the file will be marked for removal");
         empty_line(ui);
         ui.separator();
-        let num_columns = 6;
         egui::ScrollArea::vertical().show(ui, |ui| {
-            egui::Grid::new("Tags Grid")
-                .num_columns(num_columns)
-                .spacing([20.0, 8.0])
-                .striped(true)
-                .show(ui, |ui| {
-                    for (index, tag) in self.tags.list.iter_mut().enumerate() {
-                        // Check if current index is in `sel_tags`
-                        let is_selected = self.sel_tags.contains(&index);
-
-                        if ui
-                            .selectable_label(is_selected, RichText::new(tag.clone()).size(14.0))
-                            .clicked()
-                        {
-                            if is_selected {
-                                // Deselect
-                                self.sel_tags.retain(|&i| i != index);
-                            } else {
-                                // Select
-                                self.sel_tags.push(index);
-                            }
-                        }
-
-                        if (index + 1) % num_columns == 0 {
-                            ui.end_row(); // Move to the next row after 4 columns
-                        }
-                    }
-
-                    // End the last row if not fully filled
-                    if self.tags.list.len() % 4 != 0 {
-                        ui.end_row();
-                    }
-                });
+            selectable_grid(ui, "Tags Grid", 6, &mut self.sel_tags, &mut self.tags.list);
             ui.separator();
             empty_line(ui);
             ui.horizontal(|ui| {
@@ -1827,8 +1673,6 @@ fn copy_to_clipboard(text: String) {
 
     ctx.set_contents(text).unwrap();
 
-    println!("Text copied to clipboard!");
-
 }
 
 pub fn order_toolbar(ui: &mut egui::Ui, app: &mut App) {
@@ -1837,30 +1681,29 @@ pub fn order_toolbar(ui: &mut egui::Ui, app: &mut App) {
             if let Some(index) = app.sel_line {
                 if index > 0 {
                     app.sel_line = Some(index - 1);
-                    app.main.list.swap(index, index - 1);
-                    app.order_friendly.swap(index, index - 1);
+  
+                    app.order.swap(index, index - 1);
                 }
             }
         }
         if ui.button("Move Down").clicked() {
             if let Some(index) = app.sel_line {
-                if index < app.main.list.len() - 1 {
+                if index < app.order.len() - 1 {
                     app.sel_line = Some(index + 1);
-                    app.main.list.swap(index, index + 1);
-                    app.order_friendly.swap(index, index + 1);
+
+                    app.order.swap(index, index + 1);
                 }
             }
         }
         if ui.button("Remove").clicked() {
             if let Some(index) = app.sel_line {
-                app.main.list.remove(index);
-                app.order_friendly.remove(index);
+                app.order.remove(index);
                 app.sel_line = None;
             }
         }
 
         if ui.input(|i| i.modifiers.alt) && ui.button("Text Editor").clicked() {
-            app.order_text = app.main.list.join("\n");
+            app.order_text = extract_sql(app.order.clone()).join("\n");
             app.my_panel = Panel::OrderText;
         }
 
@@ -1898,17 +1741,10 @@ pub fn order_toolbar2(ui: &mut egui::Ui, app: &mut App) {
                 | OrderOperator::Smallest
                 | OrderOperator::IsEmpty
                 | OrderOperator::IsNotEmpty => {
-                    app.main.list.insert(
+    
+                    app.order.insert(
                         0,
-                        parse_to_sql(
-                            app.order_column.clone(),
-                            app.order_operator,
-                            app.order_input.clone(),
-                        ),
-                    );
-                    app.order_friendly.insert(
-                        0,
-                        parse_to_user_friendly(
+                        parse_to_struct(
                             app.order_column.clone(),
                             app.order_operator,
                             app.order_input.clone(),
@@ -1918,17 +1754,10 @@ pub fn order_toolbar2(ui: &mut egui::Ui, app: &mut App) {
                 }
                 _ => {
                     if !app.order_input.is_empty() {
-                        app.main.list.insert(
+
+                        app.order.insert(
                             0,
-                            parse_to_sql(
-                                app.order_column.clone(),
-                                app.order_operator,
-                                app.order_input.clone(),
-                            ),
-                        );
-                        app.order_friendly.insert(
-                            0,
-                            parse_to_user_friendly(
+                            parse_to_struct(
                                 app.order_column.clone(),
                                 app.order_operator,
                                 app.order_input.clone(),
@@ -1955,21 +1784,24 @@ pub fn gather_duplicates(app: &mut App) {
        
 
         if app.main.search {
-            let pool = pool.clone();
-            let order = app.main.list.clone();
-            // let mut group_sort = None;
-            // if app.group.search {
-            //     group_sort = Some(app.group.selected.clone())
-            // }
-            let groups = app.group.list.clone();
-           
-            let group_null = app.group_null;
-            // let duration = app.duration_check;
-            wrap_async(
-                &mut app.group,
-                "Searching For Duplicate Records",
-                move || gather_duplicate_filenames_in_database(pool, order, groups, group_null),
-            )
+            if let Some(sender) = app.group.progress_io.tx.clone() {
+
+                let pool = pool.clone();
+                let order = extract_sql(app.order.clone());
+                // let mut group_sort = None;
+                // if app.group.search {
+                //     group_sort = Some(app.group.selected.clone())
+                // }
+                let groups = app.group.list.clone();
+               
+                let group_null = app.group_null;
+                // let duration = app.duration_check;
+                wrap_async(
+                    &mut app.group,
+                    "Searching For Duplicate Records",
+                    move || gather_duplicate_filenames_in_database(pool, order, groups, group_null, sender),
+                )
+            }
         }
 
         if app.deep.search {
@@ -1987,13 +1819,16 @@ pub fn gather_duplicates(app: &mut App) {
         }
 
         if app.tags.search {
-            let pool = pool.clone();
-            let tags = app.tags.list.clone();
-            wrap_async(
-                &mut app.tags,
-                "Searching for Filenames with Specified Tags",
-                move || gather_filenames_with_tags(pool, tags),
-            );
+            if let Some(sender) = app.tags.progress_io.tx.clone() {
+
+                let pool = pool.clone();
+                let tags = app.tags.list.clone();
+                wrap_async(
+                    &mut app.tags,
+                    "Searching for Filenames with Specified Tags",
+                    move || gather_filenames_with_tags(pool, tags, sender),
+                );
+            }
         }
 
         if app.compare.search && app.c_db.is_some() {
@@ -2046,8 +1881,14 @@ fn receive_async_data(app: &mut App) {
 
     app.main.receive_progress();
     app.main.receive_status();
+    app.group.receive_progress();
+    app.group.receive_status();
     app.deep.receive_progress();
     app.deep.receive_status();
+    app.tags.receive_progress();
+    app.tags.receive_status();
+    app.compare.receive_progress();
+    app.compare.receive_status();
 }
 
 fn remove_duplicates(app: &mut App) {
@@ -2139,7 +1980,7 @@ fn search_eligible(app: &App) -> bool {
 }
 
 fn enum_combo_box(ui: &mut egui::Ui, selected_variant: &mut OrderOperator) {
-    egui::ComboBox::from_id_source("variants")
+    egui::ComboBox::from_id_salt("variants")
         .selected_text(selected_variant.as_str())
         .show_ui(ui, |ui| {
             for variant in OrderOperator::variants() {
@@ -2148,7 +1989,7 @@ fn enum_combo_box(ui: &mut egui::Ui, selected_variant: &mut OrderOperator) {
         });
 }
 fn enum_combo_box2(ui: &mut egui::Ui, selected_variant: &mut Delete) {
-    egui::ComboBox::from_id_source("variants")
+    egui::ComboBox::from_id_salt("variants")
         .selected_text(selected_variant.as_str())
         .show_ui(ui, |ui| {
             for variant in Delete::variants() {

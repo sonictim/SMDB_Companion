@@ -3,7 +3,7 @@ use eframe::egui::{self, RichText, Ui};
 // use sqlx::sqlite::SqlitePool;
 // use tokio;
 // use tokio::sync::mpsc::Sender;
-// use crate::app::*;
+use crate::app::*;
 
 // A reusable button component that takes a function (callback) to run when clicked
 pub fn button<F>(ui: &mut Ui, label: &str, action: F)
@@ -63,11 +63,90 @@ pub fn empty_line(ui: &mut Ui) {
 }
 
 pub fn combo_box(ui: &mut Ui, label: &str, selected: &mut String, list: &Vec<String>) {
-    egui::ComboBox::from_id_source(label)
+    egui::ComboBox::from_id_salt(label)
         .selected_text(selected.clone())
         .show_ui(ui, |ui| {
             for item in list {
                 ui.selectable_value(selected, item.clone(), item);
+            }
+        });
+}
+
+// pub fn node_status_line(ui: &mut Ui, text: &str, working: bool) {
+//     ui.horizontal(|ui| {
+//         if working {
+//             ui.spinner();
+//         } else {
+//             ui.add_space(24.0);
+//         }
+//         ui.label(RichText::new(text).strong());
+//     });
+// }
+
+pub fn node_progress_bar(ui: &mut Ui, node: &NodeConfig) {
+    ui.horizontal(|ui| {
+        if node.working {
+            ui.spinner();
+        } else {
+            ui.add_space(24.0)
+        }
+        ui.label(RichText::new(&node.status).strong());
+        if node.working {
+            ui.label(format!(
+                "Progress: {} / {}",
+                node.progress.0, node.progress.1
+            ));
+        }
+    });
+
+    if node.working {
+        ui.add(
+            egui::ProgressBar::new(node.progress.0 / node.progress.1)
+                // .text("progress")
+                .desired_height(4.0),
+        );
+    } else {
+        ui.separator();
+    }
+}
+
+pub fn selectable_grid(
+    ui: &mut Ui,
+    label: &str,
+    columns: usize,
+    selected: &mut Vec<usize>,
+    list: &mut [String],
+) {
+    egui::Grid::new(label)
+        .num_columns(columns)
+        .spacing([20.0, 8.0])
+        .striped(true)
+        .show(ui, |ui| {
+            for (index, tag) in list.iter_mut().enumerate() {
+                // Check if current index is in `sel_tags`
+                let is_selected = selected.contains(&index);
+
+                if ui
+                    .selectable_label(is_selected, RichText::new(tag.clone()).size(14.0))
+                    .clicked()
+                {
+                    if is_selected {
+                        // Deselect
+                        selected.retain(|&i| i != index);
+                    } else {
+                        // Select
+                        selected.push(index);
+                    }
+                }
+
+                if (index + 1) % columns == 0 {
+                    ui.end_row(); // Move to the next row after 4 columns
+                }
+            }
+
+            // End the last row if not fully filled
+            if list.len() % columns != 0 {
+                ui.end_row();
             }
         });
 }

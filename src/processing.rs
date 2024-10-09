@@ -59,7 +59,7 @@ fn get_root_filename(filename: &str, ignore_extension: bool) -> Option<String> {
 const TABLE: &str = "justinmetadata";
 
 // pub fn wrap_async<F, T>(pool: &SqlitePool, config: &mut Config, label: &str, action: F)
-pub fn wrap_async<F, T>(config: &mut Config, label: &str, action: F)
+pub fn wrap_async<F, T>(config: &mut NodeConfig, label: &str, action: F)
 where
     // F: FnOnce(&SqlitePool, mpsc::Sender<ProgressMessage>) -> T + Send + 'static,
     F: FnOnce() -> T + Send + 'static,
@@ -244,6 +244,7 @@ pub async fn gather_duplicate_filenames_in_database(
     order: Vec<String>,
     groups: Vec<String>,
     group_null: bool,
+    progress_sender: mpsc::Sender<ProgressMessage>,
 ) -> Result<HashSet<FileRecord>, sqlx::Error> {
     let mut file_records = HashSet::new();
 
@@ -279,9 +280,16 @@ pub async fn gather_duplicate_filenames_in_database(
         ",
         partition_by_clause, order_clause, TABLE, where_clause
     );
+    // let _ = progress_sender.send(ProgressMessage::Update(1,2)).await;
+    
+    // file_records = fetch_filerecords_from_database(&pool, &sql).await?;
+    // let _ = progress_sender.send(ProgressMessage::Update(2,2)).await;
 
     // Execute the query and fetch the results
     let rows = sqlx::query(&sql).fetch_all(&pool).await?;
+
+    let total = rows.len();
+    let mut counter = 0;
 
     // Iterate through the rows and insert them into the hashset
     for row in rows {
@@ -293,10 +301,21 @@ pub async fn gather_duplicate_filenames_in_database(
             path: row.get(3),
         };
         file_records.insert(file_record);
+        counter += 1;
+
+        // Send progress updates every 100 rows
+        if counter % 100 == 0 {
+            let _ = progress_sender
+                .send(ProgressMessage::Update(counter, total))
+                .await;
+        }
     }
 
     Ok(file_records)
 }
+
+
+
 
 pub async fn gather_deep_dive_records(
     pool: SqlitePool,
@@ -397,13 +416,17 @@ pub async fn gather_deep_dive_records(
 pub async fn gather_filenames_with_tags(
     pool: SqlitePool,
     tags: Vec<String>,
+    progress_sender: mpsc::Sender<ProgressMessage>,
 ) -> Result<HashSet<FileRecord>, sqlx::Error> {
+    let total = tags.len();
+    let mut counter = 1;
     let mut file_records = HashSet::new();
     let max_concurrency = 10; // Adjust based on your system's capacity and connection pool size
 
     // Process each tag concurrently with a controlled level of concurrency
     let results = stream::iter(tags.into_iter())
         .map(|tag| {
+            
             let pool = pool.clone();
             async move {
                 let query = format!(
@@ -411,7 +434,9 @@ pub async fn gather_filenames_with_tags(
                     TABLE
                 );
                 sqlx::query(&query).bind(tag).fetch_all(&pool).await // Return the result (Result<Vec<sqlx::sqlite::SqliteRow>, sqlx::Error>)
+            
             }
+           
         })
         .buffer_unordered(max_concurrency) // Control the level of concurrency
         .collect::<Vec<Result<Vec<sqlx::sqlite::SqliteRow>, sqlx::Error>>>()
@@ -435,6 +460,12 @@ pub async fn gather_filenames_with_tags(
             Err(err) => {
                 return Err(err); // Return early if an error occurs
             }
+        }
+        {
+            let _ = progress_sender
+                .send(ProgressMessage::Update(counter, total))
+                .await;
+            counter += 1;
         }
     }
 
@@ -685,7 +716,7 @@ pub async fn get_audio_file_types(pool: &SqlitePool) -> Result<Vec<String>, sqlx
     Ok(audio_file_types)
 }
 
-pub fn parse_to_sql(column: String, operator: OrderOperator, input: String) -> String {
+pub fn parse_to_sql(column: &str, operator: &OrderOperator, input: &str) -> String {
     match operator {
         OrderOperator::Largest => format! {"{} DESC", column.to_lowercase()},
         OrderOperator::Smallest => format!("{} ASC", column.to_lowercase()),
@@ -722,7 +753,7 @@ pub fn parse_to_sql(column: String, operator: OrderOperator, input: String) -> S
     }
 }
 
-pub fn parse_to_user_friendly(column: String, operator: OrderOperator, input: String) -> String {
+pub fn parse_to_user_friendly(column: &str, operator: &OrderOperator, input: &str) -> String {
     match operator {
         OrderOperator::Largest => format! {"Largest {}", column},
         OrderOperator::Smallest => format!("Smallest {} ", column),
@@ -732,6 +763,13 @@ pub fn parse_to_user_friendly(column: String, operator: OrderOperator, input: St
         OrderOperator::DoesNotContain => format!("{} does NOT contain '{}'", column, input),
         OrderOperator::IsEmpty => format!("{} is empty", column,),
         OrderOperator::IsNotEmpty => format!("{} is NOT empty", column,),
+    }
+}
+
+pub fn parse_to_struct(column: String, operator: OrderOperator, input: String) -> PreservationLogic {
+    PreservationLogic{
+        friendly: parse_to_user_friendly(&column, &operator, &input),
+        sql: parse_to_sql(&column, &operator, &input),
     }
 }
 
@@ -838,6 +876,29 @@ pub fn tjf_tags() -> Vec<String> {
     ];
     TJF_TAGS_VEC.map(|s| s.to_string()).to_vec()
 }
+
+pub fn get_default_struct_order() -> Vec<PreservationLogic> {
+    let a = default_order();
+    let b = default_order_friendly();
+    
+    a.iter()
+        .cloned()
+        .zip(b.iter().cloned())
+        .map(|(sql, friendly)| PreservationLogic { sql, friendly })
+        .collect()
+}
+
+pub fn get_tjf_struct_order() -> Vec<PreservationLogic> {
+    let a = tjf_order();
+    let b = tjf_order_friendly();
+    
+    a.iter()
+        .cloned()
+        .zip(b.iter().cloned())
+        .map(|(sql, friendly)| PreservationLogic { sql, friendly })
+        .collect()
+}
+
 
 pub fn default_order() -> Vec<String> {
     const DEFAULT_ORDER_VEC: [&str; 12] = [
