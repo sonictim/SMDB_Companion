@@ -667,30 +667,7 @@ impl eframe::App for App {
                                 ui.text_edit_singleline(&mut self.registered.key);
                             });
 
-                            if ui
-                                .add_sized(
-                                    [200.0, 50.0],
-                                    egui::Button::new(
-                                        RichText::new("Register").size(24.0).strong(),
-                                    ),
-                                )
-                                .clicked()
-                            {
-                                #[cfg(debug_assertions)]
-                                {
-                                    if ui.input(|i| i.modifiers.alt)
-                                    // && ui.input(|i| i.modifiers.command)
-                                    // && ui.input(|i| i.modifiers.shift)
-                                    // && ui.input(|i| i.modifiers.ctrl)
-                                    {
-                                        self.registered.key = generate_license_key(
-                                            &self.registered.name,
-                                            &self.registered.email,
-                                        );
-                                    }
-                                }
-                                self.registered.validate();
-                            }
+                            large_button(ui, "Register", ||self.registered.validate());
                         });
                     }
                     if ui.input(|i| i.modifiers.alt) && self.registered.valid == Some(true)  {
