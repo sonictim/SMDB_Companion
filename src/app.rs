@@ -1,382 +1,18 @@
 use crate::assets::*;
 use crate::processing::*;
+use crate::config::*;
 use eframe::egui::{self, RichText};
 use rayon::prelude::*;
-use serde::Deserialize;
-use sqlx::sqlite::SqlitePool;
+// use serde::Deserialize;
+// use sqlx::sqlite::SqlitePool;
 use std::collections::HashSet;
 use std::fs::{self};
-use std::hash::Hash;
+// use std::hash::Hash;
 use tokio::sync::mpsc;
-use std::path::Path;
+// use std::path::Path;
 use clipboard::{ClipboardContext, ClipboardProvider};
 
 
-#[derive(serde::Deserialize, serde::Serialize, Default)]
-#[serde(default)]
-#[derive(Clone)]
-struct Registration {
-    name: String,
-    email: String,
-    key: String,
-    #[serde(skip)]
-    valid: Option<bool>,
-}
-
-
-impl Registration {
-    fn validate(&mut self) {
-        if generate_license_key(&self.name, &self.email) == self.key {
-            self.valid = Some(true);
-        } else {
-            self.valid = Some(false);
-        }
-    }
-    fn clear(&mut self) {
-       
-            self.name.clear();
-            self.email.clear();
-            self.key.clear();
-            self.valid = Some(false);
-    
-        
-    }
-}
-
-#[derive(serde::Deserialize, serde::Serialize)]
-#[serde(default)]
-pub struct AsyncTunnel<T> {
-    #[serde(skip)]
-    pub tx: Option<mpsc::Sender<T>>,
-    #[serde(skip)]
-    pub rx: Option<mpsc::Receiver<T>>,
-}
-
-impl<T> AsyncTunnel<T> {
-    // Make `new` an associated function, and use `Self` for the return type
-    pub fn new(channels: usize) -> AsyncTunnel<T> {
-        let (tx, rx) = mpsc::channel(channels);
-        AsyncTunnel {
-            tx: Some(tx),
-            rx: Some(rx),
-        }
-    }
-
-    // You might want to add methods to send and receive messages
-    // pub async fn send(&self, item: T) -> Result<(), mpsc::error::SendError<T>> {
-    //     if let Some(tx) = &self.tx {
-    //         tx.send(item).await
-    //     } else {
-    //         Err(mpsc::error::SendError(item))
-    //     }
-    // }
-
-    // pub async fn receive(&self) -> Option<T> {
-    //     if let Some(rx) = &self.rx {
-    //         rx.recv().await.ok()
-    //     } else {
-    //         None
-    //     }
-    // }
-}
-
-#[derive(serde::Deserialize, serde::Serialize)]
-#[serde(default)]
-
-pub struct NodeConfig {
-    pub search: bool,
-    pub list: Vec<String>,
-    pub selected: String,
-    #[serde(skip)]
-    pub status: String,
-    #[serde(skip)]
-    pub status_io: AsyncTunnel<String>,
-    #[serde(skip)]
-    pub records: HashSet<FileRecord>,
-    #[serde(skip)]
-    pub working: bool,
-
-    #[serde(skip)]
-    pub records_io: AsyncTunnel<HashSet<FileRecord>>,
-    #[serde(skip)]
-    pub progress_io: AsyncTunnel<ProgressMessage>,
-    #[serde(skip)]
-    pub progress: (f32, f32),
-    #[serde(skip)]
-    pub handle: Option<tokio::task::JoinHandle<()>>,
-}
-
-impl Clone for NodeConfig {
-    fn clone(&self) -> Self {
-        NodeConfig {
-            search: self.search,
-            list: self.list.clone(),
-            selected: self.selected.clone(),
-            status: self.status.clone(),
-            status_io: AsyncTunnel::new(1),
-            records: self.records.clone(),
-            working: self.working,
-            records_io: AsyncTunnel::new(1),
-            progress_io: AsyncTunnel::new(32),
-            progress: self.progress,
-            handle: None, // JoinHandle does not implement Clone
-        }
-    }
-}
-impl Default for NodeConfig {
-    fn default() -> Self {
-        Self {
-            search: false,
-            list: Vec::new(),
-            selected: String::new(),
-            status: String::new(),
-            status_io: AsyncTunnel::new(1),
-            records: HashSet::new(),
-            working: false,
-            records_io: AsyncTunnel::new(1),
-            progress_io: AsyncTunnel::new(32),
-            progress: (0.0, 0.0),
-            handle: None,
-        }
-    }
-}
-
-impl NodeConfig {
-    fn new(on: bool) -> Self {
-        Self {
-            search: on,
-            list: Vec::new(),
-            selected: String::new(),
-            status: String::new(),
-            status_io: AsyncTunnel::new(1),
-            records: HashSet::new(),
-            working: false,
-            records_io: AsyncTunnel::new(1),
-            progress_io: AsyncTunnel::new(32),
-            progress: (0.0, 0.0),
-            handle: None,
-        }
-    }
-    fn new_option(on: bool, o: &str) -> Self {
-
-        Self {
-            search: on,
-            list: Vec::new(),
-            selected: o.to_string(),
-            status: String::new(),
-            status_io: AsyncTunnel::new(1),
-            records: HashSet::new(),
-            working: false,
-            records_io: AsyncTunnel::new(1),
-            progress_io: AsyncTunnel::new(32),
-            progress: (0.0, 0.0),
-            handle: None,
-        }
-    }
-    fn abort(&mut self) {
-        if let Some(handle) = &self.handle {
-            handle.abort();
-        }
-        self.handle = None;
-        self.working = false;
-        self.records.clear();
-        self.status.clear();
-        self.progress = (0.0, 0.0);
-    }
-
-    fn receive_hashset(&mut self) -> Option<HashSet<FileRecord>> {
-        if let Some(rx) = self.records_io.rx.as_mut() {
-            if let Ok(records) = rx.try_recv() {
-                self.records = records.clone();
-                self.handle = None;
-                self.working = false;
-                self.progress = (0.0, 0.0);
-                self.status = format! {"Found {} duplicate records", self.records.len()};
-                return Some(records);
-            }
-        }
-        None
-    }
-    fn receive_progress(&mut self) {
-        if let Some(progress_receiver) = &mut self.progress_io.rx {
-            while let Ok(message) = progress_receiver.try_recv() {
-                let ProgressMessage::Update(current, total) = message;
-                self.progress = (current as f32, total as f32);
-            }
-        }
-    }
-    fn receive_status(&mut self) {
-        if let Some(status_receiver) = &mut self.status_io.rx {
-            while let Ok(message) = status_receiver.try_recv() {
-                self.status = message;
-            }
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct Database {
-    pub path: String,
-    pub pool: SqlitePool,
-    pub name: String,
-    pub size: usize,
-    pub columns: Vec<String>,
-    pub file_extensions: Vec<String>,
-}
-
-impl Database {
-    pub async fn open(db_path: &str) -> Self {
-        let db_pool = SqlitePool::connect(db_path)
-            .await
-            .expect("Pool did not open");
-        let db_size = get_db_size(&db_pool).await.expect("get db size");
-        let db_columns = get_columns(&db_pool).await.expect("get columns");
-
-        Self {
-            path: db_path.to_string(),
-            pool: db_pool,
-            name: db_path
-                .split('/')
-                .last()
-                .expect("Name From Pathname")
-                .to_string(),
-            size: db_size,
-            columns: db_columns,
-            file_extensions: Vec::new(),
-        }
-    }
-    // pub async fn pool(&self) -> SqlitePool {
-    //     SqlitePool::connect(&self.path)
-    //         .await
-    //         .expect("Pool did not open")
-    // }
-}
-
-#[derive(Hash, Eq, PartialEq, Clone, Debug)]
-pub struct FileRecord {
-    pub id: usize,
-    pub filename: String,
-    pub duration: String,
-    pub path: String,
-}
-
-pub enum ProgressMessage {
-    Update(usize, usize), // (current, total)
-}
-
-#[derive(PartialEq, serde::Serialize, Deserialize, Clone, Copy)]
-pub enum Panel {
-    Duplicates,
-    Order,
-    OrderText,
-    Tags,
-    Find,
-    KeyGen,
-}
-
-#[derive(PartialEq, serde::Serialize, Deserialize, Clone, Copy)]
-pub enum OrderOperator {
-    Largest,
-    Smallest,
-    Contains,
-    DoesNotContain,
-    Is,
-    IsNot,
-    IsEmpty,
-    IsNotEmpty,
-}
-
-impl OrderOperator {
-    fn as_str(&self) -> &'static str {
-        match self {
-            OrderOperator::Largest => "Largest",
-            OrderOperator::Smallest => "Smallest",
-            OrderOperator::Is => "is",
-            OrderOperator::IsNot => "is NOT",
-            OrderOperator::Contains => "Contains",
-            OrderOperator::DoesNotContain => "Does NOT Contain",
-            OrderOperator::IsEmpty => "Is Empty",
-            OrderOperator::IsNotEmpty => "Is NOT Empty",
-        }
-    }
-
-    fn variants() -> &'static [OrderOperator] {
-        &[
-            OrderOperator::Largest,
-            OrderOperator::Smallest,
-            OrderOperator::Contains,
-            OrderOperator::DoesNotContain,
-            OrderOperator::Is,
-            OrderOperator::IsNot,
-            OrderOperator::IsEmpty,
-            OrderOperator::IsNotEmpty,
-        ]
-    }
-}
-
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
-// #[serde(default)] 
-
-pub struct PreservationLogic {
-    pub friendly: String,
-    pub sql: String,
-}
-
-pub fn extract_sql(logics: Vec<PreservationLogic>) -> Vec<String> {
-    logics.iter()
-        .map(|logic| logic.sql.clone())
-        .collect()
-}
-
-#[derive(PartialEq, serde::Serialize, Deserialize, Clone, Copy)]
-pub enum Delete {
-    Trash,
-    Permanent,
-}
-
-impl Delete {
-    fn as_str(&self) -> &'static str {
-        match self {
-            Delete::Trash => "Move to Trash",
-            Delete::Permanent => "Permanently Delete",
-        }
-    }
-    fn variants() -> &'static [Delete] {
-        &[Delete::Trash, Delete::Permanent]
-    }
- 
-    fn delete_files(&self, files: HashSet<&str>) -> Result<(), Box<dyn std::error::Error>> {
-        println!("Removing Files");
-
-        // Filter valid files directly and collect them into a Vec
-        let valid_files: Vec<&str> = files
-            .par_iter()
-            .filter(|&&file| Path::new(file).exists())
-            .cloned() // Convert &str to str for collection
-            .collect();
-
-        match self {
-            Delete::Trash => {
-                if !valid_files.is_empty() {
-                    trash::delete_all(&valid_files).map_err(|e| {
-                        eprintln!("Move to Trash Failed: {}", e);
-                        e
-                    })?;
-                }
-            }
-            Delete::Permanent => {
-                for file in valid_files {
-                    fs::remove_file(file).map_err(|e| {
-                        eprintln!("Failed to remove file {}: {}", file, e);
-                        e
-                    })?;
-                }
-            }
-        }
-
-        Ok(())
-    }
-}
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -426,18 +62,19 @@ pub struct App {
     delete_action: Delete,
     #[serde(skip)]
     my_panel: Panel,
-    #[serde(skip)]
-    new_tag: String,
-    #[serde(skip)]
-    sel_tags: Vec<usize>,
+    tags_panel: TagsConfig,
+    // #[serde(skip)]
+    // new_tag: String,
+    // #[serde(skip)]
+    // sel_tags: Vec<usize>,
     #[serde(skip)]
     new_line: String,
     #[serde(skip)]
     sel_line: Option<usize>,
     #[serde(skip)]
     order_text: String,
-    #[serde(skip)]
-    help: bool,
+    // #[serde(skip)]
+    // help: bool,
     #[serde(skip)]
     replace_safety: bool,
     #[serde(skip)]
@@ -502,12 +139,13 @@ impl Default for App {
             remove_files: false,
             delete_action: Delete::Trash,
             my_panel: Panel::Duplicates,
-            new_tag: String::new(),
-            sel_tags: Vec::new(),
+            tags_panel: TagsConfig::default(),
+            // new_tag: String::new(),
+            // sel_tags: Vec::new(),
             new_line: String::new(),
             sel_line: None,
             order_text: String::new(),
-            help: false,
+            // help: false,
             replace_safety: false,
             count: 0,
             gather_dupes: false,
@@ -525,6 +163,7 @@ impl Default for App {
         };
         app.basic.list = vec!["Filename".to_owned(), "Duration".to_owned(), "Channels".to_owned()];
         app.tags.list = default_tags();
+        app.tags_panel.list = default_tags();
  
         app.order = get_default_struct_order();
 
@@ -787,7 +426,8 @@ impl eframe::App for App {
                     }
 
                     Panel::Tags => {
-                        self.tags_panel(ui);
+                        // self.tags_panel(ui);
+                        self.tags_panel.render(ui);
                     }
 
                     Panel::KeyGen => {
@@ -1055,135 +695,170 @@ impl App {
                 ui.heading("No Records in Database");
                 return;
             }
-            ui.heading(RichText::new("Search for Duplicate Records").strong());
-
-
-            // ui.columns(2, |column|{
-                
-                
-            // });
-
-
-            ui.checkbox(&mut self.basic.search, "Basic Duplicate Search");
             
-
-            //GROUP GROUP GROUP GROUP
+            
+            
+            ui.columns(2, |column|{
+                column[0].heading(RichText::new("Search for Duplicate Records").strong());
+                //BASIC BASIC BASIC
+                column[0].checkbox(&mut self.basic.search, "Basic Duplicate Search");
+    
+                // ui.horizontal(|ui|{
+                //     ui.add_space(24.0);
+                //     ui.checkbox(&mut self.duration_check, "Only Filenames with identical duration will be considered duplicates");
+                // });
+    
+                column[0].horizontal(|ui| {
+                    ui.add_space(24.0);
           
-
-            // ui.horizontal(|ui|{
-            //     ui.add_space(24.0);
-            //     ui.checkbox(&mut self.duration_check, "Only Filenames with identical duration will be considered duplicates");
-            // });
-
-            ui.horizontal(|ui| {
-                ui.add_space(24.0);
-      
-                ui.label("Duplicate Match Criteria: ");
-               
-
-
-            });
-
-            
-            if self.basic.list.is_empty() {
-                self.basic.search = false;
-                // empty_line(ui);
-                ui.horizontal(|ui|{
-                    ui.add_space(24.0);
-    
-                    let text = RichText::new("Add Match Criteria to Enable Search").strong().size(14.0).color(egui::Color32::from_rgb(255, 0, 0));
-                    ui.label(text);
-                    
-                    
-                    
+                    ui.label("Duplicate Match Criteria: ");
     
                 });
-                ui.horizontal(|ui|{
-                    ui.add_space(24.0);
-                    
-                    
-                    button(ui, "Restore Defaults", ||{self.basic.list = vec!{"Filename".to_owned(), "Duration".to_owned(), "Channels".to_owned()} });
-                    
-                    
-                    
-                });
-                empty_line(ui);
-            
-            } else {
-
+                if self.basic.list.is_empty() {
+                    self.basic.search = false;
+                    // empty_line(ui);
+                    column[0].horizontal(|ui|{
+                        ui.add_space(24.0);
+        
+                        let text = RichText::new("Add Match Criteria to Enable Search").strong().size(14.0).color(egui::Color32::from_rgb(255, 0, 0));
+                        ui.label(text);
+                        
+                        
+                        
+        
+                    });
+                    column[0].horizontal(|ui|{
+                        ui.add_space(24.0);
+                        
+                        
+                        button(ui, "Restore Defaults", ||{self.basic.list = vec!{"Filename".to_owned(), "Duration".to_owned(), "Channels".to_owned()} });
+                        
+                        
+                        
+                    });
+                    empty_line(&mut column[0]);
                 
-                ui.horizontal(|ui|{
-                    ui.add_space(24.0);
-                
-                    egui::Frame::none() // Use Frame to create a custom bordered area
-                    .inner_margin(egui::vec2(8.0, 8.0)) // Inner margin for padding
-                    .show(ui, |ui| {
-                        ui.group(|ui| {
-                         
-                          
-                            ui.horizontal(|ui| {
-                                // Drawing a border manually
-                                ui.add_space(2.0);
-                                selectable_grid(ui, "Match Grid", 4, &mut self.sel_groups, &mut self.basic.list);
-                               
-                                ui.add_space(2.0);
+                } else {
+    
+                    
+                    column[0].horizontal(|ui|{
+                        ui.add_space(24.0);
+                    
+                        egui::Frame::none() // Use Frame to create a custom bordered area
+                        .inner_margin(egui::vec2(8.0, 8.0)) // Inner margin for padding
+                        .show(ui, |ui| {
+                            ui.group(|ui| {
+                             
+                              
+                                ui.horizontal(|ui| {
+                                    // Drawing a border manually
+                                    ui.add_space(2.0);
+                                    selectable_grid(ui, "Match Grid", 4, &mut self.sel_groups, &mut self.basic.list);
+                                   
+                                    ui.add_space(2.0);
+                                });
                             });
                         });
+        
+        
+        
+        
                     });
-    
-    
-    
-    
-                });
-            }
-            
-            
-
-            ui.horizontal(|ui|{
-                ui.add_space(24.0);
-                ui.label(RichText::new("Add:"));
-
-                let mut filtered_list = db.columns.clone();
-                filtered_list.retain(|item| !&self.basic.list.contains(item));     
-
-                combo_box(ui, "group", &mut self.basic.selected, &filtered_list);
-          
-                if !self.basic.selected.is_empty() {
-
-                    let item = self.basic.selected.clone();
-                    self.basic.selected.clear();
-                    if !self.basic.list.contains(&item) {
-
-                        self.basic.list.push(item);
-                    }
                 }
-            
-                button(ui, "Remove Selected", ||{
-                    let mut sorted_indices: Vec<usize> = self.sel_groups.clone();
-                    sorted_indices.sort_by(|a, b| b.cmp(a)); // Sort in reverse order
-
-                    for index in sorted_indices {
-                        if index < self.basic.list.len() {
-                            self.basic.list.remove(index);
+                column[0].horizontal(|ui|{
+                    ui.add_space(24.0);
+                    ui.label(RichText::new("Add:"));
+    
+                    let mut filtered_list = db.columns.clone();
+                    filtered_list.retain(|item| !&self.basic.list.contains(item));     
+    
+                    combo_box(ui, "group", &mut self.basic.selected, &filtered_list);
+              
+                    if !self.basic.selected.is_empty() {
+    
+                        let item = self.basic.selected.clone();
+                        self.basic.selected.clear();
+                        if !self.basic.list.contains(&item) {
+    
+                            self.basic.list.push(item);
                         }
                     }
-                    self.sel_groups.clear();
-                    self.basic.selected.clear();
+                
+                    button(ui, "Remove Selected", ||{
+                        let mut sorted_indices: Vec<usize> = self.sel_groups.clone();
+                        sorted_indices.sort_by(|a, b| b.cmp(a)); // Sort in reverse order
+    
+                        for index in sorted_indices {
+                            if index < self.basic.list.len() {
+                                self.basic.list.remove(index);
+                            }
+                        }
+                        self.sel_groups.clear();
+                        self.basic.selected.clear();
+    
+                
+                    });
+                });
+
+                if column[0].input(|i| i.modifiers.alt) {
+                   
+                    column[0].horizontal(|ui| {
+                        ui.add_space(24.0);
+                        ui.label("Unmatched Records: ");
+                        ui.radio_value(&mut self.group_null, false, "Ignore");
+                        ui.radio_value(&mut self.group_null, true, "Process Together");
+                    });
+                } 
+                
+                
+                column[1].heading(RichText::new("Remove Options").strong());
+                let mut text = RichText::new("Create New Safety Database of Thinned Records");
+                if !self.safe {text = text.strong().color(egui::Color32::from_rgb(255, 100, 100))}
+                column[1].checkbox(&mut self.safe, text);
+                if !&self.safe {
+                    column[1].horizontal(|ui| {
+                            ui.label(
+                                RichText::new("UNSAFE!")
+                                .color(egui::Color32::from_rgb(255, 0, 0))
+                                .strong(),
+                            );
+                            ui.label(RichText::new("Will remove records from current database").strong());
+                        });
+                    }
+                column[1].checkbox(&mut self.dupes_db, "Create New Database of Duplicate Records");
+                column[1].horizontal_wrapped(|ui| {
+                    let mut text = RichText::new("Remove Duplicate Files From Disk ");
+                    if self.remove_files {text = text.strong().size(14.0).color(egui::Color32::from_rgb(255, 100, 100))}
+                    ui.checkbox(&mut self.remove_files, text);
+                    
+                    if self.remove_files {
+                        enum_combo_box2(ui, &mut self.delete_action);
+                        if self.remove_files && self.delete_action == Delete::Permanent {
+                            ui.label(
+                                RichText::new("UNSAFE!")
+                                .color(egui::Color32::from_rgb(255, 0, 0))
+                                .strong(),
+                            );
+                            ui.label(RichText::new("This is NOT undoable").strong());
+                        }
+                        
+                    }
+                    
+                });
+                
+                
+            });
+            
+            node_progress_bar(ui, &self.basic);
 
             
-                });
-            });
+            
 
-            if ui.input(|i| i.modifiers.alt) {
-               
-                ui.horizontal(|ui| {
-                    ui.add_space(24.0);
-                    ui.label("Unmatched Records: ");
-                    ui.radio_value(&mut self.group_null, false, "Ignore");
-                    ui.radio_value(&mut self.group_null, true, "Process Together");
-                });
-            } 
-            node_progress_bar(ui, &self.basic);
+            
+            
+            
+
+
 
           
 
@@ -1328,43 +1003,43 @@ impl App {
             node_progress_bar(ui, &self.compare);
             ui.separator();
 
-            // if !self.main.records.is_empty() && !handles_active(self) {}
-            // DELETION PREFERENCES
-            empty_line(ui);
-            ui.horizontal(|ui| {
-                ui.checkbox(&mut self.safe, "Create New Safety Database of Thinned Records");
-                if !&self.safe {
-                    ui.label(
-                        RichText::new("UNSAFE!")
-                            .color(egui::Color32::from_rgb(255, 0, 0))
-                            .strong(),
-                    );
-                    ui.label(RichText::new("Will remove records from current database").strong());
-                }
-            });
-            ui.checkbox(&mut self.dupes_db, "Create New Database of Duplicate Records");
-            ui.horizontal(|ui| {
-                let mut text = RichText::new("Remove Duplicate Files From Disk ");
-                if self.remove_files {text = text.strong().size(16.0).color(egui::Color32::from_rgb(255, 0, 0))}
-                ui.checkbox(&mut self.remove_files, text);
+            // // if !self.main.records.is_empty() && !handles_active(self) {}
+            // // DELETION PREFERENCES
+            // empty_line(ui);
+            // ui.horizontal(|ui| {
+            //     ui.checkbox(&mut self.safe, "Create New Safety Database of Thinned Records");
+            //     if !&self.safe {
+            //         ui.label(
+            //             RichText::new("UNSAFE!")
+            //                 .color(egui::Color32::from_rgb(255, 0, 0))
+            //                 .strong(),
+            //         );
+            //         ui.label(RichText::new("Will remove records from current database").strong());
+            //     }
+            // });
+            // ui.checkbox(&mut self.dupes_db, "Create New Database of Duplicate Records");
+            // ui.horizontal(|ui| {
+            //     let mut text = RichText::new("Remove Duplicate Files From Disk ");
+            //     if self.remove_files {text = text.strong().size(16.0).color(egui::Color32::from_rgb(255, 0, 0))}
+            //     ui.checkbox(&mut self.remove_files, text);
 
-                if self.remove_files {
-                    enum_combo_box2(ui, &mut self.delete_action);
-                    if self.remove_files && self.delete_action == Delete::Permanent {
-                        ui.label(
-                            RichText::new("UNSAFE!")
-                                .color(egui::Color32::from_rgb(255, 0, 0))
-                                .strong(),
-                        );
-                        ui.label(RichText::new("This is NOT undoable").strong());
-                    }
+            //     if self.remove_files {
+            //         enum_combo_box2(ui, &mut self.delete_action);
+            //         if self.remove_files && self.delete_action == Delete::Permanent {
+            //             ui.label(
+            //                 RichText::new("UNSAFE!")
+            //                     .color(egui::Color32::from_rgb(255, 0, 0))
+            //                     .strong(),
+            //             );
+            //             ui.label(RichText::new("This is NOT undoable").strong());
+            //         }
 
-                }
+            //     }
 
-            });
+            // });
 
-            empty_line(ui);
-            ui.separator();
+            // empty_line(ui);
+            // ui.separator();
 
             ui.horizontal(|_ui| {});
 
@@ -1377,24 +1052,35 @@ impl App {
                     self.go_replace = true;
                     if search_eligible(self) {
 
+                        
                         if ui.input(|i| i.modifiers.alt) {
-                            rt_button(ui, RichText::new("Search and Remove Duplicates").size(16.0).strong(), || {
+                            rt_button(ui, RichText::new("Search and Remove Duplicates").color(egui::Color32::from_rgb(255, 100, 100)).size(20.0).strong(), || {
                                 self.go_search = true;
                                 self.go_replace = false;
                                 gather_duplicates(self);
                             });
                         } else {
-                            rt_button(ui, RichText::new("Search for Duplicates").size(16.0), || gather_duplicates(self));
-                            if !self.main.records.is_empty() && !handles_active(self) {
-                                self.main.status = format!(
-                                    "{} total records marked for removal",
-                                    self.main.records.len()
-                                );
-                                
-                                if ui.button(RichText::new("Remove Duplicates").strong().size(16.0)).clicked() {
-                                    remove_duplicates(self);
+                            ui.columns(2, |column|{
+                                column[0].horizontal(|ui| {
+
+                                    rt_button(ui, RichText::new("Search for Duplicates").size(20.0).strong(), || gather_duplicates(self));
+                                });
+    
+                                if !self.main.records.is_empty() && !handles_active(self) {
+                                    self.main.status = format!(
+                                        "{} total records marked for removal",
+                                        self.main.records.len()
+                                    );
+                                    column[1].horizontal(|ui|{
+                                        rt_button(ui, RichText::new("Remove Duplicates").size(20.0).strong(), || remove_duplicates(self));
+                                        // if ui.button(RichText::new("Remove Duplicates").color(egui::Color32::from_rgb(255, 100, 100)).strong().size(16.0)).clicked() {
+                                        //     remove_duplicates(self);
+                                        // }
+
+                                    });
                                 }
-                            }
+    
+                            });
                         }
                     }
                     else {
@@ -1549,38 +1235,42 @@ impl App {
             }
         });
     }
-    fn tags_panel(&mut self, ui: &mut egui::Ui) {
-        ui.heading(RichText::new("Tag Editor").strong());
-        ui.label("Protools Audiosuite Tags use the following format:  -example_");
-        ui.label("You can enter any string of text and if it is a match, the file will be marked for removal");
-        empty_line(ui);
-        ui.separator();
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            selectable_grid(ui, "Tags Grid", 6, &mut self.sel_tags, &mut self.tags.list);
-            ui.separator();
-            empty_line(ui);
-            ui.horizontal(|ui| {
-                if ui.button("Add Tag:").clicked() && !self.new_tag.is_empty() {
-                    self.tags.list.push(self.new_tag.clone());
-                    self.new_tag.clear(); // Clears the string
-                    self.tags.list.sort_by_key(|s| s.to_lowercase());
-                }
-                ui.text_edit_singleline(&mut self.new_tag);
-                });
-                if ui.button("Remove Selected Tags").clicked() {
-                    // Sort and remove elements based on `sel_tags`
-                    let mut sorted_indices: Vec<usize> = self.sel_tags.clone();
-                    sorted_indices.sort_by(|a, b| b.cmp(a)); // Sort in reverse order
 
-                    for index in sorted_indices {
-                        if index < self.tags.list.len() {
-                            self.tags.list.remove(index);
-                        }
-                    }
-                    self.sel_tags.clear();
-                }
-            });
-    }
+
+    // fn tags_panel(&mut self, ui: &mut egui::Ui) {
+
+
+        // ui.heading(RichText::new("Tag Editor").strong());
+        // ui.label("Protools Audiosuite Tags use the following format:  -example_");
+        // ui.label("You can enter any string of text and if it is a match, the file will be marked for removal");
+        // empty_line(ui);
+        // ui.separator();
+        // egui::ScrollArea::vertical().show(ui, |ui| {
+        //     selectable_grid(ui, "Tags Grid", 6, &mut self.sel_tags, &mut self.tags.list);
+        //     ui.separator();
+        //     empty_line(ui);
+        //     ui.horizontal(|ui| {
+        //         if ui.button("Add Tag:").clicked() && !self.new_tag.is_empty() {
+        //             self.tags.list.push(self.new_tag.clone());
+        //             self.new_tag.clear(); // Clears the string
+        //             self.tags.list.sort_by_key(|s| s.to_lowercase());
+        //         }
+        //         ui.text_edit_singleline(&mut self.new_tag);
+        //         });
+        //         if ui.button("Remove Selected Tags").clicked() {
+        //             // Sort and remove elements based on `sel_tags`
+        //             let mut sorted_indices: Vec<usize> = self.sel_tags.clone();
+        //             sorted_indices.sort_by(|a, b| b.cmp(a)); // Sort in reverse order
+
+        //             for index in sorted_indices {
+        //                 if index < self.tags.list.len() {
+        //                     self.tags.list.remove(index);
+        //                 }
+        //             }
+        //             self.sel_tags.clear();
+        //         }
+        //     });
+    // }
 
     // fn keygen_panel(&mut self, ui: &mut egui::Ui) {
     //     ui.horizontal(|ui| {

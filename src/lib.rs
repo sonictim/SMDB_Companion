@@ -4,4 +4,5 @@
 mod app;
 pub use app::App;
 mod assets;
+mod config;
 mod processing;

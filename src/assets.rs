@@ -3,7 +3,7 @@ use eframe::egui::{self, RichText, Ui};
 // use sqlx::sqlite::SqlitePool;
 // use tokio;
 // use tokio::sync::mpsc::Sender;
-use crate::app::*;
+use crate::config::*;
 
 // A reusable button component that takes a function (callback) to run when clicked
 pub fn button<F>(ui: &mut Ui, label: &str, action: F)
@@ -32,6 +32,17 @@ where
             [200.0, 50.0],
             egui::Button::new(RichText::new(label).size(24.0).strong()),
         )
+        .clicked()
+    {
+        action();
+    }
+}
+pub fn large_rt_button<F>(ui: &mut Ui, label: egui::RichText, action: F)
+where
+    F: FnOnce(),
+{
+    if ui
+        .add_sized([200.0, 50.0], egui::Button::new(label.size(24.0).strong()))
         .clicked()
     {
         action();
