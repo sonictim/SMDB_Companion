@@ -245,6 +245,11 @@ impl Database {
             file_extensions: Vec::new(),
         }
     }
+    // pub async fn pool(&self) -> SqlitePool {
+    //     SqlitePool::connect(&self.path)
+    //         .await
+    //         .expect("Pool did not open")
+    // }
 }
 
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
@@ -404,7 +409,7 @@ pub struct App {
     replace_buf: String,
 
     main: NodeConfig,
-    group: NodeConfig,
+    basic: NodeConfig,
     #[serde(skip)]
     sel_groups: Vec<usize>,
     group_null: bool,
@@ -480,8 +485,8 @@ impl Default for App {
             find_buf: String::new(),
             replace_buf: String::new(),
            
-            main: NodeConfig::new(true),
-            group: NodeConfig::new(false),
+            main: NodeConfig::new(false),
+            basic: NodeConfig::new(true),
             sel_groups: Vec::new(),
             group_null: false,
             // duration_check: false,
@@ -518,7 +523,7 @@ impl Default for App {
 
             registered: Registration::default(),
         };
-        app.group.list = vec!["Filename".to_owned(), "Duration".to_owned(), "Channels".to_owned()];
+        app.basic.list = vec!["Filename".to_owned(), "Duration".to_owned(), "Channels".to_owned()];
         app.tags.list = default_tags();
  
         app.order = get_default_struct_order();
@@ -530,8 +535,8 @@ impl App {
     fn clear_status(&mut self) {
         self.main.status.clear();
         self.main.records.clear();
-        self.group.status.clear();
-        self.group.records.clear();
+        self.basic.status.clear();
+        self.basic.records.clear();
         self.tags.status.clear();
         self.tags.records.clear();
         self.deep.status.clear();
@@ -583,7 +588,7 @@ impl App {
         self.tags.search = true;
         self.dupes_db = true;
         self.ignore_extension = true;
-        self.group.list = vec!("Filename".to_owned());
+        self.basic.list = vec!("Filename".to_owned());
     }
 
 }
@@ -793,53 +798,8 @@ impl eframe::App for App {
             });
 
             if self.records_window {
-                let available_size = ctx.available_rect(); // Get the full available width and height
-                let width = available_size.width() - 20.0;
-                let height = available_size.height();
-                egui::Window::new("Records Marked for Duplication")
-                    .open(&mut self.records_window) // Control whether the window is open
-                    .resizable(false) // Make window non-resizable if you want it fixed
-                    .min_width(width)
-                    .min_height(height)
-                    .max_width(width)
-                    .max_height(height)
-                    .show(ctx, |ui| {
-                        // ui.label("To Be Implemented\n Testing line break");
+                records_window(ctx, &self.marked_records, &mut self.records_window, &mut self.scroll_to_top);
 
-                        if self.scroll_to_top {
-                            egui::ScrollArea::vertical()
-                                .max_height(height) // Set the maximum height of the scroll area
-                                .max_width(width)
-                                .scroll_offset(egui::vec2(0.0, 0.0))
-                                .show(ui, |ui| {
-                                    ui.label(RichText::new(&self.marked_records).size(14.0));
-                                });
-                            self.scroll_to_top = false;
-                        } else {
-                            egui::ScrollArea::vertical()
-                                .max_height(height) // Set the maximum height of the scroll area
-                                .max_width(width)
-                                // .scroll_offset(egui::vec2(0.0, 0.0))
-                                .show(ui, |ui| {
-                                    // for filename in &self.marked_records {
-                                    ui.label(RichText::new(&self.marked_records).size(14.0));
-                                    // }
-                                    // ui.set_min_width(width - 20.0);
-                                    // egui::Grid::new("Dupe Records")
-                                    //     .spacing([20.0, 8.0])
-                                    //     .striped(true)
-                                    //     .show(ui, |ui| {
-                                    //         for filename in &self.marked_records {
-                                    //             ui.label(filename);
-                                    //             ui.end_row();
-                                    //         }
-                                    //     });
-                                    // ui.horizontal(|ui| {
-
-                                    // });
-                                });
-                        }
-                    });
             }
         });
 
@@ -1097,7 +1057,14 @@ impl App {
             }
             ui.heading(RichText::new("Search for Duplicate Records").strong());
 
-            ui.checkbox(&mut self.main.search, "Basic Duplicate Search");
+
+            // ui.columns(2, |column|{
+                
+                
+            // });
+
+
+            ui.checkbox(&mut self.basic.search, "Basic Duplicate Search");
             
 
             //GROUP GROUP GROUP GROUP
@@ -1118,8 +1085,8 @@ impl App {
             });
 
             
-            if self.group.list.is_empty() {
-                self.main.search = false;
+            if self.basic.list.is_empty() {
+                self.basic.search = false;
                 // empty_line(ui);
                 ui.horizontal(|ui|{
                     ui.add_space(24.0);
@@ -1135,7 +1102,7 @@ impl App {
                     ui.add_space(24.0);
                     
                     
-                    button(ui, "Restore Defaults", ||{self.group.list = vec!{"Filename".to_owned(), "Duration".to_owned(), "Channels".to_owned()} });
+                    button(ui, "Restore Defaults", ||{self.basic.list = vec!{"Filename".to_owned(), "Duration".to_owned(), "Channels".to_owned()} });
                     
                     
                     
@@ -1157,7 +1124,7 @@ impl App {
                             ui.horizontal(|ui| {
                                 // Drawing a border manually
                                 ui.add_space(2.0);
-                                selectable_grid(ui, "Match Grid", 4, &mut self.sel_groups, &mut self.group.list);
+                                selectable_grid(ui, "Match Grid", 4, &mut self.sel_groups, &mut self.basic.list);
                                
                                 ui.add_space(2.0);
                             });
@@ -1177,17 +1144,17 @@ impl App {
                 ui.label(RichText::new("Add:"));
 
                 let mut filtered_list = db.columns.clone();
-                filtered_list.retain(|item| !&self.group.list.contains(item));     
+                filtered_list.retain(|item| !&self.basic.list.contains(item));     
 
-                combo_box(ui, "group", &mut self.group.selected, &filtered_list);
+                combo_box(ui, "group", &mut self.basic.selected, &filtered_list);
           
-                if !self.group.selected.is_empty() {
+                if !self.basic.selected.is_empty() {
 
-                    let item = self.group.selected.clone();
-                    self.group.selected.clear();
-                    if !self.group.list.contains(&item) {
+                    let item = self.basic.selected.clone();
+                    self.basic.selected.clear();
+                    if !self.basic.list.contains(&item) {
 
-                        self.group.list.push(item);
+                        self.basic.list.push(item);
                     }
                 }
             
@@ -1196,12 +1163,12 @@ impl App {
                     sorted_indices.sort_by(|a, b| b.cmp(a)); // Sort in reverse order
 
                     for index in sorted_indices {
-                        if index < self.group.list.len() {
-                            self.group.list.remove(index);
+                        if index < self.basic.list.len() {
+                            self.basic.list.remove(index);
                         }
                     }
                     self.sel_groups.clear();
-                    self.group.selected.clear();
+                    self.basic.selected.clear();
 
             
                 });
@@ -1216,11 +1183,12 @@ impl App {
                     ui.radio_value(&mut self.group_null, true, "Process Together");
                 });
             } 
-            node_progress_bar(ui, &self.group);
+            node_progress_bar(ui, &self.basic);
+
           
 
             //DEEP DIVE DEEP DIVE DEEP DIVE
-            ui.checkbox(&mut self.deep.search, "Similar Filename Duplicates Search");
+            ui.checkbox(&mut self.deep.search, "Similar Filename Duplicates Search").on_hover_text_at_pointer("Filenames ending in .#, .#.#.#, or .M will be examined as possible duplicates");
 
             if let Some(rx) = self.extensions_io.rx.as_mut() {
                 if let Ok(records) = rx.try_recv() {
@@ -1254,34 +1222,36 @@ impl App {
                         self.sel_extension = db.file_extensions[0].clone();
                     }
                     if db.file_extensions.len() > 1 {
-                        ui.checkbox(&mut self.ignore_extension, "Ignore Filetypes");
+                        let text = if self.ignore_extension {"Checked: 'example.wav' and 'example.flac' will be considered duplicate filenames"}
+                        else {"Unchecked: 'example.wav' and 'example.flac' will be considered unique filenames"};
+                        ui.checkbox(&mut self.ignore_extension, "Ignore Filetypes").on_hover_text_at_pointer(text);
     
-                        if self.ignore_extension {
-                            ui.label(
-                                RichText::new(
-                                    "(Checked: 'example.wav' and 'example.flac' will be considered duplicate filenames)",
-                                ), // .weak(),
-                            );
+                        // if self.ignore_extension {
+                        //     ui.label(
+                        //         RichText::new(
+                        //             "(Checked: 'example.wav' and 'example.flac' will be considered duplicate filenames)",
+                        //         ), // .weak(),
+                        //     );
                   
-                        } else {
-                            ui.label(
-                                RichText::new(
-                                    "(Unchecked: 'example.wav' and 'example.flac' will be considered unique filenames)",
-                                ), // .weak(),
-                            );
-                        }
+                        // } else {
+                        //     ui.label(
+                        //         RichText::new(
+                        //             "(Unchecked: 'example.wav' and 'example.flac' will be considered unique filenames)",
+                        //         ), // .weak(),
+                        //     );
+                        // }
                     } else {
                         ui.label("All Records are of Filetype:");
                         ui.label(&self.sel_extension);
                     }
                 });
             }
-            ui.horizontal(|ui| {
-                ui.add_space(24.0);
-                ui.label(
-                    "Filenames ending in .#, .#.#.#, or .M will be examined as possible duplicates",
-                );
-            });
+            // ui.horizontal(|ui| {
+            //     ui.add_space(24.0);
+            //     ui.label(
+            //         "Filenames ending in .#, .#.#.#, or .M will be examined as possible duplicates",
+            //     );
+            // });
 
             node_progress_bar(ui, &self.deep);
 
@@ -1292,14 +1262,14 @@ impl App {
             ui.checkbox(
                 &mut self.tags.search,
                 "Search for Records with AudioSuite Tags in Filename",
-            );
+            ).on_hover_text_at_pointer("Filenames with Common Protools AudioSuite Tags will be marked for removal");
 
-            ui.horizontal(|ui| {
-                ui.add_space(24.0);
-                ui.label(
-                    "Filenames with Common Protools AudioSuite Tags will be marked for removal",
-                )
-            });
+            // ui.horizontal(|ui| {
+            //     ui.add_space(24.0);
+            //     ui.label(
+            //         "Filenames with Common Protools AudioSuite Tags will be marked for removal",
+            //     )
+            // });
 
             node_progress_bar(ui, &self.tags);
          
@@ -1308,32 +1278,55 @@ impl App {
 
             //COMPARE COMPARE COMPARE COMPARE
             ui.horizontal(|ui| {
-                ui.checkbox(&mut self.compare.search, "Compare against database: ");
+                ui.checkbox(&mut self.compare.search, "Compare against database: ")
+                    .on_hover_text_at_pointer
+                        ("Filenames from Target Database found in Comparison Database will be Marked for Removal");
+                
                 if let Some(cdb) = &self.c_db {
-                    ui.label(&cdb.name);
+                    if ui.selectable_label(false, &cdb.name).clicked() {
+                        let tx = self.cdb_io.tx.clone().expect("tx channel exists");
+                        tokio::spawn(async move {
+                            let db = open_db().await.unwrap();
+                            let _ = tx.send(db).await;
+                        });
+
+                    }
+                    
                 }
 
-                button(ui, "Select DB", || {
-                    let tx = self.cdb_io.tx.clone().expect("tx channel exists");
-                    tokio::spawn(async move {
-                        let db = open_db().await.unwrap();
-                        let _ = tx.send(db).await;
-                    });
-                });
+                else {
+                    self.compare.search = false;
+                    if ui.button("Select DB").clicked() {
+                        let tx = self.cdb_io.tx.clone().expect("tx channel exists");
+                        tokio::spawn(async move {
+                            let db = open_db().await.unwrap();
+                            let _ = tx.send(db).await;
+                        });
+                        
+                    }
+                    
+                    
+                }
+                
                 if let Some(rx) = self.cdb_io.rx.as_mut() {
                     if let Ok(db) = rx.try_recv() {
                         self.c_db = Some(db);
+                        self.compare.search = true;
                     }
                 }
             });
 
-            ui.horizontal(|ui| {
-                        ui.add_space(24.0);
-                        ui.label("Filenames from Target Database found in Comparison Database will be Marked for Removal");
-                    });
+            // ui.horizontal(|ui| {
+            //             ui.add_space(24.0);
+            //             if self.c_db.is_some() {
+            //                 ui.label("Filenames from Target Database found in Comparison Database will be Marked for Removal");
+            //             } else {
+            //                 ui.label("Open Comparison Database to Enable");
+            //             }
+            //         });
 
             node_progress_bar(ui, &self.compare);
-           
+            ui.separator();
 
             // if !self.main.records.is_empty() && !handles_active(self) {}
             // DELETION PREFERENCES
@@ -1351,7 +1344,7 @@ impl App {
             });
             ui.checkbox(&mut self.dupes_db, "Create New Database of Duplicate Records");
             ui.horizontal(|ui| {
-                let mut text = RichText::new("Remove Duplicate Files ");
+                let mut text = RichText::new("Remove Duplicate Files From Disk ");
                 if self.remove_files {text = text.strong().size(16.0).color(egui::Color32::from_rgb(255, 0, 0))}
                 ui.checkbox(&mut self.remove_files, text);
 
@@ -1376,6 +1369,7 @@ impl App {
             ui.horizontal(|_ui| {});
 
             ui.horizontal(|ui| {
+                
                 if handles_active(self) {
                     self.go_replace = false;
                     button(ui, "Cancel", || abort_all(self));
@@ -1402,6 +1396,9 @@ impl App {
                                 }
                             }
                         }
+                    }
+                    else {
+                        ui.label(RichText::new("No Search Methods are enabled").strong().size(20.0));
                     }
 
                 }
@@ -1455,6 +1452,8 @@ impl App {
             ui.heading(RichText::new("No Open Database").weak());
         }
     }
+
+
     fn order_panel(&mut self, ui: &mut egui::Ui) {
         // if self.help {
         //     order_help(ui)
@@ -1759,21 +1758,21 @@ pub fn gather_duplicates(app: &mut App) {
         app.main.status = "Searching for Duplicates".to_string();
        
 
-        if app.main.search {
-            if let Some(sender) = app.group.progress_io.tx.clone() {
+        if app.basic.search {
+            if let Some(sender) = app.basic.progress_io.tx.clone() {
 
                 let pool = pool.clone();
                 let order = extract_sql(app.order.clone());
                 // let mut group_sort = None;
-                // if app.group.search {
-                //     group_sort = Some(app.group.selected.clone())
+                // if app.basic.search {
+                //     group_sort = Some(app.basic.selected.clone())
                 // }
-                let groups = app.group.list.clone();
+                let groups = app.basic.list.clone();
                
                 let group_null = app.group_null;
                 // let duration = app.duration_check;
                 wrap_async(
-                    &mut app.group,
+                    &mut app.basic,
                     "Searching For Duplicate Records",
                     move || gather_duplicate_filenames_in_database(pool, order, groups, group_null, sender),
                 )
@@ -1839,7 +1838,7 @@ fn receive_async_data(app: &mut App) {
         // app.main.records.clear();
     }
 
-    if let Some(records) = app.group.receive_hashset() {
+    if let Some(records) = app.basic.receive_hashset() {
         app.main.records.extend(records);
     }
 
@@ -1857,8 +1856,8 @@ fn receive_async_data(app: &mut App) {
 
     app.main.receive_progress();
     app.main.receive_status();
-    app.group.receive_progress();
-    app.group.receive_status();
+    app.basic.receive_progress();
+    app.basic.receive_status();
     app.deep.receive_progress();
     app.deep.receive_status();
     app.tags.receive_progress();
@@ -1937,7 +1936,7 @@ pub async fn remove_duplicates_go(
 
 fn abort_all(app: &mut App) {
     app.main.abort();
-    app.group.abort();
+    app.basic.abort();
     app.deep.abort();
     app.tags.abort();
     app.compare.abort();
@@ -1945,14 +1944,14 @@ fn abort_all(app: &mut App) {
 
 fn handles_active(app: &App) -> bool {
     app.main.handle.is_some()
-        || app.group.handle.is_some()
+        || app.basic.handle.is_some()
         || app.deep.handle.is_some()
         || app.tags.handle.is_some()
         || app.compare.handle.is_some()
 }
 
 fn search_eligible(app: &App) -> bool {
-    app.main.search || app.group.search || app.deep.search || app.tags.search || app.compare.search 
+    app.main.search || app.basic.search || app.deep.search || app.tags.search || app.compare.search 
 }
 
 fn enum_combo_box(ui: &mut egui::Ui, selected_variant: &mut OrderOperator) {

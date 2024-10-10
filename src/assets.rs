@@ -106,8 +106,9 @@ pub fn node_progress_bar(ui: &mut Ui, node: &NodeConfig) {
                 .desired_height(4.0),
         );
     } else {
-        ui.separator();
+        // ui.separator();
     }
+    empty_line(ui);
 }
 
 pub fn selectable_grid(
@@ -147,6 +148,45 @@ pub fn selectable_grid(
             // End the last row if not fully filled
             if list.len() % columns != 0 {
                 ui.end_row();
+            }
+        });
+}
+
+pub fn records_window(
+    ctx: &egui::Context,
+    records: &str,
+    open: &mut bool,
+    scroll_to_top: &mut bool,
+) {
+    let available_size = ctx.available_rect(); // Get the full available width and height
+    let width = available_size.width() - 20.0;
+    let height = available_size.height();
+    egui::Window::new("Records Marked as Duplicates")
+        .open(open) // Control whether the window is open
+        .resizable(false) // Make window non-resizable if you want it fixed
+        .min_width(width)
+        .min_height(height)
+        .max_width(width)
+        .max_height(height)
+        .show(ctx, |ui| {
+            // ui.label("To Be Implemented\n Testing line break");
+
+            if *scroll_to_top {
+                egui::ScrollArea::vertical()
+                    .max_height(height)
+                    .max_width(width)
+                    .scroll_offset(egui::vec2(0.0, 0.0))
+                    .show(ui, |ui| {
+                        ui.label(RichText::new(records).size(14.0));
+                    });
+                *scroll_to_top = false;
+            } else {
+                egui::ScrollArea::vertical()
+                    .max_height(height)
+                    .max_width(width)
+                    .show(ui, |ui| {
+                        ui.label(RichText::new(records).size(14.0));
+                    });
             }
         });
 }
