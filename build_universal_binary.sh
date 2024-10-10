@@ -30,6 +30,7 @@ file target/universal/release/$BINARY_NAME.app/Contents/MacOS/$BINARY_NAME
 
 
 
+
 # Define variables for paths
 APP_PATH="target/universal/release/$BINARY_NAME.app"
 ZIP_PATH="/Users/tfarrell/Library/CloudStorage/GoogleDrive-tim@farrellsound.com/Shared drives/PUBLIC/$BINARY_NAME/$BINARY_NAME.v$VERSION.zip"
@@ -41,6 +42,8 @@ TEMP_DIR=$(mktemp -d)
 
 # Copy only the .app bundle to the temporary directory
 cp -R "$APP_PATH" "$TEMP_DIR/"
+
+cp -R "$APP_PATH" /Applications
 
 # Navigate to the temporary directory
 cd "$TEMP_DIR"
