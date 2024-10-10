@@ -37,17 +37,17 @@ where
         action();
     }
 }
-pub fn large_rt_button<F>(ui: &mut Ui, label: egui::RichText, action: F)
-where
-    F: FnOnce(),
-{
-    if ui
-        .add_sized([200.0, 50.0], egui::Button::new(label.size(24.0).strong()))
-        .clicked()
-    {
-        action();
-    }
-}
+// pub fn large_rt_button<F>(ui: &mut Ui, label: egui::RichText, action: F)
+// where
+//     F: FnOnce(),
+// {
+//     if ui
+//         .add_sized([200.0, 50.0], egui::Button::new(label.size(24.0).strong()))
+//         .clicked()
+//     {
+//         action();
+//     }
+// }
 
 // pub fn enabled_text(text: &str, enabled: &bool) -> RichText {
 //     if *enabled {
