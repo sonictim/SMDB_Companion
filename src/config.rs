@@ -1,7 +1,8 @@
-use crate::assets::*;
+// use crate::assets::*;
 use crate::processing::*;
+// use egui::Order;
 // use clipboard::{ClipboardContext, ClipboardProvider};
-use eframe::egui::{self, RichText};
+// use eframe::egui::{self, RichText};
 use rayon::prelude::*;
 use serde::Deserialize;
 use sqlx::sqlite::SqlitePool;
@@ -11,9 +12,8 @@ use std::hash::Hash;
 use std::path::Path;
 use tokio::sync::mpsc;
 
-#[derive(serde::Deserialize, serde::Serialize, Default)]
+#[derive(serde::Deserialize, serde::Serialize, Default, Clone)]
 #[serde(default)]
-#[derive(Clone)]
 pub struct Registration {
     pub name: String,
     pub email: String,
@@ -264,58 +264,6 @@ impl<T> AsyncTunnel<T> {
 //     }
 // }
 
-#[derive(serde::Deserialize, serde::Serialize, Default)]
-#[serde(default)]
-pub struct TagsConfig {
-    pub list: Vec<String>,
-    new: String,
-    selected: Vec<usize>,
-}
-
-impl TagsConfig {
-    pub fn render(&mut self, ui: &mut egui::Ui) {
-        ui.heading(RichText::new("Tag Editor").strong());
-        ui.label("Protools Audiosuite Tags use the following format:  -example_");
-        ui.label("You can enter any string of text and if it is a match, the file will be marked for removal");
-        empty_line(ui);
-        ui.separator();
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            selectable_grid(ui, "Tags Grid", 6, &mut self.selected, &mut self.list);
-            ui.separator();
-            empty_line(ui);
-            ui.horizontal(|ui| {
-                if ui.button("Add Tag:").clicked() {
-                    self.add_tag();
-                }
-                ui.text_edit_singleline(&mut self.new);
-            });
-            if ui.button("Remove Selected Tags").clicked() {
-                self.remove_selected_tags();
-            }
-        });
-    }
-    fn add_tag(&mut self) {
-        if self.new.is_empty() {
-            return;
-        }
-        self.list.push(self.new.clone());
-        self.new.clear(); // Clears the string
-        self.list.sort_by_key(|s| s.to_lowercase());
-    }
-
-    fn remove_selected_tags(&mut self) {
-        let mut sorted_indices: Vec<usize> = self.selected.clone();
-        sorted_indices.sort_by(|a, b| b.cmp(a)); // Sort in reverse order
-
-        for index in sorted_indices {
-            if index < self.list.len() {
-                self.list.remove(index);
-            }
-        }
-        self.selected.clear();
-    }
-}
-
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)]
 
@@ -503,16 +451,16 @@ pub enum ProgressMessage {
 pub enum Panel {
     Duplicates,
     Order,
-    OrderText,
     Tags,
     Find,
     KeyGen,
 }
 
-#[derive(PartialEq, serde::Serialize, Deserialize, Clone, Copy)]
+#[derive(PartialEq, serde::Serialize, Deserialize, Clone, Copy, Default)]
 pub enum OrderOperator {
     Largest,
     Smallest,
+    #[default]
     Contains,
     DoesNotContain,
     Is,

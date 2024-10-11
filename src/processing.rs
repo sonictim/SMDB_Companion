@@ -20,12 +20,24 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use sha2::{Digest, Sha256};
 
+use clipboard::{ClipboardContext, ClipboardProvider};
+
 pub fn generate_license_key(username: &str, email: &str) -> String {
     let salt = "Valhalla Delay";
     let mut hasher = Sha256::new();
     hasher.update(format!("{}{}{}", username, email, salt).as_bytes());
     let hash = hasher.finalize();
     hex::encode_upper(hash)
+}
+
+
+
+
+pub fn copy_to_clipboard(text: String) {
+    let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
+
+    ctx.set_contents(text).unwrap();
+
 }
 
 static FILENAME_REGEX: Lazy<Regex> =

@@ -2,20 +2,18 @@ use crate::assets::*;
 use crate::processing::*;
 use crate::config::*;
 use eframe::egui::{self, RichText};
+// use egui::Order;
 use rayon::prelude::*;
-// use serde::Deserialize;
-// use sqlx::sqlite::SqlitePool;
 use std::collections::HashSet;
 use std::fs::{self};
-// use std::hash::Hash;
 use tokio::sync::mpsc;
-// use std::path::Path;
-use clipboard::{ClipboardContext, ClipboardProvider};
+
+
 
 
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(serde::Deserialize, serde::Serialize,)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
 pub struct App {
     #[serde(skip)]
@@ -49,7 +47,7 @@ pub struct App {
     #[serde(skip)]
     sel_groups: Vec<usize>,
     group_null: bool,
-    // duration_check: bool,
+
     tags: NodeConfig,
     deep: NodeConfig,
     ignore_extension: bool,
@@ -62,19 +60,16 @@ pub struct App {
     delete_action: Delete,
     #[serde(skip)]
     my_panel: Panel,
-    tags_panel: TagsConfig,
-    // #[serde(skip)]
-    // new_tag: String,
-    // #[serde(skip)]
-    // sel_tags: Vec<usize>,
+    order_panel: OrderPanel,
+    tags_panel: TagsPanel,
+  
     #[serde(skip)]
     new_line: String,
-    #[serde(skip)]
-    sel_line: Option<usize>,
-    #[serde(skip)]
-    order_text: String,
     // #[serde(skip)]
-    // help: bool,
+    // sel_line: Option<usize>,
+    // #[serde(skip)]
+    // order_text: String,
+ 
     #[serde(skip)]
     replace_safety: bool,
     #[serde(skip)]
@@ -86,11 +81,11 @@ pub struct App {
     #[serde(skip)]
     go_replace: bool,
 
-    order: Vec<PreservationLogic>,
-    order_column: String,
-    order_operator: OrderOperator,
-    #[serde(skip)]
-    order_input: String,
+    // order: Vec<PreservationLogic>,
+    // order_column: String,
+    // order_operator: OrderOperator,
+    // #[serde(skip)]
+    // order_input: String,
     #[serde(skip)]
     marked_records: String,
     #[serde(skip)]
@@ -99,6 +94,8 @@ pub struct App {
 
     registered: Registration,
 }
+
+
 
 impl Default for App {
     fn default() -> Self {
@@ -126,7 +123,6 @@ impl Default for App {
             basic: NodeConfig::new(true),
             sel_groups: Vec::new(),
             group_null: false,
-            // duration_check: false,
 
             tags: NodeConfig::new_option(false, "-"),
             deep: NodeConfig::new(false),
@@ -139,22 +135,21 @@ impl Default for App {
             remove_files: false,
             delete_action: Delete::Trash,
             my_panel: Panel::Duplicates,
-            tags_panel: TagsConfig::default(),
-            // new_tag: String::new(),
-            // sel_tags: Vec::new(),
+            tags_panel: TagsPanel::default(),
+            order_panel: OrderPanel::default(),
+
             new_line: String::new(),
-            sel_line: None,
-            order_text: String::new(),
-            // help: false,
+            // sel_line: None,
+            // order_text: String::new(),
             replace_safety: false,
             count: 0,
             gather_dupes: false,
             go_search: false,
             go_replace: false,
-            order: Vec::new(),
-            order_column: "Pathname".to_owned(),
-            order_operator: OrderOperator::Contains,
-            order_input: String::new(),
+            // order: Vec::new(),
+            // order_column: "Pathname".to_owned(),
+            // order_operator: OrderOperator::Contains,
+            // order_input: String::new(),
             marked_records: String::new(),
             records_window: false,
             scroll_to_top: false,
@@ -162,10 +157,10 @@ impl Default for App {
             registered: Registration::default(),
         };
         app.basic.list = vec!["Filename".to_owned(), "Duration".to_owned(), "Channels".to_owned()];
-        app.tags.list = default_tags();
+        // app.tags.list = default_tags();
         app.tags_panel.list = default_tags();
  
-        app.order = get_default_struct_order();
+        app.order_panel.list = get_default_struct_order();
 
         app
     }
@@ -221,8 +216,8 @@ impl App {
     
         self.reset_to_defaults(db, panel, registration);
       
-        self.order = get_tjf_struct_order();
-        self.tags.list = tjf_tags();
+        self.order_panel.list = get_tjf_struct_order();
+        self.tags_panel.list = tjf_tags();
         self.deep.search = true;
         self.tags.search = true;
         self.dupes_db = true;
@@ -245,8 +240,6 @@ impl eframe::App for App {
         if self.registered.valid.is_none() {
             self.registered.validate();
         }
-
-        
 
         // Put your widgets into a `SidePanel`, `TopBottomPanel`, `CentralPanel`, `Window` or `Area`.
         // For inspiration and more examples, go to https://emilk.github.io/egui
@@ -418,20 +411,15 @@ impl eframe::App for App {
                     }
 
                     Panel::Order => {
-                        self.order_panel(ui);
-                    }
-
-                    Panel::OrderText => {
-                        self.order_text_panel(ui);
+                        self.order_panel.render(ui, self.db.as_ref());
                     }
 
                     Panel::Tags => {
-                        // self.tags_panel(ui);
                         self.tags_panel.render(ui);
                     }
 
                     Panel::KeyGen => {
-                        keygen_panel2(ui, &mut self.registered);
+                        self.registered.render(ui);
                     }
                 }
                 empty_line(ui);
@@ -479,6 +467,15 @@ impl eframe::App for App {
                 // ui.label("This is the bottom panel.");
             });
     }
+
+
+
+
+
+
+
+
+    
 }
 
 impl App {
@@ -939,12 +936,13 @@ impl App {
                 "Search for Records with AudioSuite Tags in Filename",
             ).on_hover_text_at_pointer("Filenames with Common Protools AudioSuite Tags will be marked for removal");
 
-            // ui.horizontal(|ui| {
-            //     ui.add_space(24.0);
-            //     ui.label(
-            //         "Filenames with Common Protools AudioSuite Tags will be marked for removal",
-            //     )
-            // });
+            ui.horizontal(|ui| {
+                ui.add_space(24.0);
+                if ui.button("Edit Tags").clicked() {self.my_panel=Panel::Tags}
+                // ui.label(
+                //     "Filenames with Common Protools AudioSuite Tags will be marked for removal",
+                // )
+            });
 
             node_progress_bar(ui, &self.tags);
          
@@ -1139,17 +1137,36 @@ impl App {
         }
     }
 
+}
 
-    fn order_panel(&mut self, ui: &mut egui::Ui) {
-        // if self.help {
-        //     order_help(ui)
-        // }
+
+
+#[derive(serde::Deserialize, serde::Serialize, Default)]
+#[serde(default)]
+pub struct OrderPanel {
+    pub list: Vec<PreservationLogic>,
+    #[serde(skip)]
+    pub sel_line: Option<usize>,
+    pub column: String,
+    pub operator: OrderOperator,
+    #[serde(skip)]
+    pub input: String,
+    #[serde(skip)]
+    pub text: String,
+}
+
+
+impl OrderPanel {
+    pub fn render(&mut self, ui: &mut egui::Ui, db: Option<&Database>) {
         ui.heading(RichText::new("Duplicate Filename Preservation Priority").strong());
         ui.label("or... How to decide which file to keep when duplicates are found");
         ui.label("Entries at the top of list take precedence to those below");
         empty_line(ui);
         // ui.separator();
-        order_toolbar2(ui, self);
+        if let Some(db) = db {
+            self.top_toolbar(ui, &db.columns);
+        }
+        else {ui.label(RichText::new("Open DB to enable ADD NEW").strong());}
         empty_line(ui);
         ui.separator();
 
@@ -1174,16 +1191,17 @@ impl App {
                                 .striped(true)
                                 .show(ui, |ui| {
                                  
-                                    for (index, line) in self.order.iter_mut().enumerate()
+                                    for (index, line) in self.list.iter_mut().enumerate()
                                     {
                                         let checked = self.sel_line == Some(index);
+                                        let text: &str = if ui.input(|i| i.modifiers.alt) {&line.sql} else {&line.friendly};
                                         if ui
                                             .selectable_label(
                                                 checked,
                                                 RichText::new(format!(
                                                     "{:02} : {}",
                                                     index + 1,
-                                                    line.friendly.clone()
+                                                    text
                                                 ))
                                                 .size(14.0),
                                             )
@@ -1195,248 +1213,324 @@ impl App {
                                         ui.end_row();
                                     }
                                 });
+                            if ui.input(|i| i.modifiers.alt) {      
+                                
+                            }
+                            
                         });
                     });
                 ui.separator();
                 empty_line(ui);
 
-                order_toolbar(ui, self);
+                self.bottom_toolbar(ui);
             },
         );
 
-        // ui.separator();
     }
 
-    fn order_text_panel(&mut self, ui: &mut egui::Ui) {
-
-        ui.columns(1, |columns| {
-            // columns[0].heading("Duplicate Filename Keeper Priority Order:");
-            columns[0].text_edit_multiline(&mut self.order_text);
-        });
-        ui.separator();
+    pub fn top_toolbar(&mut self, ui: &mut egui::Ui, db_columns: &Vec<String>) {
         ui.horizontal(|ui| {
-            if ui.button("Save").clicked() {
-                self.main.list = self.order_text.lines().map(|s| s.to_string()).collect();
-                self.my_panel = Panel::Order;
+            
+
+            combo_box(ui, "order_column", &mut self.column, db_columns);
+  
+            enum_combo_box(ui, &mut self.operator);
+            match self.operator {
+                OrderOperator::Largest
+                | OrderOperator::Smallest
+                | OrderOperator::IsEmpty
+                | OrderOperator::IsNotEmpty => {}
+                _ => {
+                    ui.text_edit_singleline(&mut self.input);
+                }
             }
-            if ui.button("Cancel").clicked() {
-                #[cfg(debug_assertions)]
-                {
-                    if ui.input(|i| i.modifiers.alt)
-                        && ui.input(|i| i.modifiers.command)
-                        && ui.input(|i| i.modifiers.shift)
-                        && ui.input(|i| i.modifiers.ctrl)
-                    {
-                        self.my_panel = Panel::KeyGen;
-                        return;
+    
+            if ui.button("Add Line").clicked {
+                match self.operator {
+                    OrderOperator::Largest
+                    | OrderOperator::Smallest
+                    | OrderOperator::IsEmpty
+                    | OrderOperator::IsNotEmpty => {
+        
+                        self.list.insert(
+                            0,
+                            parse_to_struct(
+                                self.column.clone(),
+                                self.operator,
+                                self.input.clone(),
+                            ),
+                        );
+                        self.input.clear();
+                    }
+                    _ => {
+                        if !self.input.is_empty() {
+    
+                           self.list.insert(
+                                0,
+                                parse_to_struct(
+                                    self.column.clone(),
+                                    self.operator,
+                                    self.input.clone(),
+                                ),
+                            );
+                            self.input.clear();
+                        }
                     }
                 }
-                self.my_panel = Panel::Order;
             }
+       
         });
     }
 
-
-    // fn tags_panel(&mut self, ui: &mut egui::Ui) {
-
-
-        // ui.heading(RichText::new("Tag Editor").strong());
-        // ui.label("Protools Audiosuite Tags use the following format:  -example_");
-        // ui.label("You can enter any string of text and if it is a match, the file will be marked for removal");
-        // empty_line(ui);
-        // ui.separator();
-        // egui::ScrollArea::vertical().show(ui, |ui| {
-        //     selectable_grid(ui, "Tags Grid", 6, &mut self.sel_tags, &mut self.tags.list);
-        //     ui.separator();
-        //     empty_line(ui);
-        //     ui.horizontal(|ui| {
-        //         if ui.button("Add Tag:").clicked() && !self.new_tag.is_empty() {
-        //             self.tags.list.push(self.new_tag.clone());
-        //             self.new_tag.clear(); // Clears the string
-        //             self.tags.list.sort_by_key(|s| s.to_lowercase());
-        //         }
-        //         ui.text_edit_singleline(&mut self.new_tag);
-        //         });
-        //         if ui.button("Remove Selected Tags").clicked() {
-        //             // Sort and remove elements based on `sel_tags`
-        //             let mut sorted_indices: Vec<usize> = self.sel_tags.clone();
-        //             sorted_indices.sort_by(|a, b| b.cmp(a)); // Sort in reverse order
-
-        //             for index in sorted_indices {
-        //                 if index < self.tags.list.len() {
-        //                     self.tags.list.remove(index);
-        //                 }
-        //             }
-        //             self.sel_tags.clear();
-        //         }
-        //     });
-    // }
-
-    // fn keygen_panel(&mut self, ui: &mut egui::Ui) {
-    //     ui.horizontal(|ui| {
-    //         ui.label("Name: ");
-    //         ui.text_edit_singleline(&mut self.registered.name);
-    //     });
-    //     ui.horizontal(|ui| {
-    //         ui.label("Email: ");
-    //         ui.text_edit_singleline(&mut self.registered.email);
-    //     });
-    //     self.registered.key = generate_license_key(&self.registered.name, &self.registered.email);
-    //     ui.horizontal(|ui| {
-    //         ui.label("License Key: ");
-    //         ui.label(&self.registered.key);
-    //         // ui.text_edit_singleline(&mut self.registered.key);
-    //     });
-
-    //     ui.horizontal(|ui|{
-    //         if ui.button("Register").clicked() {
-    //             self.registered.validate();
-    //         }
-    //         if ui.button("Copy to Clipboard").clicked() {
-    //             copy_to_clipboard(format!("SMDB COMPANION\nDownload Link: https://drive.google.com/open?id=1qdGqoUMqq_xCrbA6IxUTYliZUmd3Tn3i&usp=drive_fs\n\nRegistration Info\nName: {}\nEmail: {}\nKey: {}\n\n", self.registered.name, self.registered.email, self.registered.key));
-        
-    //         }
-    //     });
-    // }
-
-}
-
-
-fn keygen_panel2(ui: &mut egui::Ui, k: &mut Registration) {
-    ui.horizontal(|ui| {
-        ui.label("Name: ");
-        ui.text_edit_singleline(&mut k.name);
-    });
-    ui.horizontal(|ui| {
-        ui.label("Email: ");
-        ui.text_edit_singleline(&mut k.email);
-    });
-    k.key = generate_license_key(&k.name, &k.email);
-    ui.horizontal(|ui| {
-        ui.label("License Key: ");
-        ui.label(&k.key);
-        // ui.text_edit_singleline(&mut self.registered.key);
-    });
-
-    ui.horizontal(|ui|{
-        if ui.button("Register").clicked() {
-            k.validate();
-        }
-        if ui.button("Copy to Clipboard").clicked() {
-            copy_to_clipboard(format!("SMDB COMPANION\nDownload Link: https://drive.google.com/open?id=1qdGqoUMqq_xCrbA6IxUTYliZUmd3Tn3i&usp=drive_fs\n\nRegistration Info\nName: {}\nEmail: {}\nKey: {}\n\n", k.name, k.email, k.key));
-    
-        }
-    });
-}
-
-
-
-
-
-fn copy_to_clipboard(text: String) {
-    let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
-
-    ctx.set_contents(text).unwrap();
-
-}
-
-pub fn order_toolbar(ui: &mut egui::Ui, app: &mut App) {
-    ui.horizontal(|ui| {
+    pub fn bottom_toolbar(&mut self, ui: &mut egui::Ui) {
+          ui.horizontal(|ui| {
         if ui.button("Move Up").clicked() {
-            if let Some(index) = app.sel_line {
+            if let Some(index) = self.sel_line {
                 if index > 0 {
-                    app.sel_line = Some(index - 1);
+                    self.sel_line = Some(index - 1);
   
-                    app.order.swap(index, index - 1);
+                    self.list.swap(index, index - 1);
                 }
             }
         }
         if ui.button("Move Down").clicked() {
-            if let Some(index) = app.sel_line {
-                if index < app.order.len() - 1 {
-                    app.sel_line = Some(index + 1);
+            if let Some(index) = self.sel_line {
+                if index < self.list.len() - 1 {
+                    self.sel_line = Some(index + 1);
 
-                    app.order.swap(index, index + 1);
+                    self.list.swap(index, index + 1);
                 }
             }
         }
         if ui.button("Remove").clicked() {
-            if let Some(index) = app.sel_line {
-                app.order.remove(index);
-                app.sel_line = None;
+            if let Some(index) = self.sel_line {
+                self.list.remove(index);
+                self.sel_line = None;
             }
         }
 
-        if ui.input(|i| i.modifiers.alt) && ui.button("Text Editor").clicked() {
-            app.order_text = extract_sql(app.order.clone()).join("\n");
-            app.my_panel = Panel::OrderText;
-        }
+        // if ui.input(|i| i.modifiers.alt) && ui.button("Text Editor").clicked() {
+        //     app.order_text = extract_sql(app.order.clone()).join("\n");
+        //     app.my_panel = Panel::OrderText;
+        // }
 
     });
+
+    }
 }
-pub fn order_toolbar2(ui: &mut egui::Ui, app: &mut App) {
-    ui.horizontal(|ui| {
-        // ui.label("Add Line: ");
-        if let Some(db) = &app.db.clone() {
-            combo_box(ui, "order_column", &mut app.order_column, &db.columns);
-        } else {
-            // let empty = vec!["no database".to_string()];
-            combo_box(
-                ui,
-                "order_column",
-                &mut "no database".to_string(),
-                &vec!["no database".to_string()],
-         
-            );
+
+
+
+
+
+
+#[derive(serde::Deserialize, serde::Serialize, Default)]
+#[serde(default)]
+pub struct TagsPanel {
+    pub list: Vec<String>,
+    new: String,
+    selected: Vec<usize>,
+}
+
+impl TagsPanel {
+    pub fn render(&mut self, ui: &mut egui::Ui) {
+        ui.heading(RichText::new("Tag Editor").strong());
+        ui.label("Protools Audiosuite Tags use the following format:  -example_");
+        ui.label("You can enter any string of text and if it is a match, the file will be marked for removal");
+        empty_line(ui);
+        ui.separator();
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            selectable_grid(ui, "Tags Grid", 6, &mut self.selected, &mut self.list);
+            ui.separator();
+            empty_line(ui);
+            ui.horizontal(|ui| {
+                if ui.button("Add Tag:").clicked() {
+                    self.add_tag();
+                }
+                ui.text_edit_singleline(&mut self.new);
+            });
+            if ui.button("Remove Selected Tags").clicked() {
+                self.remove_selected_tags();
+            }
+        });
+    }
+    fn add_tag(&mut self) {
+        if self.new.is_empty() {
+            return;
         }
-        enum_combo_box(ui, &mut app.order_operator);
-        match app.order_operator {
-            OrderOperator::Largest
-            | OrderOperator::Smallest
-            | OrderOperator::IsEmpty
-            | OrderOperator::IsNotEmpty => {}
-            _ => {
-                ui.text_edit_singleline(&mut app.order_input);
+        self.list.push(self.new.clone());
+        self.new.clear(); // Clears the string
+        self.list.sort_by_key(|s| s.to_lowercase());
+    }
+
+    fn remove_selected_tags(&mut self) {
+        let mut sorted_indices: Vec<usize> = self.selected.clone();
+        sorted_indices.sort_by(|a, b| b.cmp(a)); // Sort in reverse order
+
+        for index in sorted_indices {
+            if index < self.list.len() {
+                self.list.remove(index);
             }
         }
+        self.selected.clear();
+    }
+}
 
-        if ui.button("Add Line").clicked {
-            match app.order_operator {
-                OrderOperator::Largest
-                | OrderOperator::Smallest
-                | OrderOperator::IsEmpty
-                | OrderOperator::IsNotEmpty => {
-    
-                    app.order.insert(
-                        0,
-                        parse_to_struct(
-                            app.order_column.clone(),
-                            app.order_operator,
-                            app.order_input.clone(),
-                        ),
-                    );
-                    app.order_input.clear();
-                }
-                _ => {
-                    if !app.order_input.is_empty() {
 
-                        app.order.insert(
-                            0,
-                            parse_to_struct(
-                                app.order_column.clone(),
-                                app.order_operator,
-                                app.order_input.clone(),
-                            ),
-                        );
-                        app.order_input.clear();
-                    }
-                }
+// #[derive(serde::Deserialize, serde::Serialize, Default)]
+// #[serde(default)]
+// #[derive(Clone)]
+// pub struct Registration {
+//     pub name: String,
+//     pub email: String,
+//     pub key: String,
+//     #[serde(skip)]
+//     pub valid: Option<bool>,
+// }
+
+impl Registration {
+    // pub fn validate(&mut self) {
+    //     if generate_license_key(&self.name, &self.email) == self.key {
+    //         self.valid = Some(true);
+    //     } else {
+    //         self.valid = Some(false);
+    //     }
+    // }
+    // pub fn clear(&mut self) {
+    //     self.name.clear();
+    //     self.email.clear();
+    //     self.key.clear();
+    //     self.valid = Some(false);
+    // }
+    pub fn render(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label("Name: ");
+            ui.text_edit_singleline(&mut self.name);
+        });
+        ui.horizontal(|ui| {
+            ui.label("Email: ");
+            ui.text_edit_singleline(&mut self.email);
+        });
+        self.key = generate_license_key(&self.name, &self.email);
+        ui.horizontal(|ui| {
+            ui.label("License Key: ");
+            ui.label(&self.key);
+            // ui.text_edit_singleline(&mut self.registered.key);
+        });
+        
+        ui.horizontal(|ui|{
+            if ui.button("Register").clicked() {
+                self.validate();
             }
-        }
-   
-    });
+            if ui.button("Copy to Clipboard").clicked() {
+                copy_to_clipboard(format!("SMDB COMPANION\nDownload Link: https://drive.google.com/open?id=1qdGqoUMqq_xCrbA6IxUTYliZUmd3Tn3i&usp=drive_fs\n\nRegistration Info\nName: {}\nEmail: {}\nKey: {}\n\n", self.name, self.email, self.key));
+        
+            }
+        });
+
+    }
+}
+
+
+
+
+// pub fn order_toolbar(ui: &mut egui::Ui, app: &mut App) {
+//     ui.horizontal(|ui| {
+//         if ui.button("Move Up").clicked() {
+//             if let Some(index) = app.sel_line {
+//                 if index > 0 {
+//                     app.sel_line = Some(index - 1);
   
-}
+//                     app.order.swap(index, index - 1);
+//                 }
+//             }
+//         }
+//         if ui.button("Move Down").clicked() {
+//             if let Some(index) = app.sel_line {
+//                 if index < app.order.len() - 1 {
+//                     app.sel_line = Some(index + 1);
+
+//                     app.order.swap(index, index + 1);
+//                 }
+//             }
+//         }
+//         if ui.button("Remove").clicked() {
+//             if let Some(index) = app.sel_line {
+//                 app.order.remove(index);
+//                 app.sel_line = None;
+//             }
+//         }
+
+//         if ui.input(|i| i.modifiers.alt) && ui.button("Text Editor").clicked() {
+//             app.order_text = extract_sql(app.order.clone()).join("\n");
+//             app.my_panel = Panel::OrderText;
+//         }
+
+//     });
+// }
+// pub fn order_toolbar2(ui: &mut egui::Ui, app: &mut App) {
+//     ui.horizontal(|ui| {
+//         // ui.label("Add Line: ");
+//         if let Some(db) = &app.db.clone() {
+//             combo_box(ui, "order_column", &mut app.order_column, &db.columns);
+//         } else {
+//             // let empty = vec!["no database".to_string()];
+//             combo_box(
+//                 ui,
+//                 "order_column",
+//                 &mut "no database".to_string(),
+//                 &vec!["no database".to_string()],
+         
+//             );
+//         }
+//         enum_combo_box(ui, &mut app.order_operator);
+//         match app.order_operator {
+//             OrderOperator::Largest
+//             | OrderOperator::Smallest
+//             | OrderOperator::IsEmpty
+//             | OrderOperator::IsNotEmpty => {}
+//             _ => {
+//                 ui.text_edit_singleline(&mut app.order_input);
+//             }
+//         }
+
+//         if ui.button("Add Line").clicked {
+//             match app.order_operator {
+//                 OrderOperator::Largest
+//                 | OrderOperator::Smallest
+//                 | OrderOperator::IsEmpty
+//                 | OrderOperator::IsNotEmpty => {
+    
+//                     app.order.insert(
+//                         0,
+//                         parse_to_struct(
+//                             app.order_column.clone(),
+//                             app.order_operator,
+//                             app.order_input.clone(),
+//                         ),
+//                     );
+//                     app.order_input.clear();
+//                 }
+//                 _ => {
+//                     if !app.order_input.is_empty() {
+
+//                         app.order.insert(
+//                             0,
+//                             parse_to_struct(
+//                                 app.order_column.clone(),
+//                                 app.order_operator,
+//                                 app.order_input.clone(),
+//                             ),
+//                         );
+//                         app.order_input.clear();
+//                     }
+//                 }
+//             }
+//         }
+   
+//     });
+  
+// }
 
 pub fn gather_duplicates(app: &mut App) {
     abort_all(app);
@@ -1452,7 +1546,7 @@ pub fn gather_duplicates(app: &mut App) {
             if let Some(sender) = app.basic.progress_io.tx.clone() {
 
                 let pool = pool.clone();
-                let order = extract_sql(app.order.clone());
+                let order = extract_sql(app.order_panel.list.clone());
                 // let mut group_sort = None;
                 // if app.basic.search {
                 //     group_sort = Some(app.basic.selected.clone())
@@ -1487,7 +1581,7 @@ pub fn gather_duplicates(app: &mut App) {
             if let Some(sender) = app.tags.progress_io.tx.clone() {
 
                 let pool = pool.clone();
-                let tags = app.tags.list.clone();
+                let tags = app.tags_panel.list.clone();
                 wrap_async(
                     &mut app.tags,
                     "Searching for Filenames with Specified Tags",
