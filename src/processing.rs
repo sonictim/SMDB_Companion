@@ -431,22 +431,31 @@ pub async fn gather_filenames_with_tags(
     progress_sender: mpsc::Sender<ProgressMessage>,
 ) -> Result<HashSet<FileRecord>, sqlx::Error> {
     let total = tags.len();
-    let mut counter = 1;
+    // let mut counter = 1;
     let mut file_records = HashSet::new();
     let max_concurrency = 10; // Adjust based on your system's capacity and connection pool size
 
     // Process each tag concurrently with a controlled level of concurrency
     let results = stream::iter(tags.into_iter())
-        .map(|tag| {
+        .enumerate()
+        .map(|(counter, tag)| {
             
             let pool = pool.clone();
+            let progress_sender = progress_sender.clone();
             async move {
                 let query = format!(
                     "SELECT rowid, filename, duration, filepath FROM {} WHERE filename LIKE '%' || ? || '%'",
                     TABLE
                 );
-                sqlx::query(&query).bind(tag).fetch_all(&pool).await // Return the result (Result<Vec<sqlx::sqlite::SqliteRow>, sqlx::Error>)
-            
+
+                
+                let result = sqlx::query(&query).bind(tag).fetch_all(&pool).await; // Return the result (Result<Vec<sqlx::sqlite::SqliteRow>, sqlx::Error>)
+                
+                let _ = progress_sender
+                    .send(ProgressMessage::Update(counter, total))
+                    .await;
+                
+                result
             }
            
         })
@@ -474,10 +483,10 @@ pub async fn gather_filenames_with_tags(
             }
         }
         {
-            let _ = progress_sender
-                .send(ProgressMessage::Update(counter, total))
-                .await;
-            counter += 1;
+            // let _ = progress_sender
+            //     .send(ProgressMessage::Update(counter, total))
+            //     .await;
+            // counter += 1;
         }
     }
 

@@ -1,7 +1,9 @@
 use crate::assets::*;
 use crate::processing::*;
 use crate::config::*;
+use crate::dupe_panel::*;
 use eframe::egui::{self, RichText};
+// use egui::accesskit::Node;
 // use egui::Order;
 use rayon::prelude::*;
 use std::collections::HashSet;
@@ -60,6 +62,7 @@ pub struct App {
     delete_action: Delete,
     #[serde(skip)]
     my_panel: Panel,
+    duplicates_panel: DupePanel,
     order_panel: OrderPanel,
     tags_panel: TagsPanel,
   
@@ -135,6 +138,7 @@ impl Default for App {
             remove_files: false,
             delete_action: Delete::Trash,
             my_panel: Panel::Duplicates,
+            duplicates_panel: DupePanel::default(),
             tags_panel: TagsPanel::default(),
             order_panel: OrderPanel::default(),
 
@@ -410,6 +414,10 @@ impl eframe::App for App {
                         self.duplictes_panel(ui);
                     }
 
+                    Panel::NewDuplicates => {
+                        self.duplicates_panel.render(ui, self.db.as_ref(), self.registered.valid);
+                    }
+
                     Panel::Order => {
                         self.order_panel.render(ui, self.db.as_ref());
                     }
@@ -436,9 +444,7 @@ impl eframe::App for App {
             .anchor(egui::Align2::LEFT_BOTTOM, egui::vec2(0.0, 0.0)) // Pin to bottom
             // .default_width(500.0)
             .show(ctx, |ui| {
-                let mut label = RichText::new("*****UNREGISTERED")
-                    .color(egui::Color32::from_rgb(255, 0, 0))
-                    .strong();
+                let mut label = red_text("*****UNREGISTERED");
                 if let Some(valid) = self.registered.valid {
                     if valid {
                         let text = format!("Registered to: {}", &self.registered.name);
@@ -514,7 +520,13 @@ impl App {
             }
     
             add_tab_button(ui, &mut self.my_panel, Panel::Find, "Find & Replace", size_big, size_small, column_width);
-            add_tab_button(ui, &mut self.my_panel, Panel::Duplicates, "Search for Duplicates", size_big, size_small, column_width);
+            if ui.input(|i| i.modifiers.alt) {
+
+                add_tab_button(ui, &mut self.my_panel, Panel::NewDuplicates, "Search for Duplicates2", size_big, size_small, column_width);
+            } else {
+
+                add_tab_button(ui, &mut self.my_panel, Panel::Duplicates, "Search for Duplicates", size_big, size_small, column_width);
+            }
             add_tab_button(ui, &mut self.my_panel, Panel::Order, "Preservation Priority", size_big, size_small, column_width);
             add_tab_button(ui, &mut self.my_panel, Panel::Tags, "Tag Editor", size_big, size_small, column_width);
         });
@@ -713,16 +725,12 @@ impl App {
                 });
                 if self.basic.list.is_empty() {
                     self.basic.search = false;
-                    // empty_line(ui);
+
                     column[0].horizontal(|ui|{
                         ui.add_space(24.0);
-        
-                        let text = RichText::new("Add Match Criteria to Enable Search").strong().size(14.0).color(egui::Color32::from_rgb(255, 0, 0));
-                        ui.label(text);
-                        
-                        
-                        
-        
+    
+                        ui.label(light_red_text("Add Match Criteria to Enable Search").size(14.0));
+
                     });
                     column[0].horizontal(|ui|{
                         ui.add_space(24.0);
@@ -815,9 +823,7 @@ impl App {
                 if !&self.safe {
                     column[1].horizontal(|ui| {
                             ui.label(
-                                RichText::new("UNSAFE!")
-                                .color(egui::Color32::from_rgb(255, 0, 0))
-                                .strong(),
+                                red_text("UNSAFE!")
                             );
                             ui.label(RichText::new("Will remove records from current database").strong());
                         });
@@ -829,7 +835,7 @@ impl App {
                     ui.checkbox(&mut self.remove_files, text);
                     
                     if self.remove_files {
-                        enum_combo_box2(ui, &mut self.delete_action);
+                        enum_combo_box(ui, &mut self.delete_action);
                         if self.remove_files && self.delete_action == Delete::Permanent {
                             ui.label(
                                 RichText::new("UNSAFE!")
@@ -898,33 +904,12 @@ impl App {
                         else {"Unchecked: 'example.wav' and 'example.flac' will be considered unique filenames"};
                         ui.checkbox(&mut self.ignore_extension, "Ignore Filetypes").on_hover_text_at_pointer(text);
     
-                        // if self.ignore_extension {
-                        //     ui.label(
-                        //         RichText::new(
-                        //             "(Checked: 'example.wav' and 'example.flac' will be considered duplicate filenames)",
-                        //         ), // .weak(),
-                        //     );
-                  
-                        // } else {
-                        //     ui.label(
-                        //         RichText::new(
-                        //             "(Unchecked: 'example.wav' and 'example.flac' will be considered unique filenames)",
-                        //         ), // .weak(),
-                        //     );
-                        // }
                     } else {
                         ui.label("All Records are of Filetype:");
                         ui.label(&self.sel_extension);
                     }
                 });
             }
-            // ui.horizontal(|ui| {
-            //     ui.add_space(24.0);
-            //     ui.label(
-            //         "Filenames ending in .#, .#.#.#, or .M will be examined as possible duplicates",
-            //     );
-            // });
-
             node_progress_bar(ui, &self.deep);
 
           
@@ -937,17 +922,14 @@ impl App {
             ).on_hover_text_at_pointer("Filenames with Common Protools AudioSuite Tags will be marked for removal");
 
             ui.horizontal(|ui| {
-                ui.add_space(24.0);
+                ui.add_space(44.0);
                 if ui.button("Edit Tags").clicked() {self.my_panel=Panel::Tags}
-                // ui.label(
-                //     "Filenames with Common Protools AudioSuite Tags will be marked for removal",
-                // )
             });
 
             node_progress_bar(ui, &self.tags);
          
 
-            // ui.separator();
+ 
 
             //COMPARE COMPARE COMPARE COMPARE
             ui.horizontal(|ui| {
@@ -989,55 +971,10 @@ impl App {
                 }
             });
 
-            // ui.horizontal(|ui| {
-            //             ui.add_space(24.0);
-            //             if self.c_db.is_some() {
-            //                 ui.label("Filenames from Target Database found in Comparison Database will be Marked for Removal");
-            //             } else {
-            //                 ui.label("Open Comparison Database to Enable");
-            //             }
-            //         });
-
             node_progress_bar(ui, &self.compare);
             ui.separator();
 
-            // // if !self.main.records.is_empty() && !handles_active(self) {}
-            // // DELETION PREFERENCES
-            // empty_line(ui);
-            // ui.horizontal(|ui| {
-            //     ui.checkbox(&mut self.safe, "Create New Safety Database of Thinned Records");
-            //     if !&self.safe {
-            //         ui.label(
-            //             RichText::new("UNSAFE!")
-            //                 .color(egui::Color32::from_rgb(255, 0, 0))
-            //                 .strong(),
-            //         );
-            //         ui.label(RichText::new("Will remove records from current database").strong());
-            //     }
-            // });
-            // ui.checkbox(&mut self.dupes_db, "Create New Database of Duplicate Records");
-            // ui.horizontal(|ui| {
-            //     let mut text = RichText::new("Remove Duplicate Files From Disk ");
-            //     if self.remove_files {text = text.strong().size(16.0).color(egui::Color32::from_rgb(255, 0, 0))}
-            //     ui.checkbox(&mut self.remove_files, text);
 
-            //     if self.remove_files {
-            //         enum_combo_box2(ui, &mut self.delete_action);
-            //         if self.remove_files && self.delete_action == Delete::Permanent {
-            //             ui.label(
-            //                 RichText::new("UNSAFE!")
-            //                     .color(egui::Color32::from_rgb(255, 0, 0))
-            //                     .strong(),
-            //             );
-            //             ui.label(RichText::new("This is NOT undoable").strong());
-            //         }
-
-            //     }
-
-            // });
-
-            // empty_line(ui);
-            // ui.separator();
 
             ui.horizontal(|_ui| {});
 
@@ -1052,7 +989,8 @@ impl App {
 
                         
                         if ui.input(|i| i.modifiers.alt) {
-                            rt_button(ui, RichText::new("Search and Remove Duplicates").color(egui::Color32::from_rgb(255, 100, 100)).size(20.0).strong(), || {
+                           
+                            rt_button(ui, light_red_text("Search and Remove Duplicates").size(20.0), || {
                                 self.go_search = true;
                                 self.go_replace = false;
                                 gather_duplicates(self);
@@ -1071,9 +1009,7 @@ impl App {
                                     );
                                     column[1].horizontal(|ui|{
                                         rt_button(ui, RichText::new("Remove Duplicates").size(20.0).strong(), || remove_duplicates(self));
-                                        // if ui.button(RichText::new("Remove Duplicates").color(egui::Color32::from_rgb(255, 100, 100)).strong().size(16.0)).clicked() {
-                                        //     remove_duplicates(self);
-                                        // }
+                                    
 
                                     });
                                 }
@@ -1166,7 +1102,7 @@ impl OrderPanel {
         if let Some(db) = db {
             self.top_toolbar(ui, &db.columns);
         }
-        else {ui.label(RichText::new("Open DB to enable ADD NEW").strong());}
+        else {ui.label(light_red_text("Open DB to enable ADD NEW"));}
         empty_line(ui);
         ui.separator();
 
@@ -1402,6 +1338,8 @@ impl Registration {
     //     self.key.clear();
     //     self.valid = Some(false);
     // }
+
+
     pub fn render(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.label("Name: ");
@@ -1433,109 +1371,10 @@ impl Registration {
 
 
 
-
-// pub fn order_toolbar(ui: &mut egui::Ui, app: &mut App) {
-//     ui.horizontal(|ui| {
-//         if ui.button("Move Up").clicked() {
-//             if let Some(index) = app.sel_line {
-//                 if index > 0 {
-//                     app.sel_line = Some(index - 1);
-  
-//                     app.order.swap(index, index - 1);
-//                 }
-//             }
-//         }
-//         if ui.button("Move Down").clicked() {
-//             if let Some(index) = app.sel_line {
-//                 if index < app.order.len() - 1 {
-//                     app.sel_line = Some(index + 1);
-
-//                     app.order.swap(index, index + 1);
-//                 }
-//             }
-//         }
-//         if ui.button("Remove").clicked() {
-//             if let Some(index) = app.sel_line {
-//                 app.order.remove(index);
-//                 app.sel_line = None;
-//             }
-//         }
-
-//         if ui.input(|i| i.modifiers.alt) && ui.button("Text Editor").clicked() {
-//             app.order_text = extract_sql(app.order.clone()).join("\n");
-//             app.my_panel = Panel::OrderText;
-//         }
-
-//     });
-// }
-// pub fn order_toolbar2(ui: &mut egui::Ui, app: &mut App) {
-//     ui.horizontal(|ui| {
-//         // ui.label("Add Line: ");
-//         if let Some(db) = &app.db.clone() {
-//             combo_box(ui, "order_column", &mut app.order_column, &db.columns);
-//         } else {
-//             // let empty = vec!["no database".to_string()];
-//             combo_box(
-//                 ui,
-//                 "order_column",
-//                 &mut "no database".to_string(),
-//                 &vec!["no database".to_string()],
-         
-//             );
-//         }
-//         enum_combo_box(ui, &mut app.order_operator);
-//         match app.order_operator {
-//             OrderOperator::Largest
-//             | OrderOperator::Smallest
-//             | OrderOperator::IsEmpty
-//             | OrderOperator::IsNotEmpty => {}
-//             _ => {
-//                 ui.text_edit_singleline(&mut app.order_input);
-//             }
-//         }
-
-//         if ui.button("Add Line").clicked {
-//             match app.order_operator {
-//                 OrderOperator::Largest
-//                 | OrderOperator::Smallest
-//                 | OrderOperator::IsEmpty
-//                 | OrderOperator::IsNotEmpty => {
-    
-//                     app.order.insert(
-//                         0,
-//                         parse_to_struct(
-//                             app.order_column.clone(),
-//                             app.order_operator,
-//                             app.order_input.clone(),
-//                         ),
-//                     );
-//                     app.order_input.clear();
-//                 }
-//                 _ => {
-//                     if !app.order_input.is_empty() {
-
-//                         app.order.insert(
-//                             0,
-//                             parse_to_struct(
-//                                 app.order_column.clone(),
-//                                 app.order_operator,
-//                                 app.order_input.clone(),
-//                             ),
-//                         );
-//                         app.order_input.clear();
-//                     }
-//                 }
-//             }
-//         }
-   
-//     });
-  
-// }
-
 pub fn gather_duplicates(app: &mut App) {
     abort_all(app);
     app.main.records.clear();
-    if let Some(db) = app.db.clone() {
+    if let Some(db) = app.db.as_ref() {
         let pool = db.pool.clone();
 
       
@@ -1656,7 +1495,7 @@ fn remove_duplicates(app: &mut App) {
         app.main.status = "Unregistered!\nPlease Register to Remove Duplicates".to_string();
         return;
     }
-    if let Some(db) = app.db.clone() {
+    if let Some(db) = app.db.as_ref() {
         let mut work_db_path: Option<String> = Some(db.path.clone());
         let mut duplicate_db_path: Option<String> = None;
         let records = app.main.records.clone();
@@ -1738,22 +1577,25 @@ fn search_eligible(app: &App) -> bool {
     app.main.search || app.basic.search || app.deep.search || app.tags.search || app.compare.search 
 }
 
-fn enum_combo_box(ui: &mut egui::Ui, selected_variant: &mut OrderOperator) {
-    egui::ComboBox::from_id_salt("variants")
-        .selected_text(selected_variant.as_str())
-        .show_ui(ui, |ui| {
-            for variant in OrderOperator::variants() {
-                ui.selectable_value(selected_variant, *variant, variant.as_str());
-            }
-        });
-}
-fn enum_combo_box2(ui: &mut egui::Ui, selected_variant: &mut Delete) {
-    egui::ComboBox::from_id_salt("variants")
-        .selected_text(selected_variant.as_str())
-        .show_ui(ui, |ui| {
-            for variant in Delete::variants() {
-                ui.selectable_value(selected_variant, *variant, variant.as_str());
-            }
-        });
-}
+// pub fn enum_combo_box(ui: &mut egui::Ui, selected_variant: &mut OrderOperator) {
+//     egui::ComboBox::from_id_salt("variants")
+//         .selected_text(selected_variant.as_str())
+//         .show_ui(ui, |ui| {
+//             for variant in OrderOperator::variants() {
+//                 ui.selectable_value(selected_variant, *variant, variant.as_str());
+//             }
+//         });
+// }
+
+// pub fn enum_combo_box2(ui: &mut egui::Ui, selected_variant: &mut Delete) {
+//     egui::ComboBox::from_id_salt("variants")
+//         .selected_text(selected_variant.as_str())
+//         .show_ui(ui, |ui| {
+//             for variant in Delete::variants() {
+//                 ui.selectable_value(selected_variant, *variant, variant.as_str());
+//             }
+//         });
+// }
+
+
 

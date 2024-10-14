@@ -1,8 +1,8 @@
-// use crate::assets::*;
+use crate::assets::*;
 use crate::processing::*;
 // use egui::Order;
 // use clipboard::{ClipboardContext, ClipboardProvider};
-// use eframe::egui::{self, RichText};
+use eframe::egui::{self, RichText};
 use rayon::prelude::*;
 use serde::Deserialize;
 use sqlx::sqlite::SqlitePool;
@@ -395,6 +395,49 @@ impl NodeConfig {
             }
         }
     }
+    // pub fn clear_status(&mut self) {
+    //     self.status.clear()
+    // }
+
+    pub fn render<F>(&mut self, ui: &mut egui::Ui, text: &str, hint: &str, action: Option<F>)
+    where
+        F: FnOnce(),
+    {
+        ui.checkbox(&mut self.search, text)
+            .on_hover_text_at_pointer(hint);
+        if let Some(action) = action {
+            action();
+        }
+        self.progress_bar(ui);
+    }
+
+    pub fn progress_bar(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            if self.working {
+                ui.spinner();
+            } else {
+                ui.add_space(24.0)
+            }
+            ui.label(RichText::new(&self.status).strong());
+            if self.working {
+                ui.label(format!(
+                    "Progress: {} / {}",
+                    self.progress.0, self.progress.1
+                ));
+            }
+        });
+
+        if self.working {
+            ui.add(
+                egui::ProgressBar::new(self.progress.0 / self.progress.1)
+                    // .text("progress")
+                    .desired_height(4.0),
+            );
+        } else {
+            // ui.separator();
+        }
+        empty_line(ui);
+    }
 }
 
 #[derive(Clone)]
@@ -405,6 +448,9 @@ pub struct Database {
     pub size: usize,
     pub columns: Vec<String>,
     pub file_extensions: Vec<String>,
+    //     pub tx: Option<mpsc::Sender<Database>>,
+
+    //     pub rx: Option<mpsc::Receiver<Database>>,
 }
 
 impl Database {
@@ -433,6 +479,19 @@ impl Database {
     //         .await
     //         .expect("Pool did not open")
     // }
+
+    pub async fn get_extensions(&mut self, tx: Option<mpsc::Sender<Vec<String>>>) {
+        let pool = self.pool.clone();
+        if let Some(tx) = tx.clone() {
+            let _handle = tokio::spawn(async move {
+                let results = get_audio_file_types(&pool).await;
+
+                if (tx.send(results.expect("Tokio Results Error HashSet")).await).is_err() {
+                    eprintln!("Failed to send db while gathering extensions");
+                }
+            });
+        }
+    }
 }
 
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
@@ -450,6 +509,7 @@ pub enum ProgressMessage {
 #[derive(PartialEq, serde::Serialize, Deserialize, Clone, Copy)]
 pub enum Panel {
     Duplicates,
+    NewDuplicates,
     Order,
     Tags,
     Find,
@@ -469,8 +529,8 @@ pub enum OrderOperator {
     IsNotEmpty,
 }
 
-impl OrderOperator {
-    pub fn as_str(&self) -> &'static str {
+impl EnumComboBox for OrderOperator {
+    fn as_str(&self) -> &'static str {
         match self {
             OrderOperator::Largest => "Largest",
             OrderOperator::Smallest => "Smallest",
@@ -483,7 +543,7 @@ impl OrderOperator {
         }
     }
 
-    pub fn variants() -> &'static [OrderOperator] {
+    fn variants() -> &'static [OrderOperator] {
         &[
             OrderOperator::Largest,
             OrderOperator::Smallest,
@@ -509,23 +569,25 @@ pub fn extract_sql(logics: Vec<PreservationLogic>) -> Vec<String> {
     logics.iter().map(|logic| logic.sql.clone()).collect()
 }
 
-#[derive(PartialEq, serde::Serialize, Deserialize, Clone, Copy)]
+#[derive(PartialEq, serde::Serialize, Deserialize, Clone, Copy, Default)]
 pub enum Delete {
+    #[default]
     Trash,
     Permanent,
 }
 
-impl Delete {
-    pub fn as_str(&self) -> &'static str {
+impl EnumComboBox for Delete {
+    fn as_str(&self) -> &'static str {
         match self {
             Delete::Trash => "Move to Trash",
             Delete::Permanent => "Permanently Delete",
         }
     }
-    pub fn variants() -> &'static [Delete] {
+    fn variants() -> &'static [Delete] {
         &[Delete::Trash, Delete::Permanent]
     }
-
+}
+impl Delete {
     pub fn delete_files(&self, files: HashSet<&str>) -> Result<(), Box<dyn std::error::Error>> {
         println!("Removing Files");
 

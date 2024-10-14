@@ -49,6 +49,17 @@ where
 //     }
 // }
 
+pub fn red_text(text: &str) -> RichText {
+    RichText::new(text)
+        .color(egui::Color32::from_rgb(255, 0, 0))
+        .strong()
+}
+pub fn light_red_text(text: &str) -> RichText {
+    RichText::new(text)
+        .color(egui::Color32::from_rgb(255, 100, 100))
+        .strong()
+}
+
 // pub fn enabled_text(text: &str, enabled: &bool) -> RichText {
 //     if *enabled {
 //         RichText::new(text)
@@ -79,6 +90,26 @@ pub fn combo_box(ui: &mut Ui, label: &str, selected: &mut String, list: &Vec<Str
         .show_ui(ui, |ui| {
             for item in list {
                 ui.selectable_value(selected, item.clone(), item);
+            }
+        });
+}
+
+pub trait EnumComboBox {
+    fn as_str(&self) -> &'static str;
+    fn variants() -> &'static [Self]
+    where
+        Self: Sized;
+}
+
+pub fn enum_combo_box<T>(ui: &mut egui::Ui, selected_variant: &mut T)
+where
+    T: EnumComboBox + PartialEq + Copy + 'static, // Ensure T implements EnumComboBox, PartialEq, Copy, and is 'static
+{
+    egui::ComboBox::from_id_salt("variants")
+        .selected_text(selected_variant.as_str())
+        .show_ui(ui, |ui| {
+            for variant in T::variants() {
+                ui.selectable_value(selected_variant, *variant, variant.as_str());
             }
         });
 }
