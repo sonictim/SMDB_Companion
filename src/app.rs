@@ -11,6 +11,196 @@ use std::fs::{self};
 use tokio::sync::mpsc;
 
 
+#[derive(serde::Deserialize, serde::Serialize, Default)]
+#[serde(default)]
+pub struct FindPanel {
+    pub column: String,
+    pub find: String,
+    pub find_buf: String,
+    pub replace: String,
+    pub replace_buf: String,
+    pub search_replace_path: bool,
+    pub dirty: bool,
+    pub case_sensitive: bool,
+    #[serde(skip)]
+    pub find_io: AsyncTunnel<usize>,
+
+    #[serde(skip)]
+    pub replace_safety: bool,
+    #[serde(skip)]
+    pub count: usize,
+}
+
+impl FindPanel {
+    fn render(&mut self, ui: &mut egui::Ui, db: &Option<Database>, registered: Option<bool>) {
+        if let Some(db) = db {
+            if db.size == 0 {
+                ui.heading("No Records in Database");
+                return;
+            }
+            ui.heading(RichText::new("Find and Replace").strong());
+        
+            empty_line(ui);
+            ui.horizontal(|ui| {
+                // ui.add_space(68.0);
+                let mut text = RichText::new("Case Sensitive").size(14.0);
+                if self.case_sensitive {text = text.color(egui::Color32::from_rgb(255, 0, 0)).strong()}
+                ui.checkbox(&mut self.case_sensitive, text);
+            });
+            empty_line(ui);
+            // ui.separator();
+            ui.horizontal(|ui| {
+                ui.label("Find Text: ");
+                ui.text_edit_singleline(&mut self.find);
+            });
+            ui.horizontal(|ui| {
+                ui.label("Replace: ");
+                ui.add_space(8.0);
+                ui.text_edit_singleline(&mut self.replace);
+            });
+            ui.horizontal(|ui| {
+                ui.label("in Column: ");
+                ui.radio_value(&mut self.search_replace_path, true, "FilePath");
+                ui.radio_value(&mut self.search_replace_path, false, "Other");
+                let filtered_columns: Vec<_> = db
+                    .columns
+                    .iter()
+                    .filter(|col| {
+                        col.as_str() != "FilePath"
+                            && col.as_str() != "Pathname"
+                            && col.as_str() != "Filename"
+                    })
+                    .collect();
+                egui::ComboBox::from_id_salt("find_column")
+                    .selected_text(&self.column)
+                    .show_ui(ui, |ui| {
+                        for item in filtered_columns {
+                            ui.selectable_value(&mut self.column, item.clone(), item);
+                        }
+                    });
+               
+            });
+            empty_line(ui);
+            ui.separator();
+            empty_line(ui);
+            if !self.search_replace_path {
+                ui.checkbox(&mut self.dirty, "Mark Records as Dirty?");
+                ui.label("Dirty Records are audio files with metadata that is not embedded");
+                empty_line(ui);
+                ui.separator();
+                empty_line(ui);
+            }
+
+            if self.find.is_empty() {
+                return;
+            }
+            if ui
+                .button(RichText::new("Find Records").size(16.0))
+                .clicked()
+            {
+               
+                self.replace_safety = true;
+                if self.search_replace_path {
+                    self.column = "FilePath".to_string()
+                }
+                let tx = self.find_io.tx.clone();
+                let Some(pool) = db.pool.clone() else {return};
+                let mut find = self.find.clone();
+                let mut column = self.column.clone();
+                let case_sensitive = self.case_sensitive;
+                tokio::spawn(async move {
+                    println!("Inside Find Async");
+                    let count = smreplace_get(&pool, &mut find, &mut column, case_sensitive)
+                        .await
+                        .unwrap();
+                    let _ = tx.send(count).await;
+                });
+            }
+            empty_line(ui);
+
+            if let Ok(count) = self.find_io.rx.try_recv() {
+                self.count = count;
+            }
+
+           
+            if self.find != self.find_buf || self.replace != self.replace_buf {
+                self.replace_safety = false;
+                self.find_buf = self.find.clone();
+                self.replace_buf = self.replace.clone();
+            }
+            if self.replace_safety {
+                ui.label(
+                    RichText::new(format!(
+                        "Found {} records matching '{}' in {} of SM database: {}",
+                        self.count, self.find, self.column, db.name
+                    ))
+                    .strong(),
+                );
+                if self.count == 0 {
+                    return;
+                }
+
+                if registered == Some(false) {
+                    ui.label(
+                        RichText::new(
+                            "\nUNREGISTERED!\nPlease Register to Continue with Replacement",
+                        )
+                        .strong(),
+                    );
+                    return;
+                }
+                ui.label(format!("Replace with \"{}\" ?", self.replace));
+                ui.horizontal(|ui| {
+                    ui.label("This is");
+                    ui.label(RichText::new("NOT").strong());
+                    ui.label("undoable");
+                });
+                if self.search_replace_path {
+                    ui.label("This does not alter your file system.");
+                }
+                ui.separator();
+                ui.horizontal(|ui| {
+                    if ui
+                        .button(RichText::new("Replace Records").size(16.0))
+                        .clicked()
+                    {
+                        // let tx = self.find_tx.clone().expect("tx channel exists");
+                        let Some(pool) = db.pool.clone() else {return;};
+                        let mut find = self.find.clone();
+                        let mut replace = self.replace.clone();
+                        let mut column = self.column.clone();
+                        let dirty = self.dirty;
+                        let filepath = self.search_replace_path;
+                        let case_sensitive = self.case_sensitive;
+                        tokio::spawn(async move {
+                            smreplace_process(
+                                &pool,
+                                &mut find,
+                                &mut replace,
+                                &mut column,
+                                dirty,
+                                filepath,
+                                case_sensitive,
+                            )
+                            .await;
+                        });
+                        self.replace_safety = false;
+                    }
+                    if ui.button(RichText::new("Cancel").size(16.0)).clicked() {
+                        self.count = 0;
+                        self.replace_safety = false;
+                    }
+                });
+            } else if self.count > 0 && registered == Some(true) {
+                ui.label(format!("{} records replaced", self.count));
+            }
+        } else {
+            ui.heading(RichText::new("No Open Database").weak());
+        }
+    }
+}
+
+
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize,)]
@@ -22,8 +212,8 @@ pub struct App {
     cdb_io: AsyncTunnel<Database>,
     #[serde(skip)]
     find_io: AsyncTunnel<usize>,
-    #[serde(skip)]
-    replace_io: AsyncTunnel<HashSet<FileRecord>>,
+    // #[serde(skip)]
+    // replace_io: AsyncTunnel<HashSet<FileRecord>>,
     #[serde(skip)]
     extensions_io: AsyncTunnel<Vec<String>>,
     #[serde(skip)]
@@ -60,6 +250,7 @@ pub struct App {
     delete_action: Delete,
     #[serde(skip)]
     my_panel: Panel,
+    find_panel: FindPanel,
     // duplicates_panel: DupePanel,
     order_panel: OrderPanel,
     tags_panel: TagsPanel,
@@ -96,7 +287,7 @@ impl Default for App {
             db_io: AsyncTunnel::new(1),
             cdb_io: AsyncTunnel::new(1),
             find_io: AsyncTunnel::new(1),
-            replace_io: AsyncTunnel::new(1),
+            // replace_io: AsyncTunnel::new(1),
             extensions_io: AsyncTunnel::new(1),
             gathering_extensions: false,
             db: None,
@@ -127,6 +318,7 @@ impl Default for App {
             remove_files: false,
             delete_action: Delete::Trash,
             my_panel: Panel::Duplicates,
+            find_panel: FindPanel::default(),
             // duplicates_panel: DupePanel::default(),
             tags_panel: TagsPanel::default(),
             order_panel: OrderPanel::default(),
@@ -392,11 +584,13 @@ impl eframe::App for App {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 match self.my_panel {
                     Panel::Find => {
-                        self.find_panel(ui);
+                        // self.find_panel(ui);
+                        self.find_panel.render(ui, &self.db, self.registered.valid);
                     }
 
                     Panel::Duplicates => {
                         self.duplictes_panel(ui);
+                        
                     }
 
                     Panel::NewDuplicates => {
@@ -1286,6 +1480,8 @@ pub async fn remove_duplicates_go(
     }
     Ok(records)
 }
+
+
 
 
 

@@ -47,6 +47,12 @@ pub struct AsyncTunnel<T> {
     pub rx: mpsc::Receiver<T>,
 }
 
+impl<T> Default for AsyncTunnel<T> {
+    fn default() -> Self {
+        AsyncTunnel::new(1)
+    }
+}
+
 impl<T> AsyncTunnel<T> {
     // Make `new` an associated function, and use `Self` for the return type
     pub fn new(channels: usize) -> AsyncTunnel<T> {
