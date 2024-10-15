@@ -505,13 +505,13 @@ impl App {
             }
     
             add_tab_button(ui, &mut self.my_panel, Panel::Find, "Find & Replace", size_big, size_small, column_width);
-            if ui.input(|i| i.modifiers.alt) {
+            // if ui.input(|i| i.modifiers.alt) {
 
-                add_tab_button(ui, &mut self.my_panel, Panel::NewDuplicates, "Search for Duplicates2", size_big, size_small, column_width);
-            } else {
+            //     add_tab_button(ui, &mut self.my_panel, Panel::NewDuplicates, "Search for Duplicates2", size_big, size_small, column_width);
+            // } else {
 
                 add_tab_button(ui, &mut self.my_panel, Panel::Duplicates, "Search for Duplicates", size_big, size_small, column_width);
-            }
+            // }
             add_tab_button(ui, &mut self.my_panel, Panel::Order, "Preservation Priority", size_big, size_small, column_width);
             add_tab_button(ui, &mut self.my_panel, Panel::Tags, "Tag Editor", size_big, size_small, column_width);
         });
@@ -1457,10 +1457,6 @@ impl OrderPanel {
             }
         }
 
-        // if ui.input(|i| i.modifiers.alt) && ui.button("Text Editor").clicked() {
-        //     self.order_text = extract_sql(self.order.clone()).join("\n");
-        //     self.my_panel = Panel::OrderText;
-        // }
 
     });
 
