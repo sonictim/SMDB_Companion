@@ -38,23 +38,20 @@ impl Registration {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Default)]
+#[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)]
 pub struct AsyncTunnel<T> {
     #[serde(skip)]
-    pub tx: Option<mpsc::Sender<T>>,
+    pub tx: mpsc::Sender<T>,
     #[serde(skip)]
-    pub rx: Option<mpsc::Receiver<T>>,
+    pub rx: mpsc::Receiver<T>,
 }
 
 impl<T> AsyncTunnel<T> {
     // Make `new` an associated function, and use `Self` for the return type
     pub fn new(channels: usize) -> AsyncTunnel<T> {
         let (tx, rx) = mpsc::channel(channels);
-        AsyncTunnel {
-            tx: Some(tx),
-            rx: Some(rx),
-        }
+        AsyncTunnel { tx, rx }
     }
 
     // You might want to add methods to send and receive messages
@@ -268,7 +265,7 @@ impl<T> AsyncTunnel<T> {
 #[serde(default)]
 
 pub struct NodeConfig {
-    pub search: bool,
+    pub enabled: bool,
     pub list: Vec<String>,
     pub selected: String,
     #[serde(skip)]
@@ -293,7 +290,7 @@ pub struct NodeConfig {
 impl Clone for NodeConfig {
     fn clone(&self) -> Self {
         NodeConfig {
-            search: self.search,
+            enabled: self.enabled,
             list: self.list.clone(),
             selected: self.selected.clone(),
             status: self.status.clone(),
@@ -310,7 +307,7 @@ impl Clone for NodeConfig {
 impl Default for NodeConfig {
     fn default() -> Self {
         Self {
-            search: false,
+            enabled: false,
             list: Vec::new(),
             selected: String::new(),
             status: String::new(),
@@ -328,7 +325,7 @@ impl Default for NodeConfig {
 impl NodeConfig {
     pub fn new(on: bool) -> Self {
         Self {
-            search: on,
+            enabled: on,
             list: Vec::new(),
             selected: String::new(),
             status: String::new(),
@@ -343,7 +340,7 @@ impl NodeConfig {
     }
     pub fn new_option(on: bool, o: &str) -> Self {
         Self {
-            search: on,
+            enabled: on,
             list: Vec::new(),
             selected: o.to_string(),
             status: String::new(),
@@ -368,48 +365,46 @@ impl NodeConfig {
     }
 
     pub fn receive_hashset(&mut self) -> Option<HashSet<FileRecord>> {
-        if let Some(rx) = self.records_io.rx.as_mut() {
-            if let Ok(records) = rx.try_recv() {
-                self.records = records.clone();
-                self.handle = None;
-                self.working = false;
-                self.progress = (0.0, 0.0);
-                self.status = format! {"Found {} duplicate records", self.records.len()};
-                return Some(records);
-            }
+        let rx = &mut self.records_io.rx;
+        if let Ok(records) = rx.try_recv() {
+            self.records = records.clone();
+            self.handle = None;
+            self.working = false;
+            self.progress = (0.0, 0.0);
+            self.status = format! {"Found {} duplicate records", self.records.len()};
+            return Some(records);
         }
+
         None
     }
     pub fn receive_progress(&mut self) {
-        if let Some(progress_receiver) = &mut self.progress_io.rx {
-            while let Ok(message) = progress_receiver.try_recv() {
-                let ProgressMessage::Update(current, total) = message;
-                self.progress = (current as f32, total as f32);
-            }
+        let progress_receiver = &mut self.progress_io.rx;
+        while let Ok(message) = progress_receiver.try_recv() {
+            let ProgressMessage::Update(current, total) = message;
+            self.progress = (current as f32, total as f32);
         }
     }
     pub fn receive_status(&mut self) {
-        if let Some(status_receiver) = &mut self.status_io.rx {
-            while let Ok(message) = status_receiver.try_recv() {
-                self.status = message;
-            }
+        let status_receiver = &mut self.status_io.rx;
+        while let Ok(message) = status_receiver.try_recv() {
+            self.status = message;
         }
     }
     // pub fn clear_status(&mut self) {
     //     self.status.clear()
     // }
 
-    pub fn render<F>(&mut self, ui: &mut egui::Ui, text: &str, hint: &str, action: Option<F>)
-    where
-        F: FnOnce(),
-    {
-        ui.checkbox(&mut self.search, text)
-            .on_hover_text_at_pointer(hint);
-        if let Some(action) = action {
-            action();
-        }
-        self.progress_bar(ui);
-    }
+    // pub fn render<F>(&mut self, ui: &mut egui::Ui, text: &str, hint: &str, action: Option<F>)
+    // where
+    //     F: FnOnce(),
+    // {
+    //     ui.checkbox(&mut self.enabled, text)
+    //         .on_hover_text_at_pointer(hint);
+    //     if let Some(action) = action {
+    //         action();
+    //     }
+    //     self.progress_bar(ui);
+    // }
 
     pub fn progress_bar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
@@ -440,14 +435,15 @@ impl NodeConfig {
     }
 }
 
-#[derive(Clone)]
+// #[derive(Default)]
 pub struct Database {
     pub path: String,
-    pub pool: SqlitePool,
+    pub pool: Option<SqlitePool>,
     pub name: String,
     pub size: usize,
     pub columns: Vec<String>,
     pub file_extensions: Vec<String>,
+    // pub io: AsyncTunnel<Database>,
     //     pub tx: Option<mpsc::Sender<Database>>,
 
     //     pub rx: Option<mpsc::Receiver<Database>>,
@@ -463,7 +459,7 @@ impl Database {
 
         Self {
             path: db_path.to_string(),
-            pool: db_pool,
+            pool: Some(db_pool),
             name: db_path
                 .split('/')
                 .last()
@@ -472,6 +468,7 @@ impl Database {
             size: db_size,
             columns: db_columns,
             file_extensions: Vec::new(),
+            // io: AsyncTunnel::new(1),
         }
     }
     // pub async fn pool(&self) -> SqlitePool {
@@ -480,17 +477,18 @@ impl Database {
     //         .expect("Pool did not open")
     // }
 
-    pub async fn get_extensions(&mut self, tx: Option<mpsc::Sender<Vec<String>>>) {
-        let pool = self.pool.clone();
-        if let Some(tx) = tx.clone() {
-            let _handle = tokio::spawn(async move {
-                let results = get_audio_file_types(&pool).await;
+    pub fn get_extensions(&mut self, tx: mpsc::Sender<Vec<String>>) {
+        let Some(pool) = self.pool.clone() else {
+            return;
+        };
+        let tx = tx.clone();
+        let _handle = tokio::spawn(async move {
+            let results = get_audio_file_types(&pool).await;
 
-                if (tx.send(results.expect("Tokio Results Error HashSet")).await).is_err() {
-                    eprintln!("Failed to send db while gathering extensions");
-                }
-            });
-        }
+            if (tx.send(results.expect("Tokio Results Error HashSet")).await).is_err() {
+                eprintln!("Failed to send db while gathering extensions");
+            }
+        });
     }
 }
 
@@ -565,9 +563,9 @@ pub struct PreservationLogic {
     pub sql: String,
 }
 
-pub fn extract_sql(logics: Vec<PreservationLogic>) -> Vec<String> {
-    logics.iter().map(|logic| logic.sql.clone()).collect()
-}
+// pub fn extract_sql(logics: &Vec<PreservationLogic>) -> Vec<String> {
+//     logics.iter().map(|logic| logic.sql.clone()).collect()
+// }
 
 #[derive(PartialEq, serde::Serialize, Deserialize, Clone, Copy, Default)]
 pub enum Delete {

@@ -80,7 +80,7 @@ where
     config.working = true;
     config.status = label.to_string();
     // let records = config.records.clone();
-    if let Some(tx) = config.records_io.tx.clone() {
+    let tx = config.records_io.tx.clone();
         // if let Some(sender) = config.progress_sender.clone() {
         // let pool = pool.clone();
 
@@ -96,7 +96,7 @@ where
         });
         config.handle = Some(handle);
         // }
-    }
+    
 }
 
 pub async fn smreplace_get(
@@ -553,13 +553,7 @@ fn extract_filenames_set_from_records(file_records: &HashSet<FileRecord>) -> Has
         .collect()
 }
 
-// use futures::future::join_all;
-// use sqlx::Error;
-// use std::sync::{
-//     atomic::{AtomicUsize, Ordering},
-//     Arc,
-// };
-// use tokio::task::JoinHandle;
+
 
 pub async fn delete_file_records(
     pool: &SqlitePool,

@@ -3,7 +3,7 @@ use eframe::egui::{self, RichText, Ui};
 // use sqlx::sqlite::SqlitePool;
 // use tokio;
 // use tokio::sync::mpsc::Sender;
-use crate::config::*;
+// use crate::config::*;
 
 // A reusable button component that takes a function (callback) to run when clicked
 pub fn button<F>(ui: &mut Ui, label: &str, action: F)
@@ -60,13 +60,13 @@ pub fn light_red_text(text: &str) -> RichText {
         .strong()
 }
 
-// pub fn enabled_text(text: &str, enabled: &bool) -> RichText {
-//     if *enabled {
-//         RichText::new(text)
-//     } else {
-//         RichText::new(text).weak()
-//     }
-// }
+pub fn enabled_text(text: &str, enabled: &bool) -> RichText {
+    if *enabled {
+        RichText::new(text)
+    } else {
+        RichText::new(text).weak()
+    }
+}
 
 // pub fn spawn_db<F>(tx: Sender<Database>, action: F)
 // where
@@ -125,33 +125,33 @@ where
 //     });
 // }
 
-pub fn node_progress_bar(ui: &mut Ui, node: &NodeConfig) {
-    ui.horizontal(|ui| {
-        if node.working {
-            ui.spinner();
-        } else {
-            ui.add_space(24.0)
-        }
-        ui.label(RichText::new(&node.status).strong());
-        if node.working {
-            ui.label(format!(
-                "Progress: {} / {}",
-                node.progress.0, node.progress.1
-            ));
-        }
-    });
+// pub fn node_progress_bar(ui: &mut Ui, node: &NodeConfig) {
+//     ui.horizontal(|ui| {
+//         if node.working {
+//             ui.spinner();
+//         } else {
+//             ui.add_space(24.0)
+//         }
+//         ui.label(RichText::new(&node.status).strong());
+//         if node.working {
+//             ui.label(format!(
+//                 "Progress: {} / {}",
+//                 node.progress.0, node.progress.1
+//             ));
+//         }
+//     });
 
-    if node.working {
-        ui.add(
-            egui::ProgressBar::new(node.progress.0 / node.progress.1)
-                // .text("progress")
-                .desired_height(4.0),
-        );
-    } else {
-        // ui.separator();
-    }
-    empty_line(ui);
-}
+//     if node.working {
+//         ui.add(
+//             egui::ProgressBar::new(node.progress.0 / node.progress.1)
+//                 // .text("progress")
+//                 .desired_height(4.0),
+//         );
+//     } else {
+//         // ui.separator();
+//     }
+//     empty_line(ui);
+// }
 
 pub fn selectable_grid(
     ui: &mut Ui,
