@@ -1,10 +1,12 @@
 use crate::assets::*;
 use crate::config::*;
-// use crate::processing::*;
+use crate::processing::*;
 use eframe::egui::{self, RichText};
 // use egui::accesskit::Node;
 // use egui::Order;
 use rayon::prelude::*;
+use sqlx::Pool;
+use sqlx::SqlitePool;
 // use std::collections::HashSet;
 // use std::fs::{self};
 // use tokio::sync::mpsc;
@@ -154,7 +156,7 @@ impl DupePanel {
                             ui,
                             light_red_text("Search and Remove Duplicates").size(20.0),
                             || {
-                                self.gather_and_remove_duplicates();
+                                self.gather_and_remove_duplicates(&db.pool);
                             },
                         );
                     } else {
@@ -163,7 +165,7 @@ impl DupePanel {
                                 rt_button(
                                     ui,
                                     RichText::new("Search for Duplicates").size(20.0).strong(),
-                                    || self.gather_duplicates(),
+                                    || self.gather_duplicates(&db.pool),
                                 );
                             });
 
@@ -176,7 +178,7 @@ impl DupePanel {
                                     rt_button(
                                         ui,
                                         RichText::new("Remove Duplicates").size(20.0).strong(),
-                                        || self.remove_duplicates(),
+                                        || self.remove_duplicates(&db.pool),
                                     );
                                 });
                             }
@@ -234,15 +236,125 @@ impl DupePanel {
         }
     }
 
-    pub fn receive_async_data(&mut self) {}
+    pub fn receive_async_data(&mut self) {
+        if let Some(records) = self.main.receive_hashset() {
+            self.clear_status();
+            self.main.status = format! {"Removed {} duplicates", records.len()};
+            // self.main.records.clear();
+        }
 
-    pub fn gather_and_remove_duplicates(&mut self) {
-        todo!()
+        if let Some(records) = self.basic.receive_hashset() {
+            self.main.records.extend(records);
+        }
+
+        if let Some(records) = self.deep.receive_hashset() {
+            self.main.records.extend(records);
+        }
+
+        if let Some(records) = self.tags.receive_hashset() {
+            self.main.records.extend(records);
+        }
+
+        if let Some(records) = self.compare.receive_hashset() {
+            self.main.records.extend(records);
+        }
+
+        self.main.receive_progress();
+        self.main.receive_status();
+        self.basic.receive_progress();
+        self.basic.receive_status();
+        self.deep.receive_progress();
+        self.deep.receive_status();
+        self.tags.receive_progress();
+        self.tags.receive_status();
+        self.compare.receive_progress();
+        self.compare.receive_status();
     }
-    pub fn gather_duplicates(&mut self) {
-        todo!()
+
+    pub async fn gather_and_remove_duplicates(&mut self, pool: &SqlitePool) {
+        self.gather_duplicates(pool).await;
+        self.remove_duplicates().await;
     }
-    pub fn remove_duplicates(&mut self) {
+    pub async fn gather_duplicates(&mut self, pool: &SqlitePool) {
+        self.abort_all();
+        self.main.records.clear();
+
+        self.main.status = "Searching for Duplicates".to_string();
+
+        if self.basic.search {
+            if let Some(sender) = self.basic.progress_io.tx.clone() {
+                let pool = pool.clone();
+                let order = extract_sql(self.order_panel.list.clone());
+                // let mut group_sort = None;
+                // if self.basic.search {
+                //     group_sort = Some(self.basic.selected.clone())
+                // }
+                let groups = self.basic.list.clone();
+
+                let group_null = self.match_null;
+                // let duration = self.duration_check;
+                wrap_async(
+                    &mut self.basic,
+                    "Searching For Duplicate Records",
+                    move || {
+                        gather_duplicate_filenames_in_database(
+                            pool, order, groups, group_null, sender,
+                        )
+                    },
+                )
+            }
+        }
+
+        if self.deep.search {
+            if let Some(sender) = self.deep.progress_io.tx.clone() {
+                if let Some(sender2) = self.deep.status_io.tx.clone() {
+                    let pool = pool.clone();
+                    let ignore = self.ignore_filetypes;
+                    wrap_async(
+                        &mut self.deep,
+                        "Searching for Duplicates with similar Filenames",
+                        move || gather_deep_dive_records(pool, sender, sender2, ignore),
+                    )
+                }
+            }
+        }
+
+        if self.tags.search {
+            if let Some(sender) = self.tags.progress_io.tx.clone() {
+                let pool = pool.clone();
+                let tags = self.tags_panel.list.clone();
+                wrap_async(
+                    &mut self.tags,
+                    "Searching for Filenames with Specified Tags",
+                    move || gather_filenames_with_tags(pool, tags, sender),
+                );
+            }
+        }
+
+        if self.compare.search {
+            let Some(cdb) = &self.compare_db else {
+                return;
+            };
+            self.compare.working = true;
+            self.compare.status = format!("Comparing against {}", cdb.name);
+            if self.compare.records_io.tx.is_none() {
+                println!("compare tx is none");
+            }
+            if let Some(tx) = self.compare.records_io.tx.clone() {
+                let p = pool.clone();
+                let c_pool = cdb.pool.clone();
+                let handle = tokio::spawn(async move {
+                    println!("tokio spawn compare");
+                    let results = gather_compare_database_overlaps(&p, &c_pool).await;
+                    if (tx.send(results.expect("error on compare db")).await).is_err() {
+                        eprintln!("Failed to send db");
+                    }
+                });
+                self.compare.handle = Some(handle);
+            }
+        }
+    }
+    pub async fn remove_duplicates(&mut self) {
         todo!()
     }
 
