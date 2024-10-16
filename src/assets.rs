@@ -1,3 +1,5 @@
+// use std::rc::Rc;
+
 use eframe::egui::{self, RichText, Ui};
 // use sqlx::SqlitePool;
 // use sqlx::sqlite::SqlitePool;
@@ -84,6 +86,23 @@ pub fn empty_line(ui: &mut Ui) {
     ui.horizontal(|_| {});
 }
 
+// pub struct ComboBox {
+//     selected: String,
+//     list: Vec<String>,
+// }
+
+// impl ComboBox {
+//     fn render(&mut self, ui: &mut egui::Ui, label: &str) {
+//         egui::ComboBox::from_id_salt(label)
+//             .selected_text(&self.selected)
+//             .show_ui(ui, |ui| {
+//                 for item in &self.list {
+//                     ui.selectable_value(&mut self.selected, item.clone(), item);
+//                 }
+//             });
+//     }
+// }
+
 pub fn combo_box(ui: &mut Ui, label: &str, selected: &mut String, list: &Vec<String>) {
     egui::ComboBox::from_id_salt(label)
         .selected_text(selected.clone())
@@ -152,46 +171,89 @@ where
 //     }
 //     empty_line(ui);
 // }
+#[derive(serde::Deserialize, serde::Serialize, Default)]
+#[serde(default)]
+pub struct SelectableGrid {
+    #[serde(skip)]
+    pub add: String,
+    #[serde(skip)]
+    pub selected: Vec<usize>,
+    pub list: Vec<String>, // Use &str for the list
+}
 
-pub fn selectable_grid(
-    ui: &mut Ui,
-    label: &str,
-    columns: usize,
-    selected: &mut Vec<usize>,
-    list: &mut [String],
-) {
-    egui::Grid::new(label)
-        .num_columns(columns)
-        .spacing([20.0, 8.0])
-        .striped(true)
-        .show(ui, |ui| {
-            for (index, tag) in list.iter_mut().enumerate() {
-                // Check if current index is in `sel_tags`
-                let is_selected = selected.contains(&index);
+impl SelectableGrid {
+    pub fn render(&mut self, ui: &mut egui::Ui, columns: usize, label: &str, border: bool) {
+        if border {
+            self.render_with_border(ui, columns, label);
+        } else {
+            self.render_grid(ui, columns, label);
+        }
+    }
 
-                if ui
-                    .selectable_label(is_selected, RichText::new(tag.clone()).size(14.0))
-                    .clicked()
-                {
-                    if is_selected {
-                        // Deselect
-                        selected.retain(|&i| i != index);
-                    } else {
-                        // Select
-                        selected.push(index);
+    fn render_with_border(&mut self, ui: &mut egui::Ui, columns: usize, label: &str) {
+        egui::Frame::none()
+            .inner_margin(egui::vec2(8.0, 8.0))
+            .show(ui, |ui| {
+                ui.group(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.add_space(2.0);
+                        self.render_grid(ui, columns, label);
+                        ui.add_space(2.0);
+                    });
+                });
+            });
+    }
+
+    fn render_grid(&mut self, ui: &mut egui::Ui, columns: usize, label: &str) {
+        egui::Grid::new(label)
+            .num_columns(columns)
+            .spacing([20.0, 8.0])
+            .striped(true)
+            .show(ui, |ui| {
+                for (index, tag) in self.list.iter_mut().enumerate() {
+                    let is_selected = self.selected.contains(&index);
+
+                    if ui
+                        .selectable_label(is_selected, RichText::new(tag.clone()).size(14.0))
+                        .clicked()
+                    {
+                        if is_selected {
+                            self.selected.retain(|&i| i != index);
+                        } else {
+                            self.selected.push(index);
+                        }
+                    }
+
+                    if (index + 1) % columns == 0 {
+                        ui.end_row();
                     }
                 }
 
-                if (index + 1) % columns == 0 {
-                    ui.end_row(); // Move to the next row after 4 columns
+                if self.list.len() % columns != 0 {
+                    ui.end_row();
                 }
-            }
+            });
+    }
+    pub fn add(&mut self) {
+        if self.add.is_empty() {
+            return;
+        }
+        self.list.push(self.add.clone());
+        self.add.clear();
+        self.list.sort_by_key(|s| s.to_lowercase());
+    }
 
-            // End the last row if not fully filled
-            if list.len() % columns != 0 {
-                ui.end_row();
+    pub fn remove_selected(&mut self) {
+        let mut sorted_indices: Vec<usize> = self.selected.clone();
+        sorted_indices.sort_by(|a, b| b.cmp(a)); // Sort in reverse order
+
+        for index in sorted_indices {
+            if index < self.list.len() {
+                self.list.remove(index);
             }
-        });
+        }
+        self.selected.clear();
+    }
 }
 
 pub fn records_window(

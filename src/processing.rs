@@ -834,6 +834,7 @@ pub fn default_tags() -> Vec<String> {
         "-Z4n2_",
         "-ZXN5_",
     ];
+
     DEFAULT_TAGS_VEC.map(|s| s.to_string()).to_vec()
 }
 
