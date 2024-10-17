@@ -1,11 +1,5 @@
-// use std::rc::Rc;
-
+use crate::processing::open_download_url;
 use eframe::egui::{self, RichText, Ui};
-// use sqlx::SqlitePool;
-// use sqlx::sqlite::SqlitePool;
-// use tokio;
-// use tokio::sync::mpsc::Sender;
-// use crate::config::*;
 
 // A reusable button component that takes a function (callback) to run when clicked
 pub fn button<F>(ui: &mut Ui, label: &str, action: F)
@@ -133,44 +127,6 @@ where
         });
 }
 
-// pub fn node_status_line(ui: &mut Ui, text: &str, working: bool) {
-//     ui.horizontal(|ui| {
-//         if working {
-//             ui.spinner();
-//         } else {
-//             ui.add_space(24.0);
-//         }
-//         ui.label(RichText::new(text).strong());
-//     });
-// }
-
-// pub fn node_progress_bar(ui: &mut Ui, node: &NodeConfig) {
-//     ui.horizontal(|ui| {
-//         if node.working {
-//             ui.spinner();
-//         } else {
-//             ui.add_space(24.0)
-//         }
-//         ui.label(RichText::new(&node.status).strong());
-//         if node.working {
-//             ui.label(format!(
-//                 "Progress: {} / {}",
-//                 node.progress.0, node.progress.1
-//             ));
-//         }
-//     });
-
-//     if node.working {
-//         ui.add(
-//             egui::ProgressBar::new(node.progress.0 / node.progress.1)
-//                 // .text("progress")
-//                 .desired_height(4.0),
-//         );
-//     } else {
-//         // ui.separator();
-//     }
-//     empty_line(ui);
-// }
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 #[serde(default)]
 pub struct SelectableGrid {
@@ -253,6 +209,52 @@ impl SelectableGrid {
             }
         }
         self.selected.clear();
+    }
+}
+
+pub fn update_window(ctx: &egui::Context, open: &mut bool, version: &str, update: bool) {
+    let width = 200.0;
+    let height = 100.0;
+    let mut close_window = false;
+
+    if update {
+        egui::Window::new("Update Available")
+            .open(open) // Control whether the window is open
+            .resizable(false) // Make window non-resizable if you want it fixed
+            .min_width(width)
+            .min_height(height)
+            .max_width(width)
+            .max_height(height)
+            .show(ctx, |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.label(format!("Latest Version is {}", version));
+                    large_button(ui, "Download", || {
+                        open_download_url();
+                        close_window = true; // Set the flag to close the window
+                    });
+                });
+            });
+    } else {
+        egui::Window::new("No Update Available")
+            .open(open) // Control whether the window is open
+            .resizable(false) // Make window non-resizable if you want it fixed
+            .min_width(width)
+            .min_height(height)
+            .max_width(width)
+            .max_height(height)
+            .show(ctx, |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.label(format!("Version {} is the Current Version", version));
+                    // large_button(ui, "Download", || {
+                    //     open_download_url();
+                    //     close_window = true; // Set the flag to close the window
+                    // });
+                });
+            });
+    }
+
+    if close_window {
+        *open = false; // Dereference to set the value outside of the closure
     }
 }
 

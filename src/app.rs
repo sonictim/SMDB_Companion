@@ -25,6 +25,14 @@ pub struct App {
     db_io: AsyncTunnel<Database>,
     #[serde(skip)]
     extensions_io: AsyncTunnel<Vec<String>>,
+    #[serde(skip)]
+    latest_version: String,
+    #[serde(skip)]
+    latest_version_io: AsyncTunnel<String>,
+    #[serde(skip)]
+    update_available: bool,
+    #[serde(skip)]
+    update_window: bool,
     
     
     #[serde(skip)]
@@ -76,6 +84,10 @@ impl Default for App {
             db: None,
             db_io: AsyncTunnel::new(1),
             extensions_io: AsyncTunnel::new(1),
+            latest_version_io: AsyncTunnel::new(1),
+            latest_version: String::new(),
+            update_available: false,
+            update_window: false,
             
             compare_db: None,
             cdb_io: AsyncTunnel::new(1),
@@ -144,6 +156,7 @@ impl App {
         self.db = db;
         self.my_panel = panel;
         self.registration = registration;
+        self.check_for_updates();
        
     }
 
@@ -157,7 +170,7 @@ impl App {
         self.tags_panel.grid.list = tjf_tags();
         self.deep.enabled = true;
         self.tags.enabled = true;
-        self.dupes_db = true;
+        self.dupes_db = false;
         self.ignore_extension = true;
         self.match_criteria.list = vec!("Filename".to_owned());
   
@@ -213,6 +226,8 @@ impl App {
         self.compare.receive_progress();
         self.compare.receive_status();
 
+
+
         if let Ok(db) = self.db_io.rx.try_recv() {
             self.db = Some(db);
         }      
@@ -235,19 +250,64 @@ impl App {
         }    
         if let Some(records) = self.basic.receive_hashset() {
             self.main.records.extend(records);
+            self.update_main_status();
         }   
         if let Some(records) = self.deep.receive_hashset() {
             self.main.records.extend(records);
+            self.update_main_status();
         }    
         if let Some(records) = self.tags.receive_hashset() {
             self.main.records.extend(records);
+            self.update_main_status();
         }    
         if let Some(records) = self.compare.receive_hashset() {
             self.main.records.extend(records);
+            self.update_main_status();
+        }
+
+        if let Ok(version) = self.latest_version_io.rx.try_recv() {
+            self.latest_version = version;
+            self.update_window = true;
+            if self.latest_version == env!("CARGO_PKG_VERSION") 
+            {
+                println!("No Update Needed");
+                self.update_available = false;
+            }
+            else {
+                println!("Update Recommended");
+                self.update_available = true;
+            }
         }
     
   
     
+    }
+    fn update_main_status(&mut self) {
+        // if self.handles_active() { return }
+
+        if self.main.records.is_empty() {self.main.status = "No Records Marked for Removal".to_string()}
+        else {
+            self.main.status = format!(
+                "{} total records marked for removal",
+                self.main.records.len()
+            );
+
+        }      
+    }
+
+    pub fn check_for_updates(&mut self) {
+        let tx = self.latest_version_io.tx.clone();
+        tokio::spawn(async move {
+            println!("Inside Async Task - checking version");
+    
+            let results = fetch_latest_version().await;
+            if (tx.send(results.expect("Tokio Results Error HashSet")).await).is_err() {
+                eprintln!("Failed to send db");
+            }
+            
+    
+    
+        });
     }
 
 }
@@ -264,6 +324,7 @@ impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         if self.registration.valid.is_none() {
             self.registration.validate();
+            self.check_for_updates();
         }
 
         self.receive_async_data();
@@ -340,10 +401,13 @@ impl eframe::App for App {
                         }
                     }
                     ui.separator();
+                    if ui.button("Check For Update").clicked() {
+                        ui.close_menu();
+                        self.check_for_updates();
+                    }
                     if ui.button("Open Download URL").clicked() {
                         ui.close_menu();
-                        let url = r#"https://drive.google.com/open?id=1qdGqoUMqq_xCrbA6IxUTYliZUmd3Tn3i&usp=drive_fs"#;
-                        let _ = webbrowser::open(url).is_ok();
+                        open_download_url();
                     }
                     ui.separator();
                     if ui.button("Quit").clicked() {
@@ -368,8 +432,6 @@ impl eframe::App for App {
         // The central panel the region left after adding TopPanel's and SidePanel's
 
         egui::CentralPanel::default().show(ctx, |ui| {
-
-
             
             if let Some(db) = &self.db {
                 empty_line(ui);
@@ -436,11 +498,9 @@ impl eframe::App for App {
                 }
                 empty_line(ui);
             });
-
-            if self.records_window {
-                records_window(ctx, &self.marked_records, &mut self.records_window, &mut self.scroll_to_top);
-
-            }
+            records_window(ctx, &self.marked_records, &mut self.records_window, &mut self.scroll_to_top);
+            // update_window(ctx, &mut self.update_window, &self.latest_version, self.update_available);
+            
         });
 
         let id2 = egui::Id::new("bottom panel registration");
@@ -471,7 +531,17 @@ impl eframe::App for App {
             .anchor(egui::Align2::RIGHT_BOTTOM, egui::vec2(0.0, 0.0)) // Pin to bottom-right
             .show(ctx, |ui| {
                 let version_text = format!("Version: {}    ", env!("CARGO_PKG_VERSION"));
-                ui.label(RichText::new(version_text).weak());
+                ui.horizontal(|ui|{
+                    if self.update_available {
+                        ui.label(red_text("Update Available"));
+                        if ui.selectable_label(false, "Download").clicked() {
+                            open_download_url();
+                        }
+                    }
+                    // ui.label("test");
+                    ui.label(RichText::new(version_text).weak());
+
+                });
             });
     }
     
@@ -654,13 +724,25 @@ impl App {
 
 
         //TAGS TAGS TAGS TAGS
-        ui.checkbox(&mut self.tags.enabled,"Search for Records with AudioSuite Tags in Filename",)
+        let enabled = !self.tags_panel.grid.list.is_empty();
+        let text = enabled_text("Search for Records with AudioSuite Tags in Filename", &enabled);
+        ui.checkbox(&mut self.tags.enabled,text,)
             .on_hover_text_at_pointer("Filenames with Common Protools AudioSuite Tags will be marked for removal");
+       
+        if enabled {
+            ui.horizontal(|ui| {
+                ui.add_space(24.0);
+                if ui.button("Edit Tags List").clicked() {self.my_panel=Panel::Tags}
+            });
 
-        ui.horizontal(|ui| {
-            ui.add_space(44.0);
-            if ui.button("Edit Tags").clicked() {self.my_panel=Panel::Tags}
-        });
+        } else {
+            self.tags.enabled = false;
+            ui.horizontal(|ui| {
+                ui.add_space(24.0);
+                if ui.button("Add Tags to Enable").clicked() {self.my_panel=Panel::Tags}
+            });
+
+        }
         self.tags.progress_bar(ui);
         
 
@@ -716,16 +798,11 @@ impl App {
                             column[0].horizontal(|ui| {
                                 rt_button(ui, RichText::new("Search for Duplicates").size(20.0).strong(), || self.gather_duplicates());
                             });
-                            if !self.main.records.is_empty() && !self.handles_active() {
-                                self.main.status = format!(
-                                    "{} total records marked for removal",
-                                    self.main.records.len()
-                                );
+                            if !self.handles_active() && !self.main.records.is_empty() {
                                 column[1].horizontal(|ui|{
-                                    rt_button(ui, RichText::new("Remove Duplicates").size(20.0).strong(), || self.remove_duplicates());
+                                    rt_button(ui, light_red_text("Remove Duplicates").size(20.0).strong(), || self.remove_duplicates());
                                 });
                             }
-                            else {self.main.status = "No Records Marked for Removal".to_string();}
                         });
                     }
                 }
@@ -1321,7 +1398,10 @@ impl TagsPanel {
         ui.separator();
         egui::ScrollArea::vertical().show(ui, |ui| {
             self.grid.render(ui, 6, "tags editor", false);
-            ui.separator();
+            if !self.grid.list.is_empty() {
+                ui.separator();
+
+            }
             empty_line(ui);
             ui.horizontal(|ui| {
                 if ui.button("Add Tag:").clicked() {
@@ -1330,7 +1410,7 @@ impl TagsPanel {
                 }
                 ui.text_edit_singleline(&mut self.grid.add);
             });
-            if ui.button("Remove Selected Tags").clicked() {
+            if !self.grid.list.is_empty() && ui.button("Remove Selected Tags").clicked() {
                 self.grid.remove_selected();
             }
         });

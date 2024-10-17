@@ -1,26 +1,21 @@
 #![allow(non_snake_case)]
+use crate::config::*;
 use rfd::FileDialog;
-// use sqlx::Sqlite;
+use tokio::sync::mpsc;
 use sqlx::{sqlite::SqlitePool, Row};
 use std::collections::{HashMap, HashSet};
 use std::result::Result;
-
-// use futures::future::join_all;
 use dirs::home_dir;
 use futures::stream::{self, StreamExt};
 use rayon::prelude::*;
 use std::path::Path;
-// use std::sync::atomic::{AtomicUsize, Ordering};
-// use std::sync::Arc;
-use tokio::sync::mpsc;
-
-use crate::config::*;
-// use hex;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use sha2::{Digest, Sha256};
-
 use clipboard::{ClipboardContext, ClipboardProvider};
+// use std::fs;
+use reqwest::Client;
+use std::error::Error;
 
 pub fn generate_license_key(username: &str, email: &str) -> String {
     let salt = "Valhalla Delay";
@@ -30,15 +25,36 @@ pub fn generate_license_key(username: &str, email: &str) -> String {
     hex::encode_upper(hash)
 }
 
-
-
-
 pub fn copy_to_clipboard(text: String) {
     let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
 
     ctx.set_contents(text).unwrap();
 
 }
+
+
+pub async fn fetch_latest_version() -> Result<String, Box<dyn Error>> {
+    let file_id = "1C8jyVjkMgeglYK-FnmTuoRqwf5Nd6PGG";
+    let download_url = format!("https://drive.google.com/uc?export=download&id={}", file_id);
+    let client = Client::new();
+
+    let response = client.get(&download_url).send().await?;
+
+    if response.status().is_success() {
+        let content = response.text().await?;
+        Ok(content.trim().to_string())
+    } else {
+        Err(format!("Failed to retrieve the file: {}", response.status()).into())
+    }
+}
+
+pub fn open_download_url() {
+    let url = r#"https://drive.google.com/open?id=1qdGqoUMqq_xCrbA6IxUTYliZUmd3Tn3i&usp=drive_fs"#;
+    let _ = webbrowser::open(url).is_ok();
+}
+
+
+
 
 static FILENAME_REGEX: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^(?P<base>.+?)(?:\.(?:\d+|M))*$").unwrap());
