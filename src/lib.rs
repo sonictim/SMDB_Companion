@@ -4,4 +4,6 @@
 mod app;
 pub use app::App;
 mod assets;
+mod config;
+// mod dupe_panel;
 mod processing;

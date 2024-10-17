@@ -1,23 +1,21 @@
 #![allow(non_snake_case)]
+use crate::config::*;
 use rfd::FileDialog;
-// use sqlx::Sqlite;
+use tokio::sync::mpsc;
 use sqlx::{sqlite::SqlitePool, Row};
 use std::collections::{HashMap, HashSet};
 use std::result::Result;
-
-// use futures::future::join_all;
+use dirs::home_dir;
 use futures::stream::{self, StreamExt};
 use rayon::prelude::*;
 use std::path::Path;
-// use std::sync::atomic::{AtomicUsize, Ordering};
-// use std::sync::Arc;
-use tokio::sync::mpsc;
-
-use crate::app::*;
-// use hex;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use sha2::{Digest, Sha256};
+use clipboard::{ClipboardContext, ClipboardProvider};
+// use std::fs;
+use reqwest::Client;
+use std::error::Error;
 
 pub fn generate_license_key(username: &str, email: &str) -> String {
     let salt = "Valhalla Delay";
@@ -26,6 +24,37 @@ pub fn generate_license_key(username: &str, email: &str) -> String {
     let hash = hasher.finalize();
     hex::encode_upper(hash)
 }
+
+pub fn copy_to_clipboard(text: String) {
+    let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
+
+    ctx.set_contents(text).unwrap();
+
+}
+
+
+pub async fn fetch_latest_version() -> Result<String, Box<dyn Error>> {
+    let file_id = "1C8jyVjkMgeglYK-FnmTuoRqwf5Nd6PGG";
+    let download_url = format!("https://drive.google.com/uc?export=download&id={}", file_id);
+    let client = Client::new();
+
+    let response = client.get(&download_url).send().await?;
+
+    if response.status().is_success() {
+        let content = response.text().await?;
+        Ok(content.trim().to_string())
+    } else {
+        Err(format!("Failed to retrieve the file: {}", response.status()).into())
+    }
+}
+
+pub fn open_download_url() {
+    let url = r#"https://drive.google.com/open?id=1qdGqoUMqq_xCrbA6IxUTYliZUmd3Tn3i&usp=drive_fs"#;
+    let _ = webbrowser::open(url).is_ok();
+}
+
+
+
 
 static FILENAME_REGEX: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^(?P<base>.+?)(?:\.(?:\d+|M))*$").unwrap());
@@ -58,7 +87,7 @@ fn get_root_filename(filename: &str, ignore_extension: bool) -> Option<String> {
 const TABLE: &str = "justinmetadata";
 
 // pub fn wrap_async<F, T>(pool: &SqlitePool, config: &mut Config, label: &str, action: F)
-pub fn wrap_async<F, T>(config: &mut Config, label: &str, action: F)
+pub fn wrap_async<F, T>(config: &mut NodeConfig, label: &str, action: F)
 where
     // F: FnOnce(&SqlitePool, mpsc::Sender<ProgressMessage>) -> T + Send + 'static,
     F: FnOnce() -> T + Send + 'static,
@@ -67,7 +96,7 @@ where
     config.working = true;
     config.status = label.to_string();
     // let records = config.records.clone();
-    if let Some(tx) = config.records_io.tx.clone() {
+    let tx = config.records_io.tx.clone();
         // if let Some(sender) = config.progress_sender.clone() {
         // let pool = pool.clone();
 
@@ -83,7 +112,7 @@ where
         });
         config.handle = Some(handle);
         // }
-    }
+    
 }
 
 pub async fn smreplace_get(
@@ -148,47 +177,116 @@ pub async fn smreplace_process(
     }
 }
 
+// // OLD VERSION
+
+// pub async fn gather_duplicate_filenames_in_database(
+//     pool: SqlitePool,
+//     order: Vec<String>,
+//     group_sort: Option<String>,
+//     group_null: bool,
+//     duration: bool, // New option for duration-based grouping
+// ) -> Result<HashSet<FileRecord>, sqlx::Error> {
+//     let verbose = true;
+//     let mut file_records = HashSet::new();
+
+//     // Construct the ORDER BY clause dynamically
+//     let order_clause = order.join(", ");
+
+//     // Build the SQL query based on whether a group_sort is provided
+//     let (partition_by, where_clause) = match group_sort {
+//         Some(group) => {
+//             if verbose {
+//                 println!("Grouping duplicate record search by {}", group);
+//             }
+//             let where_clause = if group_null {
+//                 String::new()
+//             } else {
+//                 format!("WHERE {group} IS NOT NULL AND {group} != ''")
+//             };
+//             // If duration is true, partition by both group, filename, and duration
+//             let partition_by = if duration {
+//                 format!("{}, filename, duration", group)
+//             } else {
+//                 format!("{}, filename", group)
+//             };
+//             (partition_by, where_clause)
+//         }
+//         None => {
+//             // If duration is true, partition by filename and duration
+//             let partition_by = if duration {
+//                 "filename, duration".to_string()
+//             } else {
+//                 "filename".to_string()
+//             };
+//             (partition_by, String::new())
+//         }
+//     };
+
+//     let sql = format!(
+//         "
+//         WITH ranked AS (
+//             SELECT
+//                 rowid AS id,
+//                 filename,
+//                 duration,
+//                 filepath,
+//                 ROW_NUMBER() OVER (
+//                     PARTITION BY {}
+//                     ORDER BY {}
+//                 ) as rn
+//             FROM {}
+//             {}
+//         )
+//         SELECT id, filename, duration, filepath FROM ranked WHERE rn > 1
+//         ",
+//         partition_by, order_clause, TABLE, where_clause
+//     );
+
+//     // Execute the query and fetch the results
+//     let rows = sqlx::query(&sql).fetch_all(&pool).await?;
+
+//     // Iterate through the rows and insert them into the hashset
+//     for row in rows {
+//         let id: u32 = row.get(0);
+//         let file_record = FileRecord {
+//             id: id as usize,
+//             filename: row.get(1),
+//             duration: row.try_get(2).unwrap_or("".to_string()), // Handle possible NULL in duration
+//             path: row.get(3),
+//         };
+//         file_records.insert(file_record);
+//     }
+
+//     if verbose {
+//         println!(
+//             "Marked {} duplicate records for deletion.",
+//             file_records.len()
+//         );
+//     }
+
+//     Ok(file_records)
+// }
+
 pub async fn gather_duplicate_filenames_in_database(
     pool: SqlitePool,
     order: Vec<String>,
-    group_sort: Option<String>,
+    groups: Vec<String>,
     group_null: bool,
-    duration: bool, // New option for duration-based grouping
+    progress_sender: mpsc::Sender<ProgressMessage>,
 ) -> Result<HashSet<FileRecord>, sqlx::Error> {
-    let verbose = true;
     let mut file_records = HashSet::new();
 
     // Construct the ORDER BY clause dynamically
     let order_clause = order.join(", ");
-
-    // Build the SQL query based on whether a group_sort is provided
-    let (partition_by, where_clause) = match group_sort {
-        Some(group) => {
-            if verbose {
-                println!("Grouping duplicate record search by {}", group);
-            }
-            let where_clause = if group_null {
-                String::new()
-            } else {
-                format!("WHERE {group} IS NOT NULL AND {group} != ''")
-            };
-            // If duration is true, partition by both group, filename, and duration
-            let partition_by = if duration {
-                format!("{}, filename, duration", group)
-            } else {
-                format!("{}, filename", group)
-            };
-            (partition_by, where_clause)
-        }
-        None => {
-            // If duration is true, partition by filename and duration
-            let partition_by = if duration {
-                "filename, duration".to_string()
-            } else {
-                "filename".to_string()
-            };
-            (partition_by, String::new())
-        }
+    let partition_by_clause = groups.join(", ");
+    let where_clause = if group_null || groups.is_empty() {
+        String::new()
+    } else {
+        let non_null_conditions: Vec<String> = groups
+            .iter()
+            .map(|group| format!("{group} IS NOT NULL AND {group} !=''"))
+            .collect();
+        format!("WHERE {}", non_null_conditions.join(" AND "))
     };
 
     let sql = format!(
@@ -208,11 +306,18 @@ pub async fn gather_duplicate_filenames_in_database(
         )
         SELECT id, filename, duration, filepath FROM ranked WHERE rn > 1
         ",
-        partition_by, order_clause, TABLE, where_clause
+        partition_by_clause, order_clause, TABLE, where_clause
     );
+    // let _ = progress_sender.send(ProgressMessage::Update(1,2)).await;
+    
+    // file_records = fetch_filerecords_from_database(&pool, &sql).await?;
+    // let _ = progress_sender.send(ProgressMessage::Update(2,2)).await;
 
     // Execute the query and fetch the results
     let rows = sqlx::query(&sql).fetch_all(&pool).await?;
+
+    let total = rows.len();
+    let mut counter = 0;
 
     // Iterate through the rows and insert them into the hashset
     for row in rows {
@@ -224,17 +329,21 @@ pub async fn gather_duplicate_filenames_in_database(
             path: row.get(3),
         };
         file_records.insert(file_record);
-    }
+        counter += 1;
 
-    if verbose {
-        println!(
-            "Marked {} duplicate records for deletion.",
-            file_records.len()
-        );
+        // Send progress updates every 100 rows
+        if counter % 100 == 0 {
+            let _ = progress_sender
+                .send(ProgressMessage::Update(counter, total))
+                .await;
+        }
     }
 
     Ok(file_records)
 }
+
+
+
 
 pub async fn gather_deep_dive_records(
     pool: SqlitePool,
@@ -335,21 +444,36 @@ pub async fn gather_deep_dive_records(
 pub async fn gather_filenames_with_tags(
     pool: SqlitePool,
     tags: Vec<String>,
+    progress_sender: mpsc::Sender<ProgressMessage>,
 ) -> Result<HashSet<FileRecord>, sqlx::Error> {
+    let total = tags.len();
+    // let mut counter = 1;
     let mut file_records = HashSet::new();
     let max_concurrency = 10; // Adjust based on your system's capacity and connection pool size
 
     // Process each tag concurrently with a controlled level of concurrency
     let results = stream::iter(tags.into_iter())
-        .map(|tag| {
+        .enumerate()
+        .map(|(counter, tag)| {
+            
             let pool = pool.clone();
+            let progress_sender = progress_sender.clone();
             async move {
                 let query = format!(
                     "SELECT rowid, filename, duration, filepath FROM {} WHERE filename LIKE '%' || ? || '%'",
                     TABLE
                 );
-                sqlx::query(&query).bind(tag).fetch_all(&pool).await // Return the result (Result<Vec<sqlx::sqlite::SqliteRow>, sqlx::Error>)
+
+                
+                let result = sqlx::query(&query).bind(tag).fetch_all(&pool).await; // Return the result (Result<Vec<sqlx::sqlite::SqliteRow>, sqlx::Error>)
+                
+                let _ = progress_sender
+                    .send(ProgressMessage::Update(counter, total))
+                    .await;
+                
+                result
             }
+           
         })
         .buffer_unordered(max_concurrency) // Control the level of concurrency
         .collect::<Vec<Result<Vec<sqlx::sqlite::SqliteRow>, sqlx::Error>>>()
@@ -373,6 +497,12 @@ pub async fn gather_filenames_with_tags(
             Err(err) => {
                 return Err(err); // Return early if an error occurs
             }
+        }
+        {
+            // let _ = progress_sender
+            //     .send(ProgressMessage::Update(counter, total))
+            //     .await;
+            // counter += 1;
         }
     }
 
@@ -439,13 +569,7 @@ fn extract_filenames_set_from_records(file_records: &HashSet<FileRecord>) -> Has
         .collect()
 }
 
-// use futures::future::join_all;
-// use sqlx::Error;
-// use std::sync::{
-//     atomic::{AtomicUsize, Ordering},
-//     Arc,
-// };
-// use tokio::task::JoinHandle;
+
 
 pub async fn delete_file_records(
     pool: &SqlitePool,
@@ -544,15 +668,37 @@ pub async fn create_duplicates_db(
 }
 
 pub async fn open_db() -> Option<Database> {
-    if let Some(path) = FileDialog::new()
-        .add_filter("SQLite Database", &["sqlite"])
-        .pick_file()
-    {
-        let db_path = path.display().to_string();
-        if db_path.ends_with(".sqlite") {
-            println!("Opening Database {}", db_path);
-            let db = Database::open(&db_path).await;
-            return Some(db);
+    let home_dir = home_dir();
+    match home_dir {
+        Some(home_dir) => {
+            println!("Found SMDB dir");
+            let db_dir = home_dir.join("Library/Application Support/SoundminerV6/Databases");
+            if let Some(path) = FileDialog::new()
+                .add_filter("SQLite Database", &["sqlite"])
+                .set_directory(db_dir)
+                .pick_file()
+            {
+                let db_path = path.display().to_string();
+                if db_path.ends_with(".sqlite") {
+                    println!("Opening Database {}", db_path);
+                    let db = Database::open(&db_path).await;
+                    return Some(db);
+                }
+            }
+        }
+        None => {
+            println!("did not find SMDB dir");
+            if let Some(path) = FileDialog::new()
+                .add_filter("SQLite Database", &["sqlite"])
+                .pick_file()
+            {
+                let db_path = path.display().to_string();
+                if db_path.ends_with(".sqlite") {
+                    println!("Opening Database {}", db_path);
+                    let db = Database::open(&db_path).await;
+                    return Some(db);
+                }
+            }
         }
     }
     None
@@ -601,7 +747,7 @@ pub async fn get_audio_file_types(pool: &SqlitePool) -> Result<Vec<String>, sqlx
     Ok(audio_file_types)
 }
 
-pub fn parse_to_sql(column: String, operator: OrderOperator, input: String) -> String {
+pub fn parse_to_sql(column: &str, operator: &OrderOperator, input: &str) -> String {
     match operator {
         OrderOperator::Largest => format! {"{} DESC", column.to_lowercase()},
         OrderOperator::Smallest => format!("{} ASC", column.to_lowercase()),
@@ -638,7 +784,7 @@ pub fn parse_to_sql(column: String, operator: OrderOperator, input: String) -> S
     }
 }
 
-pub fn parse_to_user_friendly(column: String, operator: OrderOperator, input: String) -> String {
+pub fn parse_to_user_friendly(column: &str, operator: &OrderOperator, input: &str) -> String {
     match operator {
         OrderOperator::Largest => format! {"Largest {}", column},
         OrderOperator::Smallest => format!("Smallest {} ", column),
@@ -648,6 +794,13 @@ pub fn parse_to_user_friendly(column: String, operator: OrderOperator, input: St
         OrderOperator::DoesNotContain => format!("{} does NOT contain '{}'", column, input),
         OrderOperator::IsEmpty => format!("{} is empty", column,),
         OrderOperator::IsNotEmpty => format!("{} is NOT empty", column,),
+    }
+}
+
+pub fn parse_to_struct(column: String, operator: OrderOperator, input: String) -> PreservationLogic {
+    PreservationLogic{
+        friendly: parse_to_user_friendly(&column, &operator, &input),
+        sql: parse_to_sql(&column, &operator, &input),
     }
 }
 
@@ -697,6 +850,7 @@ pub fn default_tags() -> Vec<String> {
         "-Z4n2_",
         "-ZXN5_",
     ];
+
     DEFAULT_TAGS_VEC.map(|s| s.to_string()).to_vec()
 }
 
@@ -754,6 +908,29 @@ pub fn tjf_tags() -> Vec<String> {
     ];
     TJF_TAGS_VEC.map(|s| s.to_string()).to_vec()
 }
+
+pub fn get_default_struct_order() -> Vec<PreservationLogic> {
+    let a = default_order();
+    let b = default_order_friendly();
+    
+    a.iter()
+        .cloned()
+        .zip(b.iter().cloned())
+        .map(|(sql, friendly)| PreservationLogic { sql, friendly })
+        .collect()
+}
+
+pub fn get_tjf_struct_order() -> Vec<PreservationLogic> {
+    let a = tjf_order();
+    let b = tjf_order_friendly();
+    
+    a.iter()
+        .cloned()
+        .zip(b.iter().cloned())
+        .map(|(sql, friendly)| PreservationLogic { sql, friendly })
+        .collect()
+}
+
 
 pub fn default_order() -> Vec<String> {
     const DEFAULT_ORDER_VEC: [&str; 12] = [

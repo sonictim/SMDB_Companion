@@ -1,9 +1,5 @@
+use crate::processing::open_download_url;
 use eframe::egui::{self, RichText, Ui};
-// use sqlx::SqlitePool;
-// use sqlx::sqlite::SqlitePool;
-// use tokio;
-// use tokio::sync::mpsc::Sender;
-// use crate::app::*;
 
 // A reusable button component that takes a function (callback) to run when clicked
 pub fn button<F>(ui: &mut Ui, label: &str, action: F)
@@ -37,14 +33,36 @@ where
         action();
     }
 }
-
-// pub fn enabled_text(text: &str, enabled: &bool) -> RichText {
-//     if *enabled {
-//         RichText::new(text)
-//     } else {
-//         RichText::new(text).weak()
+// pub fn large_rt_button<F>(ui: &mut Ui, label: egui::RichText, action: F)
+// where
+//     F: FnOnce(),
+// {
+//     if ui
+//         .add_sized([200.0, 50.0], egui::Button::new(label.size(24.0).strong()))
+//         .clicked()
+//     {
+//         action();
 //     }
 // }
+
+pub fn red_text(text: &str) -> RichText {
+    RichText::new(text)
+        .color(egui::Color32::from_rgb(255, 0, 0))
+        .strong()
+}
+pub fn light_red_text(text: &str) -> RichText {
+    RichText::new(text)
+        .color(egui::Color32::from_rgb(255, 100, 100))
+        .strong()
+}
+
+pub fn enabled_text(text: &str, enabled: &bool) -> RichText {
+    if *enabled {
+        RichText::new(text)
+    } else {
+        RichText::new(text).weak()
+    }
+}
 
 // pub fn spawn_db<F>(tx: Sender<Database>, action: F)
 // where
@@ -62,12 +80,219 @@ pub fn empty_line(ui: &mut Ui) {
     ui.horizontal(|_| {});
 }
 
+// pub struct ComboBox {
+//     selected: String,
+//     list: Vec<String>,
+// }
+
+// impl ComboBox {
+//     fn render(&mut self, ui: &mut egui::Ui, label: &str) {
+//         egui::ComboBox::from_id_salt(label)
+//             .selected_text(&self.selected)
+//             .show_ui(ui, |ui| {
+//                 for item in &self.list {
+//                     ui.selectable_value(&mut self.selected, item.clone(), item);
+//                 }
+//             });
+//     }
+// }
+
 pub fn combo_box(ui: &mut Ui, label: &str, selected: &mut String, list: &Vec<String>) {
-    egui::ComboBox::from_id_source(label)
+    egui::ComboBox::from_id_salt(label)
         .selected_text(selected.clone())
         .show_ui(ui, |ui| {
             for item in list {
                 ui.selectable_value(selected, item.clone(), item);
+            }
+        });
+}
+
+pub trait EnumComboBox {
+    fn as_str(&self) -> &'static str;
+    fn variants() -> &'static [Self]
+    where
+        Self: Sized;
+}
+
+pub fn enum_combo_box<T>(ui: &mut egui::Ui, selected_variant: &mut T)
+where
+    T: EnumComboBox + PartialEq + Copy + 'static, // Ensure T implements EnumComboBox, PartialEq, Copy, and is 'static
+{
+    egui::ComboBox::from_id_salt("variants")
+        .selected_text(selected_variant.as_str())
+        .show_ui(ui, |ui| {
+            for variant in T::variants() {
+                ui.selectable_value(selected_variant, *variant, variant.as_str());
+            }
+        });
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Default)]
+#[serde(default)]
+pub struct SelectableGrid {
+    #[serde(skip)]
+    pub add: String,
+    #[serde(skip)]
+    pub selected: Vec<usize>,
+    pub list: Vec<String>, // Use &str for the list
+}
+
+impl SelectableGrid {
+    pub fn render(&mut self, ui: &mut egui::Ui, columns: usize, label: &str, border: bool) {
+        if border {
+            self.render_with_border(ui, columns, label);
+        } else {
+            self.render_grid(ui, columns, label);
+        }
+    }
+
+    fn render_with_border(&mut self, ui: &mut egui::Ui, columns: usize, label: &str) {
+        egui::Frame::none()
+            .inner_margin(egui::vec2(8.0, 8.0))
+            .show(ui, |ui| {
+                ui.group(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.add_space(2.0);
+                        self.render_grid(ui, columns, label);
+                        ui.add_space(2.0);
+                    });
+                });
+            });
+    }
+
+    fn render_grid(&mut self, ui: &mut egui::Ui, columns: usize, label: &str) {
+        egui::Grid::new(label)
+            .num_columns(columns)
+            .spacing([20.0, 8.0])
+            .striped(true)
+            .show(ui, |ui| {
+                for (index, tag) in self.list.iter_mut().enumerate() {
+                    let is_selected = self.selected.contains(&index);
+
+                    if ui
+                        .selectable_label(is_selected, RichText::new(tag.clone()).size(14.0))
+                        .clicked()
+                    {
+                        if is_selected {
+                            self.selected.retain(|&i| i != index);
+                        } else {
+                            self.selected.push(index);
+                        }
+                    }
+
+                    if (index + 1) % columns == 0 {
+                        ui.end_row();
+                    }
+                }
+
+                if self.list.len() % columns != 0 {
+                    ui.end_row();
+                }
+            });
+    }
+    pub fn add(&mut self) {
+        if self.add.is_empty() {
+            return;
+        }
+        self.list.push(self.add.clone());
+        self.add.clear();
+        self.list.sort_by_key(|s| s.to_lowercase());
+    }
+
+    pub fn remove_selected(&mut self) {
+        let mut sorted_indices: Vec<usize> = self.selected.clone();
+        sorted_indices.sort_by(|a, b| b.cmp(a)); // Sort in reverse order
+
+        for index in sorted_indices {
+            if index < self.list.len() {
+                self.list.remove(index);
+            }
+        }
+        self.selected.clear();
+    }
+}
+
+pub fn update_window(ctx: &egui::Context, open: &mut bool, version: &str, update: bool) {
+    let width = 200.0;
+    let height = 100.0;
+    let mut close_window = false;
+
+    if update {
+        egui::Window::new("Update Available")
+            .open(open) // Control whether the window is open
+            .resizable(false) // Make window non-resizable if you want it fixed
+            .min_width(width)
+            .min_height(height)
+            .max_width(width)
+            .max_height(height)
+            .show(ctx, |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.label(format!("Latest Version is {}", version));
+                    large_button(ui, "Download", || {
+                        open_download_url();
+                        close_window = true; // Set the flag to close the window
+                    });
+                });
+            });
+    } else {
+        egui::Window::new("No Update Available")
+            .open(open) // Control whether the window is open
+            .resizable(false) // Make window non-resizable if you want it fixed
+            .min_width(width)
+            .min_height(height)
+            .max_width(width)
+            .max_height(height)
+            .show(ctx, |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.label(format!("Version {} is the Current Version", version));
+                    // large_button(ui, "Download", || {
+                    //     open_download_url();
+                    //     close_window = true; // Set the flag to close the window
+                    // });
+                });
+            });
+    }
+
+    if close_window {
+        *open = false; // Dereference to set the value outside of the closure
+    }
+}
+
+pub fn records_window(
+    ctx: &egui::Context,
+    records: &str,
+    open: &mut bool,
+    scroll_to_top: &mut bool,
+) {
+    let available_size = ctx.available_rect(); // Get the full available width and height
+    let width = available_size.width() - 20.0;
+    let height = available_size.height();
+    egui::Window::new("Records Marked as Duplicates")
+        .open(open) // Control whether the window is open
+        .resizable(false) // Make window non-resizable if you want it fixed
+        .min_width(width)
+        .min_height(height)
+        .max_width(width)
+        .max_height(height)
+        .show(ctx, |ui| {
+            // ui.label("To Be Implemented\n Testing line break");
+
+            if *scroll_to_top {
+                egui::ScrollArea::vertical()
+                    .max_height(height)
+                    .max_width(width)
+                    .scroll_offset(egui::vec2(0.0, 0.0))
+                    .show(ui, |ui| {
+                        ui.label(RichText::new(records).size(14.0));
+                    });
+                *scroll_to_top = false;
+            } else {
+                egui::ScrollArea::vertical()
+                    .max_height(height)
+                    .max_width(width)
+                    .show(ui, |ui| {
+                        ui.label(RichText::new(records).size(14.0));
+                    });
             }
         });
 }
