@@ -3,14 +3,9 @@ use crate::processing::*;
 use crate::config::*;
 // use crate::dupe_panel::*;
 use eframe::egui::{self, RichText};
-// use egui::accesskit::Node;
-// use egui::accesskit::Node;
-// use egui::Order;
 use rayon::prelude::*;
 use std::collections::HashSet;
 use std::fs::{self};
-// use std::rc::Rc;
-// use std::thread::JoinHandle;
 use tokio::sync::mpsc;
 
 
@@ -137,6 +132,23 @@ impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         // This is also where you can customize the look and feel of egui using
         // `cc.egui_ctx.set_visuals` and `cc.egui_ctx.set_fonts`.
+        // let stroke = egui::Stroke {
+        //     width: 1.0,
+        //     color: egui::Color32::LIGHT_RED
+        // };
+
+        // let w = Widgets {
+        //     active: true,
+            
+        // }
+        // let visuals = egui::Visuals {
+        //     widgets.active: false,
+        //     dark_mode: false,
+            
+        //     ..Default::default()
+        // };
+
+        // cc.egui_ctx.set_visuals(visuals);
 
         // Load previous app state (if any).
         // Note that you must enable the `persistence` feature for this to work.
@@ -599,6 +611,55 @@ impl App {
 
     fn duplictes_panel(&mut self, ui: &mut egui::Ui) {
 
+        
+        // let w =    Widgets  {
+        //         noninteractive: WidgetVisuals {
+        //             weak_bg_fill: Color32::from_gray(27),
+        //             bg_fill: Color32::from_gray(27),
+        //             bg_stroke: egui::Stroke::new(1.0, Color32::from_gray(60)), // separators, indentation lines
+        //             fg_stroke: egui::Stroke::new(1.0, Color32::from_gray(140)), // normal text color
+        //             rounding: Rounding::same(2.0),
+        //             expansion: 0.0,
+        //         },
+        //         inactive: WidgetVisuals {
+        //             weak_bg_fill: Color32::from_gray(60), // button background
+        //             bg_fill: Color32::from_gray(60),      // checkbox background
+        //             bg_stroke: Default::default(),
+        //             fg_stroke: egui::Stroke::new(1.0, Color32::from_gray(180)), // button text CHECK MARKS #1
+        //             rounding: Rounding::same(2.0),
+        //             expansion: 0.0,
+        //         },
+        //         hovered: WidgetVisuals {
+        //             weak_bg_fill: Color32::from_gray(70),
+        //             bg_fill: Color32::from_gray(70),
+        //             bg_stroke: egui::Stroke::new(1.0, Color32::from_gray(150)), // e.g. hover over window edge or button
+        //             fg_stroke: egui::Stroke::new(1.5, Color32::from_gray(240)), //CHECK MARKS #2
+        //             rounding: Rounding::same(3.0),
+        //             expansion: 1.0,
+        //         },
+        //         active: WidgetVisuals {
+        //             weak_bg_fill: Color32::from_gray(55),
+        //             bg_fill: Color32::from_gray(55),
+        //             bg_stroke: egui::Stroke::new(1.0, Color32::WHITE),
+        //             fg_stroke: egui::Stroke::new(2.0, Color32::WHITE),
+        //             rounding: Rounding::same(2.0),
+        //             expansion: 1.0,
+        //         },
+        //         open: WidgetVisuals {
+        //             weak_bg_fill: Color32::from_gray(45),
+        //             bg_fill: Color32::from_gray(27),
+        //             bg_stroke: egui::Stroke::new(1.0, Color32::from_gray(60)),
+        //             fg_stroke: egui::Stroke::new(1.0, Color32::from_gray(210)),
+        //             rounding: Rounding::same(2.0),
+        //             expansion: 0.0,
+        //         },
+        // };
+
+        // ui.visuals_mut().widgets = w;
+        // // ui.visuals_mut().widgets.active.bg_stroke = stroke;
+        // // ui.visuals_mut().widgets.inactive = visuals;
+
+        
         let Some(db) = &mut self.db else {
             ui.heading(RichText::new("No Open Database").weak());
             return;
