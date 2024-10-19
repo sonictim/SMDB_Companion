@@ -1,4 +1,4 @@
-// use crate::processing::open_download_url;
+use crate::processing::open_download_url;
 use eframe::egui::{self, RichText, Ui};
 
 // A reusable button component that takes a function (callback) to run when clicked
@@ -212,51 +212,53 @@ impl SelectableGrid {
     }
 }
 
-// pub fn update_window(ctx: &egui::Context, open: &mut bool, version: &str, update: bool) {
-//     let width = 200.0;
-//     let height = 100.0;
-//     let mut close_window = false;
+pub fn update_window(ctx: &egui::Context, open: &mut Option<bool>, version: &str, update: bool) {
+    let width = 200.0;
+    let height = 100.0;
+    let mut close_window = false;
 
-//     if update {
-//         egui::Window::new("Update Available")
-//             .open(open) // Control whether the window is open
-//             .resizable(false) // Make window non-resizable if you want it fixed
-//             .min_width(width)
-//             .min_height(height)
-//             .max_width(width)
-//             .max_height(height)
-//             .show(ctx, |ui| {
-//                 ui.vertical_centered(|ui| {
-//                     ui.label(format!("Latest Version is {}", version));
-//                     large_button(ui, "Download", || {
-//                         open_download_url();
-//                         close_window = true; // Set the flag to close the window
-//                     });
-//                 });
-//             });
-//     } else {
-//         egui::Window::new("No Update Available")
-//             .open(open) // Control whether the window is open
-//             .resizable(false) // Make window non-resizable if you want it fixed
-//             .min_width(width)
-//             .min_height(height)
-//             .max_width(width)
-//             .max_height(height)
-//             .show(ctx, |ui| {
-//                 ui.vertical_centered(|ui| {
-//                     ui.label(format!("Version {} is the Current Version", version));
-//                     // large_button(ui, "Download", || {
-//                     //     open_download_url();
-//                     //     close_window = true; // Set the flag to close the window
-//                     // });
-//                 });
-//             });
-//     }
+    if let Some(open) = open {
+        if update {
+            egui::Window::new(RichText::new("Update Available").strong())
+                .open(open) // Control whether the window is open
+                .resizable(false) // Make window non-resizable if you want it fixed
+                .min_width(width)
+                .min_height(height)
+                .max_width(width)
+                .max_height(height)
+                .show(ctx, |ui| {
+                    ui.vertical_centered(|ui| {
+                        ui.label(format!("Latest Version is {}", version));
+                        large_button(ui, "Download", || {
+                            open_download_url();
+                            close_window = true; // Set the flag to close the window
+                        });
+                    });
+                });
+        } else {
+            egui::Window::new(RichText::new("No Update Available").strong())
+                .open(open) // Control whether the window is open
+                .resizable(false) // Make window non-resizable if you want it fixed
+                .min_width(width)
+                .min_height(height)
+                .max_width(width)
+                .max_height(height)
+                .show(ctx, |ui| {
+                    ui.vertical_centered(|ui| {
+                        ui.label(format!("Version {} is the Current Version", version));
+                        // large_button(ui, "Download", || {
+                        //     open_download_url();
+                        //     close_window = true; // Set the flag to close the window
+                        // });
+                    });
+                });
+        }
+    }
 
-//     if close_window {
-//         *open = false; // Dereference to set the value outside of the closure
-//     }
-// }
+    if close_window {
+        *open = None; // Dereference to set the value outside of the closure
+    }
+}
 
 pub fn records_window(
     ctx: &egui::Context,

@@ -32,7 +32,7 @@ pub struct App {
     #[serde(skip)]
     update_available: bool,
     #[serde(skip)]
-    update_window: bool,
+    update_window: Option<bool>,
     
     
     #[serde(skip)]
@@ -87,7 +87,7 @@ impl Default for App {
             latest_version_io: AsyncTunnel::new(1),
             latest_version: String::new(),
             update_available: false,
-            update_window: false,
+            update_window: None,
             
             compare_db: None,
             cdb_io: AsyncTunnel::new(1),
@@ -267,7 +267,7 @@ impl App {
 
         if let Ok(version) = self.latest_version_io.rx.try_recv() {
             self.latest_version = version;
-            self.update_window = true;
+            if self.update_window.is_some() {self.update_window = Some(true);}
             if self.latest_version == env!("CARGO_PKG_VERSION") 
             {
                 println!("No Update Needed");
@@ -403,6 +403,7 @@ impl eframe::App for App {
                     ui.separator();
                     if ui.button("Check For Update").clicked() {
                         ui.close_menu();
+                        self.update_window = Some(false);
                         self.check_for_updates();
                     }
                     if ui.button("Open Download URL").clicked() {
@@ -499,8 +500,10 @@ impl eframe::App for App {
                 empty_line(ui);
             });
             records_window(ctx, &self.marked_records, &mut self.records_window, &mut self.scroll_to_top);
-            // update_window(ctx, &mut self.update_window, &self.latest_version, self.update_available);
-            
+         
+            if self.update_window.is_some() {
+                update_window(ctx, &mut self.update_window, &self.latest_version, self.update_available);
+            }  
         });
 
         let id2 = egui::Id::new("bottom panel registration");
