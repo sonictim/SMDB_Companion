@@ -6,6 +6,7 @@ use eframe::egui::{self, RichText};
 use rayon::prelude::*;
 use std::collections::HashSet;
 use std::fs::{self};
+use std::sync::Arc;
 use tokio::sync::mpsc;
 
 
@@ -189,15 +190,15 @@ impl App {
     }
 
     fn clear_status(&mut self) {
-        self.main.status.clear();
+        self.main.status = "".into();
         self.main.records.clear();
-        self.basic.status.clear();
+        self.basic.status = "".into();
         self.basic.records.clear();
-        self.tags.status.clear();
+        self.tags.status = "".into();
         self.tags.records.clear();
-        self.deep.status.clear();
+        self.deep.status = "".into();
         self.deep.records.clear();
-        self.compare.status.clear();
+        self.compare.status = "".into();
         self.compare.records.clear();
         self.extensions_io.waiting = false;
     }
@@ -258,7 +259,7 @@ impl App {
         }
         if let Some(records) = self.main.receive_hashset() {
             self.clear_status();
-            self.main.status = format! {"Removed {} duplicates", records.len()};
+            self.main.status = format! {"Removed {} duplicates", records.len()}.into();
         }    
         if let Some(records) = self.basic.receive_hashset() {
             self.main.records.extend(records);
@@ -297,12 +298,12 @@ impl App {
     fn update_main_status(&mut self) {
         // if self.handles_active() { return }
 
-        if self.main.records.is_empty() {self.main.status = "No Records Marked for Removal".to_string()}
+        if self.main.records.is_empty() {self.main.status = "No Records Marked for Removal".into()}
         else {
             self.main.status = format!(
                 "{} total records marked for removal",
                 self.main.records.len()
-            );
+            ).into();
 
         }      
     }
@@ -491,7 +492,7 @@ impl eframe::App for App {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 match self.my_panel {
                     Panel::Find => {
-                        self.find_panel.render(ui, &self.db, self.registration.valid);
+                        self.find_panel.render(ui, self.db.as_ref(), self.registration.valid);
                     }
                     Panel::Duplicates => {
                         self.duplictes_panel(ui);
@@ -888,7 +889,7 @@ impl App {
             if self.main.working {
                 ui.spinner();
             }
-            ui.label(RichText::new(self.main.status.clone()).strong());
+            ui.label(RichText::new(&*self.main.status).strong());
         });
 
         if self.registration.valid == Some(true)
@@ -900,7 +901,7 @@ impl App {
                 .main
                 .records
                 .par_iter() // Use parallel iterator
-                .map(|s| s.path.as_str()) // Convert &String to &str
+                .map(|s| &*s.path) // Convert &String to &str
                 .collect();
 
             // Sort in parallel
@@ -926,7 +927,7 @@ impl App {
             let Some(pool) = db.pool.clone() else {return};
     
           
-            self.main.status = "Searching for Duplicates".to_string();
+            self.main.status = "Searching for Duplicates".into();
            
     
             if self.basic.enabled {
@@ -974,7 +975,7 @@ impl App {
             if self.compare.enabled && self.compare_db.is_some() {
                 if let Some(cdb) = &self.compare_db {
                     self.compare.working = true;
-                    self.compare.status = format!("Comparing against {}", cdb.name);
+                    self.compare.status = format!("Comparing against {}", cdb.name).into();
         
                     let tx = self.compare.records_io.tx.clone();
                         println!("if let some");
@@ -999,7 +1000,7 @@ impl App {
     fn remove_duplicates(&mut self) {
         if self.registration.valid == Some(false) {
             self.main.records.clear();
-            self.main.status = "Unregistered!\nPlease Register to Remove Duplicates".to_string();
+            self.main.status = "Unregistered!\nPlease Register to Remove Duplicates".into();
             return;
         }
         if let Some(db) = self.db.as_ref() {
@@ -1009,13 +1010,13 @@ impl App {
     
             self.main.working = true;
             if self.safe {
-                self.main.status = "Creating Safety Database".to_string();
+                self.main.status = "Creating Safety Database".into();
                 let path = format!("{}_thinned.sqlite", &db.path.trim_end_matches(".sqlite"));
                 let _result = fs::copy(&db.path, &path);
                 work_db_path = Some(path);
             }
             if self.dupes_db {
-                self.main.status = "Creating Database of Duplicates".to_string();
+                self.main.status = "Creating Database of Duplicates".into();
                 let path = format!("{}_dupes.sqlite", &db.path.trim_end_matches(".sqlite"));
                 let _result = fs::copy(&db.path, &path);
                 duplicate_db_path = Some(path);
@@ -1034,7 +1035,7 @@ impl App {
                     .main
                     .records
                     .par_iter()
-                    .map(|record| record.path.as_str())
+                    .map(|record| &*record.path)
                     .collect();
     
                 let _ = self.delete_action.delete_files(files);
@@ -1050,7 +1051,7 @@ pub async fn remove_duplicates_go(
     main_db_path: Option<String>,
     dupe_db_path: Option<String>,
     progress_sender: mpsc::Sender<ProgressMessage>,
-    status_sender: mpsc::Sender<String>,
+    status_sender: mpsc::Sender<Arc<str>>,
 ) -> Result<HashSet<FileRecord>, sqlx::Error> {
     if let Some(main_path) = &main_db_path {
         let main_db = Database::open(main_path).await;
@@ -1093,7 +1094,7 @@ pub struct FindPanel {
 }
 
 impl FindPanel {
-    fn render(&mut self, ui: &mut egui::Ui, db: &Option<Database>, registration: Option<bool>) {
+    fn render(&mut self, ui: &mut egui::Ui, db: Option<&Database>, registration: Option<bool>) {
         if let Some(db) = db {
             if db.size == 0 {
                 ui.heading("No Records in Database");
@@ -1351,7 +1352,7 @@ impl OrderPanel {
 
     }
 
-    pub fn top_toolbar(&mut self, ui: &mut egui::Ui, db_columns: &Vec<String>) {
+    pub fn top_toolbar(&mut self, ui: &mut egui::Ui, db_columns: &[String]) {
         ui.horizontal(|ui| {
             
 

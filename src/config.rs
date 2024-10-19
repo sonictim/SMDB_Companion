@@ -10,6 +10,7 @@ use std::collections::HashSet;
 use std::fs::{self};
 use std::hash::Hash;
 use std::path::Path;
+use std::sync::Arc;
 use tokio::sync::mpsc;
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -67,9 +68,9 @@ pub struct NodeConfig {
     // pub list: Vec<String>,
     // pub selected: String,
     #[serde(skip)]
-    pub status: String,
+    pub status: Arc<str>,
     #[serde(skip)]
-    pub status_io: AsyncTunnel<String>,
+    pub status_io: AsyncTunnel<Arc<str>>,
     #[serde(skip)]
     pub records: HashSet<FileRecord>,
     #[serde(skip)]
@@ -108,7 +109,7 @@ impl Default for NodeConfig {
             enabled: false,
             // list: Vec::new(),
             // selected: String::new(),
-            status: String::new(),
+            status: Arc::from(""),
             status_io: AsyncTunnel::new(1),
             records: HashSet::new(),
             working: false,
@@ -126,7 +127,7 @@ impl NodeConfig {
             enabled: on,
             // list: Vec::new(),
             // selected: String::new(),
-            status: String::new(),
+            status: Arc::from(""),
             status_io: AsyncTunnel::new(1),
             records: HashSet::new(),
             working: false,
@@ -143,7 +144,7 @@ impl NodeConfig {
         self.handle = None;
         self.working = false;
         self.records.clear();
-        self.status.clear();
+        self.status = "".into();
         self.progress = (0.0, 0.0);
     }
 
@@ -154,7 +155,7 @@ impl NodeConfig {
             self.handle = None;
             self.working = false;
             self.progress = (0.0, 0.0);
-            self.status = format! {"Found {} duplicate records", self.records.len()};
+            self.status = format! {"Found {} duplicate records", self.records.len()}.into();
             return Some(records);
         }
 
@@ -181,7 +182,7 @@ impl NodeConfig {
             } else {
                 ui.add_space(24.0)
             }
-            ui.label(RichText::new(&self.status).strong());
+            ui.label(RichText::new(&*self.status).strong());
             if self.working {
                 ui.label(format!(
                     "Progress: {} / {}",
@@ -211,10 +212,6 @@ pub struct Database {
     pub size: usize,
     pub columns: Vec<String>,
     pub file_extensions: Vec<String>,
-    // pub io: AsyncTunnel<Database>,
-    //     pub tx: Option<mpsc::Sender<Database>>,
-
-    //     pub rx: Option<mpsc::Receiver<Database>>,
 }
 
 impl Database {
@@ -258,9 +255,9 @@ impl Database {
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
 pub struct FileRecord {
     pub id: usize,
-    pub filename: String,
-    pub duration: String,
-    pub path: String,
+    pub filename: Arc<str>,
+    pub duration: Arc<str>,
+    pub path: Arc<str>,
 }
 
 pub enum ProgressMessage {

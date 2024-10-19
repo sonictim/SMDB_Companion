@@ -97,7 +97,7 @@ pub fn empty_line(ui: &mut Ui) {
 //     }
 // }
 
-pub fn combo_box(ui: &mut Ui, label: &str, selected: &mut String, list: &Vec<String>) {
+pub fn combo_box(ui: &mut Ui, label: &str, selected: &mut String, list: &[String]) {
     egui::ComboBox::from_id_salt(label)
         .selected_text(selected.clone())
         .show_ui(ui, |ui| {

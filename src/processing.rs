@@ -1,10 +1,12 @@
 #![allow(non_snake_case)]
 use crate::config::*;
 use rfd::FileDialog;
+use sqlx::sqlite::SqliteRow;
 use tokio::sync::mpsc;
 use sqlx::{sqlite::SqlitePool, Row};
 use std::collections::{HashMap, HashSet};
 use std::result::Result;
+use std::sync::Arc;
 use dirs::home_dir;
 use futures::stream::{self, StreamExt};
 use rayon::prelude::*;
@@ -13,7 +15,6 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use sha2::{Digest, Sha256};
 use clipboard::{ClipboardContext, ClipboardProvider};
-// use std::fs;
 use reqwest::Client;
 use std::error::Error;
 
@@ -94,7 +95,7 @@ where
     T: std::future::Future<Output = Result<HashSet<FileRecord>, sqlx::Error>> + Send + 'static,
 {
     config.working = true;
-    config.status = label.to_string();
+    config.status = label.into();
     // let records = config.records.clone();
     let tx = config.records_io.tx.clone();
         // if let Some(sender) = config.progress_sender.clone() {
@@ -177,95 +178,7 @@ pub async fn smreplace_process(
     }
 }
 
-// // OLD VERSION
 
-// pub async fn gather_duplicate_filenames_in_database(
-//     pool: SqlitePool,
-//     order: Vec<String>,
-//     group_sort: Option<String>,
-//     group_null: bool,
-//     duration: bool, // New option for duration-based grouping
-// ) -> Result<HashSet<FileRecord>, sqlx::Error> {
-//     let verbose = true;
-//     let mut file_records = HashSet::new();
-
-//     // Construct the ORDER BY clause dynamically
-//     let order_clause = order.join(", ");
-
-//     // Build the SQL query based on whether a group_sort is provided
-//     let (partition_by, where_clause) = match group_sort {
-//         Some(group) => {
-//             if verbose {
-//                 println!("Grouping duplicate record search by {}", group);
-//             }
-//             let where_clause = if group_null {
-//                 String::new()
-//             } else {
-//                 format!("WHERE {group} IS NOT NULL AND {group} != ''")
-//             };
-//             // If duration is true, partition by both group, filename, and duration
-//             let partition_by = if duration {
-//                 format!("{}, filename, duration", group)
-//             } else {
-//                 format!("{}, filename", group)
-//             };
-//             (partition_by, where_clause)
-//         }
-//         None => {
-//             // If duration is true, partition by filename and duration
-//             let partition_by = if duration {
-//                 "filename, duration".to_string()
-//             } else {
-//                 "filename".to_string()
-//             };
-//             (partition_by, String::new())
-//         }
-//     };
-
-//     let sql = format!(
-//         "
-//         WITH ranked AS (
-//             SELECT
-//                 rowid AS id,
-//                 filename,
-//                 duration,
-//                 filepath,
-//                 ROW_NUMBER() OVER (
-//                     PARTITION BY {}
-//                     ORDER BY {}
-//                 ) as rn
-//             FROM {}
-//             {}
-//         )
-//         SELECT id, filename, duration, filepath FROM ranked WHERE rn > 1
-//         ",
-//         partition_by, order_clause, TABLE, where_clause
-//     );
-
-//     // Execute the query and fetch the results
-//     let rows = sqlx::query(&sql).fetch_all(&pool).await?;
-
-//     // Iterate through the rows and insert them into the hashset
-//     for row in rows {
-//         let id: u32 = row.get(0);
-//         let file_record = FileRecord {
-//             id: id as usize,
-//             filename: row.get(1),
-//             duration: row.try_get(2).unwrap_or("".to_string()), // Handle possible NULL in duration
-//             path: row.get(3),
-//         };
-//         file_records.insert(file_record);
-//     }
-
-//     if verbose {
-//         println!(
-//             "Marked {} duplicate records for deletion.",
-//             file_records.len()
-//         );
-//     }
-
-//     Ok(file_records)
-// }
 
 pub async fn gather_duplicate_filenames_in_database(
     pool: SqlitePool,
@@ -308,30 +221,17 @@ pub async fn gather_duplicate_filenames_in_database(
         ",
         partition_by_clause, order_clause, TABLE, where_clause
     );
-    // let _ = progress_sender.send(ProgressMessage::Update(1,2)).await;
-    
-    // file_records = fetch_filerecords_from_database(&pool, &sql).await?;
-    // let _ = progress_sender.send(ProgressMessage::Update(2,2)).await;
 
-    // Execute the query and fetch the results
     let rows = sqlx::query(&sql).fetch_all(&pool).await?;
 
     let total = rows.len();
     let mut counter = 0;
 
-    // Iterate through the rows and insert them into the hashset
     for row in rows {
-        let id: u32 = row.get(0);
-        let file_record = FileRecord {
-            id: id as usize,
-            filename: row.get(1),
-            duration: row.try_get(2).unwrap_or("".to_string()), // Handle possible NULL in duration
-            path: row.get(3),
-        };
-        file_records.insert(file_record);
+        
+        file_records.insert(row_to_file_record(&row));
         counter += 1;
 
-        // Send progress updates every 100 rows
         if counter % 100 == 0 {
             let _ = progress_sender
                 .send(ProgressMessage::Update(counter, total))
@@ -348,7 +248,7 @@ pub async fn gather_duplicate_filenames_in_database(
 pub async fn gather_deep_dive_records(
     pool: SqlitePool,
     progress_sender: mpsc::Sender<ProgressMessage>,
-    status_sender: mpsc::Sender<String>,
+    status_sender: mpsc::Sender<Arc<str>>,
     ignore_extension: bool,
 ) -> Result<HashSet<FileRecord>, sqlx::Error> {
     let mut file_groups: HashMap<String, Vec<FileRecord>> = HashMap::new();
@@ -360,29 +260,18 @@ pub async fn gather_deep_dive_records(
     let total = rows.len();
     let mut counter: usize = 0;
 
-    // let _ = status_sender.send("Starting Parallel iterations".to_string()).await;
-
     // Use a parallel iterator to process the rows
     let processed_records: Vec<(String, FileRecord)> = rows
         .par_iter() // Use a parallel iterator
         .map(|row| {
-            let id: u32 = row.get(0);
-            let file_record = FileRecord {
-                id: id as usize,
-                filename: row.get(1),
-                duration: row.try_get(2).unwrap_or("".to_string()), // Handle possible NULL in duration
-                path: row.get(3),
-            };
-
+            let file_record = row_to_file_record(row);
             let base_filename = get_root_filename(&file_record.filename, ignore_extension)
-                .unwrap_or_else(|| file_record.filename.clone());
-
+                .unwrap_or_else(|| file_record.filename.to_string());
             (base_filename, file_record)
         })
         .collect(); // Collect results into a Vec<(String, FileRecord)>
 
-    let _ = status_sender.send("Processing Records".to_string()).await;
-    // Now merge the results into the file_groups (sequentially)
+    let _ = status_sender.send("Processing Records".into()).await;
     for (base_filename, file_record) in processed_records {
         file_groups
             .entry(base_filename)
@@ -391,7 +280,6 @@ pub async fn gather_deep_dive_records(
 
         counter += 1;
 
-        // Send progress updates every 100 rows
         if counter % 100 == 0 {
             let _ = progress_sender
                 .send(ProgressMessage::Update(counter, total))
@@ -399,8 +287,7 @@ pub async fn gather_deep_dive_records(
         }
     }
 
-    let _ = status_sender.send("Finishing up".to_string()).await;
-    // Now handle merging the file groups into a HashSet of file_records
+    let _ = status_sender.send("Finishing up".into()).await;
 
     let mut file_records = HashSet::new();
     for (root, records) in file_groups {
@@ -410,32 +297,32 @@ pub async fn gather_deep_dive_records(
 
         let root_found = records.iter().any(|record| {
             if ignore_extension {
-                let name = Path::new(&record.filename)
+                let name = Path::new(&*record.filename)
                     .file_stem()
                     .and_then(|s| s.to_str())
                     .unwrap();
                 return name == root;
             }
 
-            record.filename == root
+            *record.filename == root
         });
         if root_found {
             file_records.extend(records.into_iter().filter(|record| {
                 if ignore_extension {
-                    let name = Path::new(&record.filename)
+                    let name = Path::new(&*record.filename)
                         .file_stem()
                         .and_then(|s| s.to_str())
                         .unwrap();
                     return name != root;
                 }
-                record.filename != root
+                *record.filename != root
             }));
         } else {
             file_records.extend(records.into_iter().skip(1));
         }
     }
     let _ = status_sender
-        .send(format!("Found {} duplicate records", file_records.len()))
+        .send(format!("Found {} duplicate records", file_records.len()).into())
         .await;
 
     Ok(file_records)
@@ -484,26 +371,14 @@ pub async fn gather_filenames_with_tags(
         match result {
             Ok(rows) => {
                 for row in rows {
-                    let id: u32 = row.get(0);
-                    let file_record = FileRecord {
-                        id: id as usize,
-                        filename: row.get(1),
-                        duration: row.try_get(2).unwrap_or("".to_string()), // Handle possible NULL in duration
-                        path: row.get(3),
-                    };
-                    file_records.insert(file_record);
+                    file_records.insert(row_to_file_record(&row));
                 }
             }
             Err(err) => {
                 return Err(err); // Return early if an error occurs
             }
         }
-        {
-            // let _ = progress_sender
-            //     .send(ProgressMessage::Update(counter, total))
-            //     .await;
-            // counter += 1;
-        }
+
     }
 
     println!("Found Tags");
@@ -520,7 +395,7 @@ pub async fn gather_compare_database_overlaps(
     let mut matching_records = fetch_all_filerecords_from_database(target_pool).await?;
     println!("Comparing filenames between databases");
 
-    matching_records.retain(|record| filenames_to_check.contains(&record.filename));
+    matching_records.retain(|record| filenames_to_check.contains(&*record.filename));
 
     if matching_records.is_empty() {
         println!("NO OVERLAPPING FILE RECORDS FOUND!");
@@ -531,6 +406,20 @@ pub async fn gather_compare_database_overlaps(
     Ok(matching_records.into_iter().collect())
 }
 
+pub fn row_to_file_record(row: &SqliteRow) -> FileRecord {
+    let id: u32 = row.get(0);
+        let filename: &str = row.get(1);
+        let duration = row.try_get(2).unwrap_or("");
+        let path: &str = row.get(3);
+        FileRecord {
+            id: id as usize,
+            filename: filename.into(),
+            duration: duration.into(),
+            path: path.into(),
+        }
+}
+
+
 pub async fn fetch_filerecords_from_database(
     pool: &SqlitePool,
     query: &str,
@@ -540,14 +429,7 @@ pub async fn fetch_filerecords_from_database(
     let rows = sqlx::query(query).fetch_all(pool).await?;
 
     for row in rows {
-        let id: u32 = row.get(0);
-        let file_record = FileRecord {
-            id: id as usize,
-            filename: row.get(1),
-            duration: row.try_get(2).unwrap_or("".to_string()), // Handle possible NULL in duration
-            path: row.get(3),
-        };
-        file_records.insert(file_record);
+        file_records.insert(row_to_file_record(&row));
     }
     Ok(file_records)
 }
@@ -562,7 +444,7 @@ pub async fn fetch_all_filerecords_from_database(
     .await
 }
 
-fn extract_filenames_set_from_records(file_records: &HashSet<FileRecord>) -> HashSet<String> {
+fn extract_filenames_set_from_records(file_records: &HashSet<FileRecord>) -> HashSet<Arc<str>> {
     file_records
         .iter()
         .map(|record| record.filename.clone())
@@ -575,7 +457,7 @@ pub async fn delete_file_records(
     pool: &SqlitePool,
     records: &HashSet<FileRecord>,
     progress_sender: mpsc::Sender<ProgressMessage>,
-    status_sender: mpsc::Sender<String>,
+    status_sender: mpsc::Sender<Arc<str>>,
 ) -> Result<(), sqlx::Error> {
     const CHUNK_SIZE: usize = 12321;
 
@@ -623,12 +505,12 @@ pub async fn delete_file_records(
             .send(ProgressMessage::Update(progress, total))
             .await;
         let _ = status_sender
-            .send(format!("Processed {} / {}", progress, total))
+            .send(format!("Processed {} / {}", progress, total).into())
             .await;
     }
 
     // After all deletions, perform the cleanup
-    let _ = status_sender.send("Cleaning Up Database".to_string()).await;
+    let _ = status_sender.send("Cleaning Up Database".into()).await;
     let _result = sqlx::query("VACUUM").execute(pool).await;
 
     println!("VACUUM done inside delete function");
@@ -640,11 +522,11 @@ pub async fn create_duplicates_db(
     pool: &SqlitePool,
     dupe_records_to_keep: &HashSet<FileRecord>,
     progress_sender: mpsc::Sender<ProgressMessage>,
-    status_sender: mpsc::Sender<String>,
+    status_sender: mpsc::Sender<Arc<str>>,
 ) -> Result<(), sqlx::Error> {
     println!("Generating Duplicates Only Database. This can take a while.");
     let _ = status_sender
-        .send("Creating Duplicates Only Database. This can be slow.".to_string())
+        .send("Creating Duplicates Only Database. This can be slow.".into())
         .await;
 
     if let Ok(all_records) = fetch_all_filerecords_from_database(pool).await {
