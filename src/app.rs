@@ -9,7 +9,6 @@ use std::fs::{self};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
-
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)]
@@ -40,7 +39,7 @@ pub struct App {
     
     main: NodeConfig,
     basic: NodeConfig,
-    match_criteria: SelectableGrid,
+    match_criteria: SelectableList,
     match_null: bool,
     
     deep: NodeConfig,
@@ -96,7 +95,7 @@ impl Default for App {
             
             main: NodeConfig::new(false),
             basic: NodeConfig::new(true),
-            match_criteria: SelectableGrid::default(),
+            match_criteria: SelectableList::default(),
             match_null: false,
             
             tags: NodeConfig::new(false),
@@ -119,8 +118,8 @@ impl Default for App {
 
            
         };
-        app.match_criteria.list = vec!["Filename".to_owned(), "Duration".to_owned(), "Channels".to_owned()];      
-        app.tags_panel.grid.list = default_tags();
+        app.match_criteria.set(vec!["Filename".to_owned(), "Duration".to_owned(), "Channels".to_owned()]);      
+        app.tags_panel.list.set(default_tags());
         app.order_panel.list = get_default_struct_order();
 
         app
@@ -133,6 +132,7 @@ impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         // This is also where you can customize the look and feel of egui using
         // `cc.egui_ctx.set_visuals` and `cc.egui_ctx.set_fonts`.
+
         // let stroke = egui::Stroke {
         //     width: 1.0,
         //     color: egui::Color32::LIGHT_RED
@@ -180,12 +180,12 @@ impl App {
         self.reset_to_defaults();
       
         self.order_panel.list = get_tjf_struct_order();
-        self.tags_panel.grid.list = tjf_tags();
+        self.tags_panel.list.set(tjf_tags());
         self.deep.enabled = true;
         self.tags.enabled = true;
         self.dupes_db = false;
         self.ignore_extension = true;
-        self.match_criteria.list = vec!("Filename".to_owned());
+        self.match_criteria.set(vec!("Filename".to_owned()));
   
     }
 
@@ -346,89 +346,9 @@ impl eframe::App for App {
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
 
-                ui.menu_button(RichText::new("File").weak().size(18.0), |ui| {
-                    if ui.button("Open Database").clicked() {
-                        ui.close_menu();
-                        // self.clear_status();
-                        let tx = self.db_io.tx.clone();
-                        tokio::spawn(async move {
-                            let db = open_db().await.unwrap();
-                            let _ = tx.send(db).await;
-                        });
+               self.file_menu(ui, ctx);
 
-                    }
-                    if ui.button("Close Database").clicked() {
-                        ui.close_menu();
-                        self.clear_status();
-                        self.abort_all();
-                        self.db = None;
-                    }
-
-                    ui.separator();
-                    if ui.button("Restore Defaults").clicked() {
-                        ui.close_menu();
-                        self.clear_status();
-                        self.reset_to_defaults();
-                    }
-                    if ui.input(|i| i.modifiers.alt) && ui.button("TJF Defaults").clicked() {
-                        ui.close_menu();
-                        self.clear_status();
-                        self.reset_to_tjf_defaults();
-                    }
-                    egui::widgets::global_theme_preference_buttons(ui);
-                    if !self.registration.valid.expect("some") {
-                        ui.separator();
-                        
-                   
-                        ui.menu_button("Register", |ui| {
-                            ui.horizontal(|ui| {
-                                ui.label("Name: ");
-                                ui.text_edit_singleline(&mut self.registration.name);
-                            });
-                            ui.horizontal(|ui| {
-                                ui.label("Email: ");
-                                ui.text_edit_singleline(&mut self.registration.email);
-                            });
-                            ui.horizontal(|ui| {
-                                ui.label("License Key: ");
-                                ui.text_edit_singleline(&mut self.registration.key);
-                            });
-
-                            large_button(ui, "Register", ||self.registration.validate());
-                        });
-                    }
-                    if ui.input(|i| i.modifiers.alt) && self.registration.valid == Some(true)  {
-
-                        ui.separator();
-                        if ui.button(RichText::new("Unregister")).clicked() {
-                            self.registration.clear();
-                            ui.close_menu();
-                        }
-                    }
-                    #[cfg(debug_assertions)]
-                    {
-                    
-                        if ui.button("KeyGen").clicked() {
-                            ui.close_menu();
-                            self.my_panel = Panel::KeyGen;
-                        }
-                    }
-                    ui.separator();
-                    if ui.button("Check For Update").clicked() {
-                        ui.close_menu();
-                        self.update_window = Some(false);
-                        self.check_for_updates();
-                    }
-                    if ui.button("Open Download URL").clicked() {
-                        ui.close_menu();
-                        open_download_url();
-                    }
-                    ui.separator();
-                    if ui.button("Quit").clicked() {
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                    }
-                });
-                ui.label(RichText::new("|").weak().size(18.0));
+               ui.label(RichText::new("|").weak().size(18.0));
 
                 self.panel_tab_bar(ui);
 
@@ -446,44 +366,10 @@ impl eframe::App for App {
         // The central panel the region left after adding TopPanel's and SidePanel's
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            
-            if let Some(db) = &self.db {
-                empty_line(ui);
 
-                ui.vertical_centered(|ui| {
-                    if ui
-                        .selectable_label(
-                            false,
-                            RichText::new(&db.name)
-                                .size(24.0)
-                                .strong()
-                                .extra_letter_spacing(5.0),
-                        )
-                        .clicked()
-                    {
-                        
-                        let tx = self.db_io.tx.clone();
-                        tokio::spawn(async move {
-                            let db = open_db().await.unwrap();
-                            let _ = tx.send(db).await;
-                        });
-                    };
-                    ui.label(format!("{} records", &db.size));
-                });
-            } else {
-                empty_line(ui);
-                ui.vertical_centered(|ui| {
-                    large_button(ui, "Open Database", || {
-                        let tx = self.db_io.tx.clone();
-                        tokio::spawn(async move {
-                            let db = open_db().await.unwrap();
-                            let _ = tx.send(db).await;
-                        });
-                    });
-                });
-            }
+            empty_line(ui);
 
-   
+            self.render_db(ui);
 
             empty_line(ui);
             ui.separator();
@@ -519,51 +405,100 @@ impl eframe::App for App {
             }  
         });
 
-        let id2 = egui::Id::new("bottom panel registration");
-        egui::Area::new(id2)
-            .anchor(egui::Align2::LEFT_BOTTOM, egui::vec2(0.0, 0.0)) // Pin to bottom
-            .show(ctx, |ui| {
-                let mut label = red_text("*****UNREGISTERED");
-                if let Some(valid) = self.registration.valid {
-                    if valid {
-                        let text = format!("Registered to: {}", &self.registration.name);
-                        label = RichText::new(text).weak();
-                    }
-                }
-                ui.horizontal(|ui| {
-                    if ui.label(label).clicked()
-                        // && ui.input(|i| i.modifiers.command)
-                        // && ui.input(|i| i.modifiers.shift)
-                        && ui.input(|i| i.key_down(egui::Key::Tab))
-                        && ui.input(|i| i.key_down(egui::Key::R))
-                        && ui.input(|i| i.key_down(egui::Key::Space))
-                    {
-                        self.my_panel = Panel::KeyGen;
-                    };
-                });
-            });
-        let id = egui::Id::new("bottom panel");
-        egui::Area::new(id)
-            .anchor(egui::Align2::RIGHT_BOTTOM, egui::vec2(0.0, 0.0)) // Pin to bottom-right
-            .show(ctx, |ui| {
-                let version_text = format!("Version: {}    ", env!("CARGO_PKG_VERSION"));
-                ui.horizontal(|ui|{
-                    if self.update_available {
-                        ui.label(red_text("Update Available"));
-                        if ui.selectable_label(false, "Download").clicked() {
-                            open_download_url();
-                        }
-                    }
-                    // ui.label("test");
-                    ui.label(RichText::new(version_text).weak());
+        self.registration_bar(ctx);
+        self.version_bar(ctx);
 
-                });
-            });
     }
     
 }
 
 impl App {
+    fn file_menu(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        ui.menu_button(RichText::new("File").weak().size(18.0), |ui| {
+            if ui.button("Open Database").clicked() {
+                ui.close_menu();
+                // self.clear_status();
+                let tx = self.db_io.tx.clone();
+                tokio::spawn(async move {
+                    let db = open_db().await.unwrap();
+                    let _ = tx.send(db).await;
+                });
+
+            }
+            if ui.button("Close Database").clicked() {
+                ui.close_menu();
+                self.clear_status();
+                self.abort_all();
+                self.db = None;
+            }
+
+            ui.separator();
+            if ui.button("Restore Defaults").clicked() {
+                ui.close_menu();
+                self.clear_status();
+                self.reset_to_defaults();
+            }
+            if ui.input(|i| i.modifiers.alt) && ui.button("TJF Defaults").clicked() {
+                ui.close_menu();
+                self.clear_status();
+                self.reset_to_tjf_defaults();
+            }
+            egui::widgets::global_theme_preference_buttons(ui);
+            if !self.registration.valid.expect("some") {
+                ui.separator();
+                
+           
+                ui.menu_button("Register", |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("Name: ");
+                        ui.text_edit_singleline(&mut self.registration.name);
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Email: ");
+                        ui.text_edit_singleline(&mut self.registration.email);
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("License Key: ");
+                        ui.text_edit_singleline(&mut self.registration.key);
+                    });
+
+                    large_button(ui, "Register", ||self.registration.validate());
+                });
+            }
+            if ui.input(|i| i.modifiers.alt) && self.registration.valid == Some(true)  {
+
+                ui.separator();
+                if ui.button(RichText::new("Unregister")).clicked() {
+                    self.registration.clear();
+                    ui.close_menu();
+                }
+            }
+            #[cfg(debug_assertions)]
+            {
+            
+                if ui.button("KeyGen").clicked() {
+                    ui.close_menu();
+                    self.my_panel = Panel::KeyGen;
+                }
+            }
+            ui.separator();
+            if ui.button("Check For Update").clicked() {
+                ui.close_menu();
+                self.update_window = Some(false);
+                self.check_for_updates();
+            }
+            if ui.button("Open Download URL").clicked() {
+                ui.close_menu();
+                open_download_url();
+            }
+            ui.separator();
+            if ui.button("Quit").clicked() {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+        });
+        
+    }
+
     fn panel_tab_bar(&mut self, ui: &mut egui::Ui) {
         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
             let mut space = ui.available_width() / 2.0 - 350.0;
@@ -607,6 +542,93 @@ impl App {
             add_tab_button(ui, &mut self.my_panel, Panel::Order, "Preservation Priority", size_big, size_small, column_width);
             add_tab_button(ui, &mut self.my_panel, Panel::Tags, "Tag Editor", size_big, size_small, column_width);
         });
+    }
+
+    fn render_db(&mut self, ui: &mut egui::Ui) {
+        if let Some(db) = &self.db {
+           
+
+            ui.vertical_centered(|ui| {
+                if ui
+                    .selectable_label(
+                        false,
+                        RichText::new(&db.name)
+                            .size(24.0)
+                            .strong()
+                            .extra_letter_spacing(5.0),
+                    )
+                    .clicked()
+                {
+                    
+                    let tx = self.db_io.tx.clone();
+                    tokio::spawn(async move {
+                        let db = open_db().await.unwrap();
+                        let _ = tx.send(db).await;
+                    });
+                };
+                ui.label(format!("{} records", &db.size));
+            });
+        } else {
+           
+            ui.vertical_centered(|ui| {
+                large_button(ui, "Open Database", || {
+                    let tx = self.db_io.tx.clone();
+                    tokio::spawn(async move {
+                        let db = open_db().await.unwrap();
+                        let _ = tx.send(db).await;
+                    });
+                });
+            });
+        }
+    }
+
+    fn registration_bar(&mut self, ctx: &egui::Context) {
+        let id = egui::Id::new("bottom panel registration");
+        egui::Area::new(id)
+            .anchor(egui::Align2::LEFT_BOTTOM, egui::vec2(0.0, 0.0)) // Pin to bottom
+            .show(ctx, |ui| {
+                let mut label = red_text("*****UNREGISTERED");
+                if let Some(valid) = self.registration.valid {
+                    if valid {
+                        let text = format!("Registered to: {}", &self.registration.name);
+                        label = RichText::new(text).weak();
+                    }
+                }
+                ui.horizontal(|ui| {
+                    if ui.label(label).clicked()
+                        // && ui.input(|i| i.modifiers.command)
+                        // && ui.input(|i| i.modifiers.shift)
+                        && ui.input(|i| i.key_down(egui::Key::Tab))
+                        && ui.input(|i| i.key_down(egui::Key::R))
+                        && ui.input(|i| i.key_down(egui::Key::Space))
+                    {
+                        self.my_panel = Panel::KeyGen;
+                    };
+                });
+            });
+
+
+    }
+
+    fn version_bar(&mut self, ctx: &egui::Context) {
+            
+        let id = egui::Id::new("bottom panel");
+        egui::Area::new(id)
+            .anchor(egui::Align2::RIGHT_BOTTOM, egui::vec2(0.0, 0.0)) // Pin to bottom-right
+            .show(ctx, |ui| {
+                let version_text = format!("Version: {}    ", env!("CARGO_PKG_VERSION"));
+                ui.horizontal(|ui|{
+                    if self.update_available {
+                        ui.label(red_text("Update Available"));
+                        if ui.selectable_label(false, "Download").clicked() {
+                            open_download_url();
+                        }
+                    }
+                    // ui.label("test");
+                    ui.label(RichText::new(version_text).weak());
+
+                });
+            });
     }
 
 
@@ -680,7 +702,7 @@ impl App {
                 ui.label("Duplicate Match Criteria: ");
 
             });
-            if self.match_criteria.list.is_empty() {
+            if self.match_criteria.get().is_empty() {
                 self.basic.enabled = false;
                 column[0].horizontal(|ui|{
                     ui.add_space(24.0);
@@ -688,7 +710,7 @@ impl App {
                 });
                 column[0].horizontal(|ui|{
                     ui.add_space(24.0);
-                    button(ui, "Restore Defaults", ||{self.match_criteria.list = vec!{"Filename".to_owned(), "Duration".to_owned(), "Channels".to_owned()} });
+                    button(ui, "Restore Defaults", ||{self.match_criteria.set(vec!{"Filename".to_owned(), "Duration".to_owned(), "Channels".to_owned()}) });
                 });
                 empty_line(&mut column[0]);
             } else {
@@ -702,7 +724,7 @@ impl App {
                 ui.label(RichText::new("Add:"));
 
                 let mut filtered_list = db.columns.clone();
-                filtered_list.retain(|item| !&self.match_criteria.list.contains(item));     
+                filtered_list.retain(|item| !&self.match_criteria.get().contains(item));     
                 combo_box(ui, "match criteria", &mut self.match_criteria.add, &filtered_list);
                 self.match_criteria.add();
 
@@ -789,7 +811,7 @@ impl App {
 
 
         //TAGS TAGS TAGS TAGS
-        let enabled = !self.tags_panel.grid.list.is_empty();
+        let enabled = !self.tags_panel.list().is_empty();
         let text = enabled_text("Search for Records with AudioSuite Tags in Filename", &enabled);
         ui.checkbox(&mut self.tags.enabled,text,)
             .on_hover_text_at_pointer("Filenames with Common Protools AudioSuite Tags will be marked for removal");
@@ -934,7 +956,7 @@ impl App {
                 let sender = self.basic.progress_io.tx.clone(); 
                 let pool = pool.clone();
                 let order = self.order_panel.extract_sql().clone();  
-                let groups = self.match_criteria.list.clone();               
+                let groups = self.match_criteria.get().to_vec();               
                 let match_null = self.match_null;
     
                 wrap_async(
@@ -963,7 +985,7 @@ impl App {
                 let progress_sender = self.tags.progress_io.tx.clone();
     
                     let pool = pool.clone();
-                    let tags = self.tags_panel.grid.list.iter().map(|s| s.to_string()).collect();
+                    let tags = self.tags_panel.list().to_vec();
                     wrap_async(
                         &mut self.tags,
                         "Searching for Filenames with Specified Tags",
@@ -1451,7 +1473,7 @@ impl OrderPanel {
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 #[serde(default)]
 pub struct TagsPanel {          // Use &str for new
-    grid: SelectableGrid,   // Use &str for the grid
+    list: SelectableList,   // Use &str for the grid
 }
 
 impl TagsPanel {
@@ -1462,23 +1484,26 @@ impl TagsPanel {
         empty_line(ui);
         ui.separator();
         egui::ScrollArea::vertical().show(ui, |ui| {
-            self.grid.render(ui, 6, "tags editor", false);
-            if !self.grid.list.is_empty() {
+            self.list.render(ui, 6, "tags editor", false);
+            if !self.list().is_empty() {
                 ui.separator();
 
             }
             empty_line(ui);
             ui.horizontal(|ui| {
                 if ui.button("Add Tag:").clicked() {
-                    self.grid.add();
+                    self.list.add();
                    
                 }
-                ui.text_edit_singleline(&mut self.grid.add);
+                ui.text_edit_singleline(&mut self.list.add);
             });
-            if !self.grid.list.is_empty() && ui.button("Remove Selected Tags").clicked() {
-                self.grid.remove_selected();
+            if !self.list.get().is_empty() && ui.button("Remove Selected Tags").clicked() {
+                self.list.remove_selected();
             }
         });
+    }
+    pub fn list(&self) -> &[String] {
+        self.list.get()
     }
 
 }

@@ -60,6 +60,7 @@ webbrowser = "1.0.2"
 reqwest = "0.12.8"
 
 
+
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 env_logger = "0.11.5"

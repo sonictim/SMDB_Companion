@@ -129,15 +129,30 @@ where
 
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 #[serde(default)]
-pub struct SelectableGrid {
+pub struct SelectableList {
     #[serde(skip)]
     pub add: String,
     #[serde(skip)]
     pub selected: Vec<usize>,
-    pub list: Vec<String>, // Use &str for the list
+    list: Vec<String>, // Use &str for the list
 }
 
-impl SelectableGrid {
+impl SelectableList {
+    // pub fn new(list: Vec<String>) -> Self {
+    //     Self {
+    //         add: String::new(),
+    //         selected: Vec::new(),
+    //         list,
+    //     }
+    // }
+    pub fn set(&mut self, list: Vec<String>) {
+        self.list = list;
+    }
+
+    pub fn get(&self) -> &[String] {
+        &self.list
+    }
+
     pub fn render(&mut self, ui: &mut egui::Ui, columns: usize, label: &str, border: bool) {
         if border {
             self.render_with_border(ui, columns, label);
