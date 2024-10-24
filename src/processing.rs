@@ -33,6 +33,10 @@ pub fn copy_to_clipboard(text: String) {
 
 }
 
+// pub fn remove_all_spaces(input: &str) -> String {
+//     input.chars().filter(|c| !c.is_whitespace()).collect()
+// }
+
 
 pub async fn fetch_latest_version() -> Result<String, Box<dyn Error>> {
     let file_id = "1C8jyVjkMgeglYK-FnmTuoRqwf5Nd6PGG";
@@ -87,34 +91,24 @@ fn get_root_filename(filename: &str, ignore_extension: bool) -> Option<String> {
 
 const TABLE: &str = "justinmetadata";
 
-// pub fn wrap_async<F, T>(pool: &SqlitePool, config: &mut Config, label: &str, action: F)
-pub fn wrap_async<F, T>(config: &mut NodeConfig, label: &str, action: F)
-where
-    // F: FnOnce(&SqlitePool, mpsc::Sender<ProgressMessage>) -> T + Send + 'static,
-    F: FnOnce() -> T + Send + 'static,
-    T: std::future::Future<Output = Result<HashSet<FileRecord>, sqlx::Error>> + Send + 'static,
-{
-    config.working = true;
-    config.status = label.into();
-    // let records = config.records.clone();
-    let tx = config.records_io.tx.clone();
-        // if let Some(sender) = config.progress_sender.clone() {
-        // let pool = pool.clone();
+// pub fn wrap_async<F, T>(config: &mut NodeConfig, action: F)
+// where
+//     F: FnOnce() -> T + Send + 'static,
+//     T: std::future::Future<Output = Result<HashSet<FileRecord>, sqlx::Error>> + Send + 'static,
+// {
+//     config.working = true;
+//     let tx = config.records_io.tx.clone();
 
-        let handle = tokio::spawn(async move {
-            println!("Inside Async Task");
-
-            // let _results  = action(&pool, sender).await;
-            let results = action().await;
-
-            if (tx.send(results.expect("Tokio Results Error HashSet")).await).is_err() {
-                eprintln!("Failed to send db");
-            }
-        });
-        config.handle = Some(handle);
-        // }
+//         let handle = tokio::spawn(async move {
+//             let results = action().await;
+//             if (tx.send(results.expect("Tokio Results Error HashSet")).await).is_err() {
+//                 eprintln!("Failed to send db");
+//             }
+//         });
+//         config.handle = Some(handle);
+        
     
-}
+// }
 
 pub async fn smreplace_get(
     pool: &SqlitePool,
@@ -182,20 +176,22 @@ pub async fn smreplace_process(
 
 pub async fn gather_duplicate_filenames_in_database(
     pool: SqlitePool,
-    order: Vec<String>,
-    groups: Vec<String>,
-    group_null: bool,
     progress_sender: mpsc::Sender<ProgressMessage>,
+    status_sender: mpsc::Sender<Arc<str>>,
+    order: Vec<String>,
+    match_groups: Vec<String>,
+    match_null: bool,
 ) -> Result<HashSet<FileRecord>, sqlx::Error> {
     let mut file_records = HashSet::new();
-
+    let _ = status_sender.send("Gathering Duplicate Records".into()).await;
+    println!("basic search begin");
     // Construct the ORDER BY clause dynamically
     let order_clause = order.join(", ");
-    let partition_by_clause = groups.join(", ");
-    let where_clause = if group_null || groups.is_empty() {
+    let partition_by_clause = match_groups.join(", ");
+    let where_clause = if match_null || match_groups.is_empty() {
         String::new()
     } else {
-        let non_null_conditions: Vec<String> = groups
+        let non_null_conditions: Vec<String> = match_groups
             .iter()
             .map(|group| format!("{group} IS NOT NULL AND {group} !=''"))
             .collect();
@@ -221,8 +217,10 @@ pub async fn gather_duplicate_filenames_in_database(
         ",
         partition_by_clause, order_clause, TABLE, where_clause
     );
-
+    println!("fetching rows: {}", &sql);
     let rows = sqlx::query(&sql).fetch_all(&pool).await?;
+    println!("received rows");
+    let _ = status_sender.send("Organizing Records".into()).await;
 
     let total = rows.len();
     let mut counter = 0;
@@ -252,10 +250,12 @@ pub async fn gather_deep_dive_records(
     ignore_extension: bool,
 ) -> Result<HashSet<FileRecord>, sqlx::Error> {
     let mut file_groups: HashMap<String, Vec<FileRecord>> = HashMap::new();
+    let _ = status_sender.send("Gathering Duplicates with Similar Filenames".into()).await;
 
     let query = &format!("SELECT rowid, filename, duration, filepath FROM {}", TABLE);
 
     let rows = sqlx::query(query).fetch_all(&pool).await?;
+    let _ = status_sender.send("Organizing Results".into()).await;
 
     let total = rows.len();
     let mut counter: usize = 0;
@@ -330,9 +330,12 @@ pub async fn gather_deep_dive_records(
 
 pub async fn gather_filenames_with_tags(
     pool: SqlitePool,
-    tags: Vec<String>,
     progress_sender: mpsc::Sender<ProgressMessage>,
+    status_sender: mpsc::Sender<Arc<str>>,
+    tags: Vec<String>,
 ) -> Result<HashSet<FileRecord>, sqlx::Error> {
+    let _ = status_sender.send("Searching for Filenames with Specified Tags".into()).await;
+
     let total = tags.len();
     // let mut counter = 1;
     let mut file_records = HashSet::new();
@@ -345,6 +348,7 @@ pub async fn gather_filenames_with_tags(
             
             let pool = pool.clone();
             let progress_sender = progress_sender.clone();
+            let status_sender = status_sender.clone();
             async move {
                 let query = format!(
                     "SELECT rowid, filename, duration, filepath FROM {} WHERE filename LIKE '%' || ? || '%'",
@@ -352,8 +356,8 @@ pub async fn gather_filenames_with_tags(
                 );
 
                 
-                let result = sqlx::query(&query).bind(tag).fetch_all(&pool).await; // Return the result (Result<Vec<sqlx::sqlite::SqliteRow>, sqlx::Error>)
-                
+                let result = sqlx::query(&query).bind(&tag).fetch_all(&pool).await; // Return the result (Result<Vec<sqlx::sqlite::SqliteRow>, sqlx::Error>)
+                let _ = status_sender.send((format!["Searching for tag: {}", &tag]).into()).await;
                 let _ = progress_sender
                     .send(ProgressMessage::Update(counter, total))
                     .await;
@@ -629,278 +633,62 @@ pub async fn get_audio_file_types(pool: &SqlitePool) -> Result<Vec<String>, sqlx
     Ok(audio_file_types)
 }
 
-pub fn parse_to_sql(column: &str, operator: &OrderOperator, input: &str) -> String {
-    match operator {
-        OrderOperator::Largest => format! {"{} DESC", column.to_lowercase()},
-        OrderOperator::Smallest => format!("{} ASC", column.to_lowercase()),
-        OrderOperator::Is => format!(
-            "CASE WHEN {} IS '%{}%' THEN 0 ELSE 1 END ASC",
-            column.to_lowercase(),
-            input
-        ),
-        OrderOperator::IsNot => format!(
-            "CASE WHEN {} IS '%{}%' THEN 1 ELSE 0 END ASC",
-            column.to_lowercase(),
-            input
-        ),
-        OrderOperator::Contains => format!(
-            "CASE WHEN {} LIKE '%{}%' THEN 0 ELSE 1 END ASC",
-            column.to_lowercase(),
-            input
-        ),
-        OrderOperator::DoesNotContain => format!(
-            "CASE WHEN {} LIKE '%{}%' THEN 1 ELSE 0 END ASC",
-            column.to_lowercase(),
-            input
-        ),
-        OrderOperator::IsEmpty => format!(
-            "CASE WHEN {} IS NOT NULL AND {} != '' THEN 1 ELSE 0 END ASC",
-            column.to_lowercase(),
-            column.to_lowercase()
-        ),
-        OrderOperator::IsNotEmpty => format!(
-            "CASE WHEN {} IS NOT NULL AND {} != '' THEN 0 ELSE 1 END ASC",
-            column.to_lowercase(),
-            column.to_lowercase()
-        ),
-    }
-}
+// pub fn parse_to_sql(column: &str, operator: &OrderOperator, input: &str) -> String {
+//     match operator {
+//         OrderOperator::Largest => format! {"{} DESC", column.to_lowercase()},
+//         OrderOperator::Smallest => format!("{} ASC", column.to_lowercase()),
+//         OrderOperator::Is => format!(
+//             "CASE WHEN {} IS '%{}%' THEN 0 ELSE 1 END ASC",
+//             column.to_lowercase(),
+//             input
+//         ),
+//         OrderOperator::IsNot => format!(
+//             "CASE WHEN {} IS '%{}%' THEN 1 ELSE 0 END ASC",
+//             column.to_lowercase(),
+//             input
+//         ),
+//         OrderOperator::Contains => format!(
+//             "CASE WHEN {} LIKE '%{}%' THEN 0 ELSE 1 END ASC",
+//             column.to_lowercase(),
+//             input
+//         ),
+//         OrderOperator::DoesNotContain => format!(
+//             "CASE WHEN {} LIKE '%{}%' THEN 1 ELSE 0 END ASC",
+//             column.to_lowercase(),
+//             input
+//         ),
+//         OrderOperator::IsEmpty => format!(
+//             "CASE WHEN {} IS NOT NULL AND {} != '' THEN 1 ELSE 0 END ASC",
+//             column.to_lowercase(),
+//             column.to_lowercase()
+//         ),
+//         OrderOperator::IsNotEmpty => format!(
+//             "CASE WHEN {} IS NOT NULL AND {} != '' THEN 0 ELSE 1 END ASC",
+//             column.to_lowercase(),
+//             column.to_lowercase()
+//         ),
+//     }
+// }
 
-pub fn parse_to_user_friendly(column: &str, operator: &OrderOperator, input: &str) -> String {
-    match operator {
-        OrderOperator::Largest => format! {"Largest {}", column},
-        OrderOperator::Smallest => format!("Smallest {} ", column),
-        OrderOperator::Is => format!("{} is '{}'", column, input),
-        OrderOperator::IsNot => format!("{} is NOT '{}'", column, input),
-        OrderOperator::Contains => format!("{} contains '{}'", column, input),
-        OrderOperator::DoesNotContain => format!("{} does NOT contain '{}'", column, input),
-        OrderOperator::IsEmpty => format!("{} is empty", column,),
-        OrderOperator::IsNotEmpty => format!("{} is NOT empty", column,),
-    }
-}
+// pub fn parse_to_user_friendly(column: &str, operator: &OrderOperator, input: &str) -> String {
+//     match operator {
+//         OrderOperator::Largest => format! {"Largest {}", column},
+//         OrderOperator::Smallest => format!("Smallest {} ", column),
+//         OrderOperator::Is => format!("{} is '{}'", column, input),
+//         OrderOperator::IsNot => format!("{} is NOT '{}'", column, input),
+//         OrderOperator::Contains => format!("{} contains '{}'", column, input),
+//         OrderOperator::DoesNotContain => format!("{} does NOT contain '{}'", column, input),
+//         OrderOperator::IsEmpty => format!("{} is empty", column,),
+//         OrderOperator::IsNotEmpty => format!("{} is NOT empty", column,),
+//     }
+// }
 
-pub fn parse_to_struct(column: String, operator: OrderOperator, input: String) -> PreservationLogic {
-    PreservationLogic{
-        friendly: parse_to_user_friendly(&column, &operator, &input),
-        sql: parse_to_sql(&column, &operator, &input),
-    }
-}
-
-pub fn default_tags() -> Vec<String> {
-    const DEFAULT_TAGS_VEC: [&str; 43] = [
-        "-1eqa_",
-        "-6030_",
-        "-7eqa_",
-        "-A2sA_",
-        "-A44m_",
-        "-A44s_",
-        "-Alt7S_",
-        "-ASMA_",
-        "-AVrP_",
-        "-AVrT_",
-        "-AVSt_",
-        "-DEC4_",
-        "-Delays_",
-        "-Dn_",
-        "-DUPL_",
-        "-DVerb_",
-        "-GAIN_",
-        "-M2DN_",
-        "-NORM_",
-        "-NYCT_",
-        "-PiSh_",
-        "-PnT2_",
-        "-PnTPro_",
-        "-ProQ2_",
-        "-PSh_",
-        "-RVRS_",
-        "-RX7Cnct_",
-        "-spce_",
-        "-TCEX_",
-        "-TiSh_",
-        "-TmShft_",
-        "-VariFi_",
-        "-VlhllVV_",
-        "-VSPD_",
-        "-VitmnMn_",
-        "-VtmnStr_",
-        "-X2mA_",
-        "-X2sA_",
-        "-XForm_",
-        "-Z2N5_",
-        "-Z2S5_",
-        "-Z4n2_",
-        "-ZXN5_",
-    ];
-
-    DEFAULT_TAGS_VEC.map(|s| s.to_string()).to_vec()
-}
-
-pub fn tjf_tags() -> Vec<String> {
-    const TJF_TAGS_VEC: [&str; 49] = [
-        "-1eqa_",
-        "-6030_",
-        "-7eqa_",
-        "-A2sA_",
-        "-A44m_",
-        "-A44s_",
-        "-Alt7S_",
-        "-ASMA_",
-        "-AVrP_",
-        "-AVrT_",
-        "-AVSt_",
-        "-DEC4_",
-        "-Delays_",
-        "-Dn_",
-        "-DUPL_",
-        "-DVerb_",
-        "-GAIN_",
-        "-M2DN_",
-        "-NORM_",
-        "-NYCT_",
-        "-PiSh_",
-        "-PnT2_",
-        "-PnTPro_",
-        "-ProQ2_",
-        "-PSh_",
-        "-Reverse_",
-        "-RVRS_",
-        "-RING_",
-        "-RX7Cnct_",
-        "-spce_",
-        "-TCEX_",
-        "-TiSh_",
-        "-TmShft_",
-        "-VariFi_",
-        "-VlhllVV_",
-        "-VSPD_",
-        "-VitmnMn_",
-        "-VtmnStr_",
-        "-X2mA_",
-        "-X2sA_",
-        "-XForm_",
-        "-Z2N5_",
-        "-Z2S5_",
-        "-Z4n2_",
-        "-ZXN5_",
-        ".new.",
-        ".aif.",
-        ".mp3.",
-        ".wav.",
-    ];
-    TJF_TAGS_VEC.map(|s| s.to_string()).to_vec()
-}
-
-pub fn get_default_struct_order() -> Vec<PreservationLogic> {
-    let a = default_order();
-    let b = default_order_friendly();
-    
-    a.iter()
-        .cloned()
-        .zip(b.iter().cloned())
-        .map(|(sql, friendly)| PreservationLogic { sql, friendly })
-        .collect()
-}
-
-pub fn get_tjf_struct_order() -> Vec<PreservationLogic> {
-    let a = tjf_order();
-    let b = tjf_order_friendly();
-    
-    a.iter()
-        .cloned()
-        .zip(b.iter().cloned())
-        .map(|(sql, friendly)| PreservationLogic { sql, friendly })
-        .collect()
-}
-
-
-pub fn default_order() -> Vec<String> {
-    const DEFAULT_ORDER_VEC: [&str; 12] = [
-        "CASE WHEN Description IS NOT NULL AND Description != '' THEN 0 ELSE 1 END ASC",
-        "CASE WHEN pathname LIKE '%Audio Files%' THEN 1 ELSE 0 END ASC",
-        "CASE WHEN pathname LIKE '%LIBRARIES%' THEN 0 ELSE 1 END ASC",
-        "CASE WHEN pathname LIKE '%LIBRARY%' THEN 0 ELSE 1 END ASC",
-        "CASE WHEN pathname LIKE '%/LIBRARY%' THEN 0 ELSE 1 END ASC",
-        "CASE WHEN pathname LIKE '%LIBRARY/%' THEN 0 ELSE 1 END ASC",
-        "duration DESC",
-        "channels DESC",
-        "sampleRate DESC",
-        "bitDepth DESC",
-        "BWDate ASC",
-        "scannedDate ASC",
-    ];
-    DEFAULT_ORDER_VEC.map(|s| s.to_string()).to_vec()
-}
-pub fn default_order_friendly() -> Vec<String> {
-    const DEFAULT_ORDER_FRIENDLY: [&str; 12] = [
-        "Description is NOT Empty",
-        "Pathname does NOT contain 'Audio Files'",
-        "Pathname contains 'LIBRARIES'",
-        "Pathname contains 'LIBRARY'",
-        "Pathname contains '/LIBRARY'",
-        "Pathname contains 'LIBRARY/'",
-        "Largest Duration",
-        "Largest Channel Count",
-        "Largest Sample Rate",
-        "Largest Bit Depth",
-        "Smallest BWDate",
-        "Smallest Scanned Date",
-    ];
-    DEFAULT_ORDER_FRIENDLY.map(|s| s.to_string()).to_vec()
-}
-
-pub fn tjf_order() -> Vec<String> {
-    const TJF_ORDER_VEC: [&str; 22] = [
-        "CASE WHEN pathname LIKE '%TJF RECORDINGS%' THEN 0 ELSE 1 END ASC",
-        "CASE WHEN pathname LIKE '%LIBRARIES%' THEN 0 ELSE 1 END ASC",
-        "CASE WHEN pathname LIKE '%SHOWS/Tim Farrell%' THEN 1 ELSE 0 END ASC",
-        "CASE WHEN Description IS NOT NULL AND Description != '' THEN 0 ELSE 1 END ASC",
-        "CASE WHEN pathname LIKE '%Audio Files%' THEN 1 ELSE 0 END ASC",
-        "CASE WHEN pathname LIKE '%RECORD%' THEN 0 ELSE 1 END ASC",
-        "CASE WHEN pathname LIKE '%CREATED SFX%' THEN 0 ELSE 1 END ASC",
-        "CASE WHEN pathname LIKE '%CREATED FX%' THEN 0 ELSE 1 END ASC",
-        "CASE WHEN pathname LIKE '%LIBRARY%' THEN 0 ELSE 1 END ASC",
-        "CASE WHEN pathname LIKE '%/LIBRARY%' THEN 0 ELSE 1 END ASC",
-        "CASE WHEN pathname LIKE '%LIBRARY/%' THEN 0 ELSE 1 END ASC",
-        "CASE WHEN pathname LIKE '%SIGNATURE%' THEN 0 ELSE 1 END ASC",
-        "CASE WHEN pathname LIKE '%PULLS%' THEN 0 ELSE 1 END ASC",
-        "CASE WHEN pathname LIKE '%EDIT%' THEN 1 ELSE 0 END ASC",
-        "CASE WHEN pathname LIKE '%MIX%' THEN 1 ELSE 0 END ASC",
-        "CASE WHEN pathname LIKE '%SESSION%' THEN 1 ELSE 0 END ASC",
-        "duration DESC",
-        "channels DESC",
-        "sampleRate DESC",
-        "bitDepth DESC",
-        "BWDate ASC",
-        "scannedDate ASC",
-    ];
-    TJF_ORDER_VEC.map(|s| s.to_string()).to_vec()
-}
-
-pub fn tjf_order_friendly() -> Vec<String> {
-    const TJF_ORDER_FRIENDLY: [&str; 22] = [
-        "Pathname contains 'TJF RECORDINGS'",
-        "Pathname contains 'LIBRARIES'",
-        "Pathname does NOT contain 'SHOWS/Tim Farrell'",
-        "Description is NOT Empty",
-        "Pathname does NOT contain 'Audio Files'",
-        "Pathname contains 'RECORD'",
-        "Pathname contains 'CREATED SFX'",
-        "Pathname contains 'CREATED FX'",
-        "Pathname contains 'LIBRARY'",
-        "Pathname contains '/LIBRARY'",
-        "Pathname contains 'LIBRARY/'",
-        "Pathname contains 'SIGNATURE'",
-        "Pathname contains 'PULLS'",
-        "Pathname does NOT contain 'EDIT'",
-        "Pathname does NOT contain 'MIX'",
-        "Pathname does NOT contain 'SESSION'",
-        "Largest Duration",
-        "Largest Channel Count",
-        "Largest Sample Rate",
-        "Largest Bit Depth",
-        "Smallest BWDate",
-        "Smallest Scanned Date",
-    ];
-    TJF_ORDER_FRIENDLY.map(|s| s.to_string()).to_vec()
-}
+// pub fn parse_to_struct(column: String, operator: OrderOperator, input: String) -> PreservationLogic {
+//     PreservationLogic{
+//         // column,
+//         // operator,
+//         // variable: input,    
+//         friendly: parse_to_user_friendly(&column, &operator, &input),
+//         sql: parse_to_sql(&column, &operator, &input),
+//     }
+// }

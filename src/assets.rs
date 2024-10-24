@@ -133,18 +133,11 @@ pub struct SelectableList {
     #[serde(skip)]
     pub add: String,
     #[serde(skip)]
-    pub selected: Vec<usize>,
+    selected: Vec<usize>,
     list: Vec<String>, // Use &str for the list
 }
 
 impl SelectableList {
-    // pub fn new(list: Vec<String>) -> Self {
-    //     Self {
-    //         add: String::new(),
-    //         selected: Vec::new(),
-    //         list,
-    //     }
-    // }
     pub fn set(&mut self, list: Vec<String>) {
         self.list = list;
     }
@@ -205,6 +198,27 @@ impl SelectableList {
                 }
             });
     }
+
+    pub fn add_combo_box(&mut self, ui: &mut egui::Ui, box_list: &[String]) {
+        let filtered_list: Vec<String> = box_list
+            .iter()
+            .filter(|item| !&self.list.contains(*item))
+            .cloned()
+            .collect();
+        // .retain();
+        combo_box(ui, "match criteria", &mut self.add, &filtered_list);
+        self.add();
+    }
+
+    pub fn add_text_input(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            if ui.button("Add Tag:").clicked() {
+                self.add();
+            }
+            ui.text_edit_singleline(&mut self.add);
+        });
+    }
+
     pub fn add(&mut self) {
         if self.add.is_empty() {
             return;

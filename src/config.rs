@@ -6,6 +6,7 @@ use eframe::egui::{self, RichText};
 use rayon::prelude::*;
 use serde::Deserialize;
 use sqlx::sqlite::SqlitePool;
+// use sqlx::Sqlite;
 use std::collections::HashSet;
 use std::fs::{self};
 use std::hash::Hash;
@@ -202,12 +203,29 @@ impl NodeConfig {
         }
         empty_line(ui);
     }
+
+    pub fn wrap_async<F, T>(&mut self, action: F)
+    where
+        F: FnOnce() -> T + Send + 'static,
+        T: std::future::Future<Output = Result<HashSet<FileRecord>, sqlx::Error>> + Send + 'static,
+    {
+        self.working = true;
+        let tx = self.records_io.tx.clone();
+
+        let handle = tokio::spawn(async move {
+            let results = action().await;
+            if (tx.send(results.expect("Tokio Results Error HashSet")).await).is_err() {
+                eprintln!("Failed to send db");
+            }
+        });
+        self.handle = Some(handle);
+    }
 }
 
 // #[derive(Default)]
 pub struct Database {
     pub path: String,
-    pub pool: Option<SqlitePool>,
+    pool: Option<SqlitePool>,
     pub name: String,
     pub size: usize,
     pub columns: Vec<String>,
@@ -238,7 +256,7 @@ impl Database {
     }
 
     pub fn get_extensions(&mut self, tx: mpsc::Sender<Vec<String>>) {
-        let Some(pool) = self.pool.clone() else {
+        let Some(pool) = self.pool() else {
             return;
         };
         let tx = tx.clone();
@@ -249,6 +267,10 @@ impl Database {
                 eprintln!("Failed to send db while gathering extensions");
             }
         });
+    }
+
+    pub fn pool(&self) -> Option<SqlitePool> {
+        self.pool.clone()
     }
 }
 
@@ -317,8 +339,58 @@ impl EnumComboBox for OrderOperator {
 
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
 pub struct PreservationLogic {
-    pub friendly: String,
-    pub sql: String,
+    pub column: String,
+    pub operator: OrderOperator,
+    pub variable: String,
+    // pub friendly: String,
+    // pub sql: String,
+}
+
+impl PreservationLogic {
+    pub fn get_sql(&self) -> String {
+        match self.operator {
+            OrderOperator::Largest => format! {"{} DESC", self.column.to_lowercase()},
+            OrderOperator::Smallest => format!("{} ASC", self.column.to_lowercase()),
+            OrderOperator::Is => format!(
+                "CASE WHEN {} IS '%{}%' THEN 0 ELSE 1 END ASC",
+                self.column, self.variable,
+            ),
+            OrderOperator::IsNot => format!(
+                "CASE WHEN {} IS '%{}%' THEN 1 ELSE 0 END ASC",
+                self.column, self.variable
+            ),
+            OrderOperator::Contains => format!(
+                "CASE WHEN {} LIKE '%{}%' THEN 0 ELSE 1 END ASC",
+                self.column, self.variable
+            ),
+            OrderOperator::DoesNotContain => format!(
+                "CASE WHEN {} LIKE '%{}%' THEN 1 ELSE 0 END ASC",
+                self.column, self.variable
+            ),
+            OrderOperator::IsEmpty => format!(
+                "CASE WHEN {} IS NOT NULL AND {} != '' THEN 1 ELSE 0 END ASC",
+                self.column, self.column
+            ),
+            OrderOperator::IsNotEmpty => format!(
+                "CASE WHEN {} IS NOT NULL AND {} != '' THEN 0 ELSE 1 END ASC",
+                self.column, self.column
+            ),
+        }
+    }
+    pub fn get_friendly(&self) -> String {
+        match self.operator {
+            OrderOperator::Largest => format! {"Largest {}", self.column},
+            OrderOperator::Smallest => format!("Smallest {} ", self.column),
+            OrderOperator::Is => format!("{} is '{}'", self.column, self.variable),
+            OrderOperator::IsNot => format!("{} is NOT '{}'", self.column, self.variable),
+            OrderOperator::Contains => format!("{} contains '{}'", self.column, self.variable),
+            OrderOperator::DoesNotContain => {
+                format!("{} does NOT contain '{}'", self.column, self.variable)
+            }
+            OrderOperator::IsEmpty => format!("{} is empty", self.column,),
+            OrderOperator::IsNotEmpty => format!("{} is NOT empty", self.column,),
+        }
+    }
 }
 
 #[derive(PartialEq, serde::Serialize, Deserialize, Clone, Copy, Default)]
@@ -372,3 +444,379 @@ impl Delete {
         Ok(())
     }
 }
+
+pub fn default_tags() -> Vec<String> {
+    const DEFAULT_TAGS_VEC: [&str; 43] = [
+        "-1eqa_",
+        "-6030_",
+        "-7eqa_",
+        "-A2sA_",
+        "-A44m_",
+        "-A44s_",
+        "-Alt7S_",
+        "-ASMA_",
+        "-AVrP_",
+        "-AVrT_",
+        "-AVSt_",
+        "-DEC4_",
+        "-Delays_",
+        "-Dn_",
+        "-DUPL_",
+        "-DVerb_",
+        "-GAIN_",
+        "-M2DN_",
+        "-NORM_",
+        "-NYCT_",
+        "-PiSh_",
+        "-PnT2_",
+        "-PnTPro_",
+        "-ProQ2_",
+        "-PSh_",
+        "-RVRS_",
+        "-RX7Cnct_",
+        "-spce_",
+        "-TCEX_",
+        "-TiSh_",
+        "-TmShft_",
+        "-VariFi_",
+        "-VlhllVV_",
+        "-VSPD_",
+        "-VitmnMn_",
+        "-VtmnStr_",
+        "-X2mA_",
+        "-X2sA_",
+        "-XForm_",
+        "-Z2N5_",
+        "-Z2S5_",
+        "-Z4n2_",
+        "-ZXN5_",
+    ];
+
+    DEFAULT_TAGS_VEC.map(|s| s.to_string()).to_vec()
+}
+
+pub fn tjf_tags() -> Vec<String> {
+    const TJF_TAGS_VEC: [&str; 49] = [
+        "-1eqa_",
+        "-6030_",
+        "-7eqa_",
+        "-A2sA_",
+        "-A44m_",
+        "-A44s_",
+        "-Alt7S_",
+        "-ASMA_",
+        "-AVrP_",
+        "-AVrT_",
+        "-AVSt_",
+        "-DEC4_",
+        "-Delays_",
+        "-Dn_",
+        "-DUPL_",
+        "-DVerb_",
+        "-GAIN_",
+        "-M2DN_",
+        "-NORM_",
+        "-NYCT_",
+        "-PiSh_",
+        "-PnT2_",
+        "-PnTPro_",
+        "-ProQ2_",
+        "-PSh_",
+        "-Reverse_",
+        "-RVRS_",
+        "-RING_",
+        "-RX7Cnct_",
+        "-spce_",
+        "-TCEX_",
+        "-TiSh_",
+        "-TmShft_",
+        "-VariFi_",
+        "-VlhllVV_",
+        "-VSPD_",
+        "-VitmnMn_",
+        "-VtmnStr_",
+        "-X2mA_",
+        "-X2sA_",
+        "-XForm_",
+        "-Z2N5_",
+        "-Z2S5_",
+        "-Z4n2_",
+        "-ZXN5_",
+        ".new.",
+        ".aif.",
+        ".mp3.",
+        ".wav.",
+    ];
+    TJF_TAGS_VEC.map(|s| s.to_string()).to_vec()
+}
+
+pub fn default_order() -> Vec<PreservationLogic> {
+    vec![
+        PreservationLogic {
+            column: String::from("Description"),
+            operator: OrderOperator::IsNotEmpty,
+            variable: String::new(),
+        },
+        PreservationLogic {
+            column: String::from("Pathname"),
+            operator: OrderOperator::DoesNotContain,
+            variable: String::from("Audio Files"),
+        },
+        PreservationLogic {
+            column: String::from("Pathname"),
+            operator: OrderOperator::Contains,
+            variable: String::from("LIBRARIES"),
+        },
+        PreservationLogic {
+            column: String::from("Pathname"),
+            operator: OrderOperator::Contains,
+            variable: String::from("LIBRARY"),
+        },
+        PreservationLogic {
+            column: String::from("Pathname"),
+            operator: OrderOperator::Contains,
+            variable: String::from("/LIBRARY"),
+        },
+        PreservationLogic {
+            column: String::from("Pathname"),
+            operator: OrderOperator::Contains,
+            variable: String::from("LIBRARY/"),
+        },
+        PreservationLogic {
+            column: String::from("Duration"),
+            operator: OrderOperator::Largest,
+            variable: String::new(),
+        },
+        PreservationLogic {
+            column: String::from("Channels"),
+            operator: OrderOperator::Largest,
+            variable: String::new(),
+        },
+        PreservationLogic {
+            column: String::from("SampleRate"),
+            operator: OrderOperator::Largest,
+            variable: String::new(),
+        },
+        PreservationLogic {
+            column: String::from("BitDepth"),
+            operator: OrderOperator::Largest,
+            variable: String::new(),
+        },
+        PreservationLogic {
+            column: String::from("BWDate"),
+            operator: OrderOperator::Smallest,
+            variable: String::new(),
+        },
+        PreservationLogic {
+            column: String::from("ScannedDate"),
+            operator: OrderOperator::Smallest,
+            variable: String::new(),
+        },
+    ]
+}
+
+pub fn tjf_order() -> Vec<PreservationLogic> {
+    vec![
+        PreservationLogic {
+            column: String::from("Pathname"),
+            operator: OrderOperator::Contains,
+            variable: String::from("TJF RECORDINGS"),
+        },
+        PreservationLogic {
+            column: String::from("Pathname"),
+            operator: OrderOperator::Contains,
+            variable: String::from("LIBRARIES"),
+        },
+        PreservationLogic {
+            column: String::from("Pathname"),
+            operator: OrderOperator::DoesNotContain,
+            variable: String::from("SHOWS/Tim Farrell"),
+        },
+        PreservationLogic {
+            column: String::from("Description"),
+            operator: OrderOperator::IsNotEmpty,
+            variable: String::new(),
+        },
+        PreservationLogic {
+            column: String::from("Pathname"),
+            operator: OrderOperator::DoesNotContain,
+            variable: String::from("Audio Files"),
+        },
+        PreservationLogic {
+            column: String::from("Pathname"),
+            operator: OrderOperator::Contains,
+            variable: String::from("RECORD"),
+        },
+        PreservationLogic {
+            column: String::from("Pathname"),
+            operator: OrderOperator::Contains,
+            variable: String::from("CREATED SFX"),
+        },
+        PreservationLogic {
+            column: String::from("Pathname"),
+            operator: OrderOperator::Contains,
+            variable: String::from("CREATED FX"),
+        },
+        PreservationLogic {
+            column: String::from("Pathname"),
+            operator: OrderOperator::Contains,
+            variable: String::from("LIBRARY"),
+        },
+        PreservationLogic {
+            column: String::from("Pathname"),
+            operator: OrderOperator::Contains,
+            variable: String::from("/LIBRARY"),
+        },
+        PreservationLogic {
+            column: String::from("Pathname"),
+            operator: OrderOperator::Contains,
+            variable: String::from("LIBRARY/"),
+        },
+        PreservationLogic {
+            column: String::from("Pathname"),
+            operator: OrderOperator::Contains,
+            variable: String::from("SIGNATURE"),
+        },
+        PreservationLogic {
+            column: String::from("Pathname"),
+            operator: OrderOperator::Contains,
+            variable: String::from("PULLS"),
+        },
+        PreservationLogic {
+            column: String::from("Pathname"),
+            operator: OrderOperator::DoesNotContain,
+            variable: String::from("EDIT"),
+        },
+        PreservationLogic {
+            column: String::from("Pathname"),
+            operator: OrderOperator::DoesNotContain,
+            variable: String::from("MIX"),
+        },
+        PreservationLogic {
+            column: String::from("Pathname"),
+            operator: OrderOperator::DoesNotContain,
+            variable: String::from("SESSION"),
+        },
+        PreservationLogic {
+            column: String::from("Duration"),
+            operator: OrderOperator::Largest,
+            variable: String::new(),
+        },
+        PreservationLogic {
+            column: String::from("Channels"),
+            operator: OrderOperator::Largest,
+            variable: String::new(),
+        },
+        PreservationLogic {
+            column: String::from("SampleRate"),
+            operator: OrderOperator::Largest,
+            variable: String::new(),
+        },
+        PreservationLogic {
+            column: String::from("BitDepth"),
+            operator: OrderOperator::Largest,
+            variable: String::new(),
+        },
+        PreservationLogic {
+            column: String::from("BWDate"),
+            operator: OrderOperator::Smallest,
+            variable: String::new(),
+        },
+        PreservationLogic {
+            column: String::from("ScannedDate"),
+            operator: OrderOperator::Smallest,
+            variable: String::new(),
+        },
+    ]
+}
+
+// pub fn default_order() -> Vec<String> {
+//     const DEFAULT_ORDER_VEC: [&str; 12] = [
+//         "CASE WHEN Description IS NOT NULL AND Description != '' THEN 0 ELSE 1 END ASC",
+//         "CASE WHEN pathname LIKE '%Audio Files%' THEN 1 ELSE 0 END ASC",
+//         "CASE WHEN pathname LIKE '%LIBRARIES%' THEN 0 ELSE 1 END ASC",
+//         "CASE WHEN pathname LIKE '%LIBRARY%' THEN 0 ELSE 1 END ASC",
+//         "CASE WHEN pathname LIKE '%/LIBRARY%' THEN 0 ELSE 1 END ASC",
+//         "CASE WHEN pathname LIKE '%LIBRARY/%' THEN 0 ELSE 1 END ASC",
+//         "duration DESC",
+//         "channels DESC",
+//         "sampleRate DESC",
+//         "bitDepth DESC",
+//         "BWDate ASC",
+//         "scannedDate ASC",
+//     ];
+//     DEFAULT_ORDER_VEC.map(|s| s.to_string()).to_vec()
+// }
+// pub fn default_order_friendly() -> Vec<String> {
+//     const DEFAULT_ORDER_FRIENDLY: [&str; 12] = [
+//         "Description is NOT Empty",
+//         "Pathname does NOT contain 'Audio Files'",
+//         "Pathname contains 'LIBRARIES'",
+//         "Pathname contains 'LIBRARY'",
+//         "Pathname contains '/LIBRARY'",
+//         "Pathname contains 'LIBRARY/'",
+//         "Largest Duration",
+//         "Largest Channel Count",
+//         "Largest Sample Rate",
+//         "Largest Bit Depth",
+//         "Smallest BWDate",
+//         "Smallest Scanned Date",
+//     ];
+//     DEFAULT_ORDER_FRIENDLY.map(|s| s.to_string()).to_vec()
+// }
+
+// pub fn tjf_order() -> Vec<String> {
+//     const TJF_ORDER_VEC: [&str; 22] = [
+//         "CASE WHEN pathname LIKE '%TJF RECORDINGS%' THEN 0 ELSE 1 END ASC",
+//         "CASE WHEN pathname LIKE '%LIBRARIES%' THEN 0 ELSE 1 END ASC",
+//         "CASE WHEN pathname LIKE '%SHOWS/Tim Farrell%' THEN 1 ELSE 0 END ASC",
+//         "CASE WHEN Description IS NOT NULL AND Description != '' THEN 0 ELSE 1 END ASC",
+//         "CASE WHEN pathname LIKE '%Audio Files%' THEN 1 ELSE 0 END ASC",
+//         "CASE WHEN pathname LIKE '%RECORD%' THEN 0 ELSE 1 END ASC",
+//         "CASE WHEN pathname LIKE '%CREATED SFX%' THEN 0 ELSE 1 END ASC",
+//         "CASE WHEN pathname LIKE '%CREATED FX%' THEN 0 ELSE 1 END ASC",
+//         "CASE WHEN pathname LIKE '%LIBRARY%' THEN 0 ELSE 1 END ASC",
+//         "CASE WHEN pathname LIKE '%/LIBRARY%' THEN 0 ELSE 1 END ASC",
+//         "CASE WHEN pathname LIKE '%LIBRARY/%' THEN 0 ELSE 1 END ASC",
+//         "CASE WHEN pathname LIKE '%SIGNATURE%' THEN 0 ELSE 1 END ASC",
+//         "CASE WHEN pathname LIKE '%PULLS%' THEN 0 ELSE 1 END ASC",
+//         "CASE WHEN pathname LIKE '%EDIT%' THEN 1 ELSE 0 END ASC",
+//         "CASE WHEN pathname LIKE '%MIX%' THEN 1 ELSE 0 END ASC",
+//         "CASE WHEN pathname LIKE '%SESSION%' THEN 1 ELSE 0 END ASC",
+//         "duration DESC",
+//         "channels DESC",
+//         "sampleRate DESC",
+//         "bitDepth DESC",
+//         "BWDate ASC",
+//         "scannedDate ASC",
+//     ];
+//     TJF_ORDER_VEC.map(|s| s.to_string()).to_vec()
+// }
+
+// pub fn tjf_order_friendly() -> Vec<String> {
+//     const TJF_ORDER_FRIENDLY: [&str; 22] = [
+//         "Pathname contains 'TJF RECORDINGS'",
+//         "Pathname contains 'LIBRARIES'",
+//         "Pathname does NOT contain 'SHOWS/Tim Farrell'",
+//         "Description is NOT Empty",
+//         "Pathname does NOT contain 'Audio Files'",
+//         "Pathname contains 'RECORD'",
+//         "Pathname contains 'CREATED SFX'",
+//         "Pathname contains 'CREATED FX'",
+//         "Pathname contains 'LIBRARY'",
+//         "Pathname contains '/LIBRARY'",
+//         "Pathname contains 'LIBRARY/'",
+//         "Pathname contains 'SIGNATURE'",
+//         "Pathname contains 'PULLS'",
+//         "Pathname does NOT contain 'EDIT'",
+//         "Pathname does NOT contain 'MIX'",
+//         "Pathname does NOT contain 'SESSION'",
+//         "Largest Duration",
+//         "Largest Channel Count",
+//         "Largest Sample Rate",
+//         "Largest Bit Depth",
+//         "Smallest BWDate",
+//         "Smallest Scanned Date",
+//     ];
+//     TJF_ORDER_FRIENDLY.map(|s| s.to_string()).to_vec()
+// }

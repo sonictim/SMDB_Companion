@@ -9,11 +9,13 @@ use std::fs::{self};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
+
+
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)]
 pub struct App {
-    
+
     #[serde(skip)]
     db: Option<Database>,
     #[serde(skip)]
@@ -72,10 +74,7 @@ pub struct App {
 
 impl Default for App {
     fn default() -> Self {
-      
         let mut app = Self {
-
-            
             db: None,
             db_io: AsyncTunnel::new(1),
             extensions_io: AsyncTunnel::new(1),
@@ -118,9 +117,9 @@ impl Default for App {
 
            
         };
-        app.match_criteria.set(vec!["Filename".to_owned(), "Duration".to_owned(), "Channels".to_owned()]);      
+        app.match_criteria.set(vec!["Channels".to_owned(), "Duration".to_owned(), "Filename".to_owned()]);      
         app.tags_panel.list.set(default_tags());
-        app.order_panel.list = get_default_struct_order();
+        app.order_panel.list = default_order();
 
         app
     }
@@ -156,12 +155,10 @@ impl App {
         if let Some(storage) = cc.storage {
             return eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
         }
-
         Default::default()
     }
 
     fn reset_to_defaults(&mut self)  {
-
         let db = self.db.take();
         let panel = self.my_panel;
         let registration = self.registration.clone();
@@ -170,23 +167,17 @@ impl App {
         self.my_panel = panel;
         self.registration = registration;
         self.check_for_updates();
-       
     }
 
-    fn reset_to_tjf_defaults(
-        &mut self,
-    ) {
-    
+    fn reset_to_tjf_defaults(&mut self) {
         self.reset_to_defaults();
-      
-        self.order_panel.list = get_tjf_struct_order();
+        self.order_panel.list = tjf_order();
         self.tags_panel.list.set(tjf_tags());
         self.deep.enabled = true;
         self.tags.enabled = true;
         self.dupes_db = false;
         self.ignore_extension = true;
         self.match_criteria.set(vec!("Filename".to_owned()));
-  
     }
 
     fn clear_status(&mut self) {
@@ -291,10 +282,8 @@ impl App {
                 self.update_available = true;
             }
         }
-    
-  
-    
     }
+
     fn update_main_status(&mut self) {
         // if self.handles_active() { return }
 
@@ -317,12 +306,8 @@ impl App {
             if (tx.send(results.expect("Tokio Results Error HashSet")).await).is_err() {
                 eprintln!("Failed to send db");
             }
-            
-    
-    
         });
     }
-
 }
 
 
@@ -362,9 +347,7 @@ impl eframe::App for App {
  
             });
         });
-
         // The central panel the region left after adding TopPanel's and SidePanel's
-
         egui::CentralPanel::default().show(ctx, |ui| {
 
             empty_line(ui);
@@ -722,13 +705,8 @@ impl App {
             column[0].horizontal(|ui|{
                 ui.add_space(24.0);
                 ui.label(RichText::new("Add:"));
+                self.match_criteria.add_combo_box(ui, &db.columns);
 
-                let mut filtered_list = db.columns.clone();
-                filtered_list.retain(|item| !&self.match_criteria.get().contains(item));     
-                combo_box(ui, "match criteria", &mut self.match_criteria.add, &filtered_list);
-                self.match_criteria.add();
-
-            
                 button(ui, "Remove Selected", ||{
                     self.match_criteria.remove_selected();
 
@@ -946,52 +924,44 @@ impl App {
         self.abort_all();
         self.main.records.clear();
         if let Some(db) = self.db.as_ref() {
-            let Some(pool) = db.pool.clone() else {return};
+            let Some(pool) = db.pool() else {return};
     
           
             self.main.status = "Searching for Duplicates".into();
            
     
             if self.basic.enabled {
-                let sender = self.basic.progress_io.tx.clone(); 
+                let progress_sender = self.basic.progress_io.tx.clone(); 
+                let status_sender = self.basic.status_io.tx.clone(); 
                 let pool = pool.clone();
                 let order = self.order_panel.extract_sql().clone();  
-                let groups = self.match_criteria.get().to_vec();               
+                let match_groups = self.match_criteria.get().to_vec();               
                 let match_null = self.match_null;
-    
-                wrap_async(
-                    &mut self.basic,
-                    "Searching For Duplicate Records",
-                    move || gather_duplicate_filenames_in_database(pool, order, groups, match_null, sender),
+                self.basic.wrap_async(
+                    move || gather_duplicate_filenames_in_database(pool, progress_sender, status_sender, order, match_groups, match_null),
                 )
-                
             }
     
             if self.deep.enabled {
                 let progress_sender = self.deep.progress_io.tx.clone(); 
-                    let status_sender = self.deep.status_io.tx.clone();
-                        let pool = pool.clone();
-                        let ignore = self.ignore_extension;
-                        wrap_async(
-                            &mut self.deep,
-                            "Searching for Duplicates with similar Filenames",
-                            move || gather_deep_dive_records(pool, progress_sender, status_sender, ignore),
-                        )
+                let status_sender = self.deep.status_io.tx.clone();
+                let pool = pool.clone();
+                let ignore = self.ignore_extension;
+                self.deep.wrap_async(
+                    move || gather_deep_dive_records(pool, progress_sender, status_sender, ignore),
+                )
                     
                 
             }
     
             if self.tags.enabled {
                 let progress_sender = self.tags.progress_io.tx.clone();
-    
-                    let pool = pool.clone();
-                    let tags = self.tags_panel.list().to_vec();
-                    wrap_async(
-                        &mut self.tags,
-                        "Searching for Filenames with Specified Tags",
-                        move || gather_filenames_with_tags(pool, tags, progress_sender),
-                    );
-                
+                let status_sender = self.tags.status_io.tx.clone();
+                let pool = pool.clone();
+                let tags = self.tags_panel.list().to_vec();
+                self.tags.wrap_async(
+                    move || gather_filenames_with_tags(pool, progress_sender, status_sender, tags),
+                );
             }
     
             if self.compare.enabled && self.compare_db.is_some() {
@@ -1000,9 +970,8 @@ impl App {
                     self.compare.status = format!("Comparing against {}", cdb.name).into();
         
                     let tx = self.compare.records_io.tx.clone();
-                        println!("if let some");
                         let p = pool.clone();
-                        let Some(c_pool) = cdb.pool.clone() else {return;};
+                        let Some(c_pool) = cdb.pool() else {return;};
                         let handle = tokio::spawn(async move {
                             println!("tokio spawn compare");
                             let results = gather_compare_database_overlaps(&p, &c_pool).await;
@@ -1016,6 +985,7 @@ impl App {
             }
         }
     }
+
     
     
     
@@ -1046,7 +1016,7 @@ impl App {
     
             let progress_sender = self.main.progress_io.tx.clone();
             let status_sender = self.main.status_io.tx.clone(); 
-            wrap_async(&mut self.main, "Performing Record Removal", move || {
+            self.main.wrap_async(move || {
                 remove_duplicates_go(records, work_db_path, duplicate_db_path, progress_sender, status_sender)
             });
                 
@@ -1075,14 +1045,15 @@ pub async fn remove_duplicates_go(
     progress_sender: mpsc::Sender<ProgressMessage>,
     status_sender: mpsc::Sender<Arc<str>>,
 ) -> Result<HashSet<FileRecord>, sqlx::Error> {
+    let _ = status_sender.send("Performing Record Removal".into()).await;
     if let Some(main_path) = &main_db_path {
         let main_db = Database::open(main_path).await;
-        let Some(main_pool) = main_db.pool.clone() else {return Err(sqlx::Error::PoolClosed);};
+        let Some(main_pool) = main_db.pool() else {return Err(sqlx::Error::PoolClosed);};
         let _result =
             delete_file_records(&main_pool, &records, progress_sender.clone(), status_sender.clone()).await;
         if let Some(path) = dupe_db_path {
             let dupes_db = Database::open(&path).await;
-            let Some(dupes_pool) = dupes_db.pool.clone() else {return Err(sqlx::Error::PoolClosed);};
+            let Some(dupes_pool) = dupes_db.pool() else {return Err(sqlx::Error::PoolClosed);};
             let _result =
                 create_duplicates_db(&dupes_pool, &records, progress_sender.clone(), status_sender.clone())
                     .await;
@@ -1188,7 +1159,7 @@ impl FindPanel {
                 self.replace_safety = true;
 
                 let tx = self.find_io.tx.clone();
-                let Some(pool) = db.pool.clone() else {return};
+                let Some(pool) = db.pool() else {return};
                 let mut find = self.find.clone();
                 let mut column =  if self.search_replace_path {"FilePath".to_string()} else {self.column.clone()};
                 let case_sensitive = self.case_sensitive;
@@ -1251,7 +1222,7 @@ impl FindPanel {
                         .clicked()
                     {
                         // let tx = self.find_tx.clone().expect("tx channel exists");
-                        let Some(pool) = db.pool.clone() else {return;};
+                        let Some(pool) = db.pool() else {return;};
                         let mut find = self.find.clone();
                         let mut replace = self.replace.clone();
                         let mut column = self.column.clone();
@@ -1297,8 +1268,6 @@ pub struct OrderPanel {
     pub operator: OrderOperator,
     #[serde(skip)]
     pub input: String,
-    #[serde(skip)]
-    pub text: String,
 }
 
 
@@ -1340,7 +1309,7 @@ impl OrderPanel {
                                     for (index, line) in self.list.iter_mut().enumerate()
                                     {
                                         let checked = self.sel_line == Some(index);
-                                        let text: &str = if ui.input(|i| i.modifiers.alt) {&line.sql} else {&line.friendly};
+                                        let text: &str = if ui.input(|i| i.modifiers.alt) {&line.get_sql()} else {&line.get_friendly()};
                                         if ui
                                             .selectable_label(
                                                 checked,
@@ -1359,9 +1328,7 @@ impl OrderPanel {
                                         ui.end_row();
                                     }
                                 });
-                            if ui.input(|i| i.modifiers.alt) {      
-                                
-                            }
+                           
                             
                         });
                     });
@@ -1400,11 +1367,11 @@ impl OrderPanel {
         
                         self.list.insert(
                             0,
-                            parse_to_struct(
-                                self.column.clone(),
-                                self.operator,
-                                self.input.clone(),
-                            ),
+                            PreservationLogic {
+                                column: self.column.clone(),
+                                operator: self.operator,
+                                variable: self.input.clone(),
+                            },
                         );
                         self.input.clear();
                     }
@@ -1413,11 +1380,11 @@ impl OrderPanel {
     
                            self.list.insert(
                                 0,
-                                parse_to_struct(
-                                    self.column.clone(),
-                                    self.operator,
-                                    self.input.clone(),
-                                ),
+                                PreservationLogic {
+                                    column: self.column.clone(),
+                                    operator: self.operator,
+                                    variable: self.input.clone(),
+                                },
                             );
                             self.input.clear();
                         }
@@ -1461,12 +1428,9 @@ impl OrderPanel {
     }
 
     pub fn extract_sql(&self) -> Vec<String> {
-        self.list.iter().map(|logic| logic.sql.clone()).collect()
+        self.list.iter().map(|logic| logic.get_sql()).collect()
     }
 }
-
-
-
 
 
 
@@ -1474,6 +1438,7 @@ impl OrderPanel {
 #[serde(default)]
 pub struct TagsPanel {          // Use &str for new
     list: SelectableList,   // Use &str for the grid
+
 }
 
 impl TagsPanel {
@@ -1487,16 +1452,10 @@ impl TagsPanel {
             self.list.render(ui, 6, "tags editor", false);
             if !self.list().is_empty() {
                 ui.separator();
-
             }
             empty_line(ui);
-            ui.horizontal(|ui| {
-                if ui.button("Add Tag:").clicked() {
-                    self.list.add();
-                   
-                }
-                ui.text_edit_singleline(&mut self.list.add);
-            });
+            self.list.add_text_input(ui);
+
             if !self.list.get().is_empty() && ui.button("Remove Selected Tags").clicked() {
                 self.list.remove_selected();
             }
