@@ -1,27 +1,33 @@
 #![warn(clippy::all, rust_2018_idioms)]
 #![allow(non_snake_case)]
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-// const VERSION: &str = env!("CARGO_PKG_VERSION");
+mod app;
+mod window_manager;
+
+use std::sync::{Arc, Mutex};
+use window_manager::SharedState;
 
 #[tokio::main]
 async fn main() -> eframe::Result {
-    env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
+    env_logger::init();
+
+    let shared_state = Arc::new(Mutex::new(SharedState::new()));
 
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([750.0, 750.0])
             .with_min_inner_size([620.0, 620.0])
             .with_icon(
-                // NOTE: Adding an icon is optional
                 eframe::icon_data::from_png_bytes(&include_bytes!("../assets/icon-1024.png")[..])
                     .expect("Failed to load icon"),
             ),
         ..Default::default()
     };
+
     eframe::run_native(
         "SMDB Companion",
         native_options,
-        Box::new(|cc| Ok(Box::new(SMDB_Companion::App::new(cc)))),
+        Box::new(|cc| Ok(Box::new(app::App::new(cc, shared_state.clone())))),
     )
 }

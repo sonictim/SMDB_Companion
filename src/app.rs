@@ -6,8 +6,10 @@ use eframe::egui::{self, RichText};
 use rayon::prelude::*;
 use std::collections::HashSet;
 use std::fs::{self};
-use std::sync::Arc;
+// use std::sync::Arc;
 use tokio::sync::mpsc;
+use std::sync::{Arc, Mutex};
+use crate::window_manager::{SharedState, create_new_window};
 
 
 
@@ -70,6 +72,9 @@ pub struct App {
     #[serde(skip)]
     records_window: bool,
     scroll_to_top: bool,
+    
+    #[serde(skip)]
+    shared_state: Option<Arc<Mutex<SharedState>>>, 
 }
 
 impl Default for App {
@@ -115,6 +120,8 @@ impl Default for App {
             records_window: false,
             scroll_to_top: false,
 
+            shared_state: None,
+
            
         };
         app.match_criteria.set(vec!["Channels".to_owned(), "Duration".to_owned(), "Filename".to_owned()]);      
@@ -128,7 +135,7 @@ impl Default for App {
 
 impl App {
     /// Called once before the first frame.
-    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>, shared_state: Arc<Mutex<SharedState>>) -> Self {
         // This is also where you can customize the look and feel of egui using
         // `cc.egui_ctx.set_visuals` and `cc.egui_ctx.set_fonts`.
 
@@ -155,7 +162,28 @@ impl App {
         if let Some(storage) = cc.storage {
             return eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
         }
-        Default::default()
+
+        Self {
+            shared_state: Some(shared_state),
+            ..Default::default()
+        }
+        // Default::default()
+    }
+
+    pub fn new_secondary_window(cc: &eframe::CreationContext<'_>) -> Self {
+        // Initialize with minimal state needed for secondary windows
+        Self {
+            // Initialize only the fields needed for secondary windows...
+            shared_state: None,
+            ..Default::default()
+        }
+    }
+
+    // Method to open a new window
+    pub fn open_new_window(&self, title: &str, size: (f64, f64)) {
+        if let Some(shared_state) = &self.shared_state {
+            create_new_window(shared_state.clone(), title, size);
+        }
     }
 
     fn reset_to_defaults(&mut self)  {

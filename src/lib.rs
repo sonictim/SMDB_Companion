@@ -7,3 +7,4 @@ mod assets;
 mod config;
 // mod dupe_panel;
 mod processing;
+mod window_manager;
