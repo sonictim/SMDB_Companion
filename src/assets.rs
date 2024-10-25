@@ -82,15 +82,15 @@ pub fn empty_line(ui: &mut Ui) {
 
 // pub struct ComboBox {
 //     selected: String,
-//     list: Vec<String>,
+//     // list: Vec<String>,
 // }
 
 // impl ComboBox {
-//     fn render(&mut self, ui: &mut egui::Ui, label: &str) {
+//     fn render(&mut self, ui: &mut egui::Ui, label: &str, list: &[String]) {
 //         egui::ComboBox::from_id_salt(label)
 //             .selected_text(&self.selected)
 //             .show_ui(ui, |ui| {
-//                 for item in &self.list {
+//                 for item in list {
 //                     ui.selectable_value(&mut self.selected, item.clone(), item);
 //                 }
 //             });
@@ -327,51 +327,3 @@ pub fn records_window(
             }
         });
 }
-
-// pub fn order_help(ui: &mut Ui) {
-//     ui.heading("Column in order of Priority and whether it should be DESCending or ASCending.");
-//     ui.label(
-//         "These are SQL arguments and Google/ChatGPT can help you figure out how to compose them",
-//     );
-//     ui.horizontal(|_| {});
-//     ui.heading("Examples:");
-//     ui.heading("CASE WHEN pathname LIKE '%Audio Files%' THEN 1 ELSE 0 END ASC");
-//     ui.label("Records with 'Audio Files' in the path will be removed over something that does not have it");
-//     ui.horizontal(|_| {});
-//     ui.heading("CASE WHEN pathname LIKE '%LIBRARY%' THEN 0 ELSE 1 END ASC");
-//     ui.label(
-//         "Records with 'LIBRARY' (not case sensitive) in the path will be kept over records without",
-//     );
-//     ui.horizontal(|_| {});
-//     ui.heading("Rules at the top of the list are prioritized over those below");
-//     ui.separator();
-// }
-
-//SMALL TAG EDITOR
-
-// ui.horizontal(|ui| {
-//     ui.add_space(24.0);
-//     if ui.button("Add Tag:").clicked {
-//         app.tags.sort_by_key(|s| s.to_lowercase());
-//         if app.new_tag.len() > 0 {
-//             app.tags.push(app.new_tag.clone());
-//             app.new_tag = "".to_string();
-//     }}
-//     ui.text_edit_singleline(&mut app.new_tag);
-// });
-//     ui.horizontal(|ui| {
-//         ui.add_space(24.0);
-//         if let Some(tag_ref) = &mut app.tags.option {
-//             if ui.button("Remove Tag").clicked {
-//                 app.tags.retain(|s| s != tag_ref);
-//                 tag_ref.clear();
-//             }
-//             egui::ComboBox::from_label("")
-//             .selected_text(format!("{}", tag_ref))
-//             .show_ui(ui, |ui| {
-//                 for tag in &app.tags {
-//                     ui.selectable_value(tag_ref, tag.to_string(), format!("{tag}"));
-//                 }
-//             });
-//         }
-//     });

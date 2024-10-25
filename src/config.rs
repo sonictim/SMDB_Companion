@@ -41,7 +41,7 @@ impl<T> AsyncTunnel<T> {
         }
     }
 
-    // You might want to add methods to send and receive messages
+    // // You might want to add methods to send and receive messages
     // pub async fn asend(&mut self, item: T) -> Result<(), mpsc::error::SendError<T>> {
     //     self.waiting = true;
     //     self.tx.send(item).await
@@ -52,9 +52,10 @@ impl<T> AsyncTunnel<T> {
     //     // }
     // }
 
-    // pub async fn areceive(&self) -> Option<T> {
-    //     if let rx = &self.rx {
-    //         rx.recv().await.ok()
+    // pub fn recv(&mut self) -> Option<T> {
+    //     let rx = &mut self.rx;
+    //     if let Ok(db) = rx.try_recv() {
+    //         Some(db)
     //     } else {
     //         None
     //     }
