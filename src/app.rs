@@ -751,7 +751,7 @@ impl App {
                 }
             });
         });
-        self.basic.progress_bar(ui);
+        self.basic.render_progress_bar(ui);
 
 
         //DEEP DIVE DEEP DIVE DEEP DIVE
@@ -783,7 +783,7 @@ impl App {
                 }
             });
         }
-        self.deep.progress_bar(ui);
+        self.deep.render_progress_bar(ui);
 
 
         //TAGS TAGS TAGS TAGS
@@ -806,7 +806,7 @@ impl App {
             });
 
         }
-        self.tags.progress_bar(ui);
+        self.tags.render_progress_bar(ui);
         
 
         //COMPARE COMPARE COMPARE COMPARE
@@ -838,7 +838,7 @@ impl App {
                 }
             }
         });
-        self.compare.progress_bar(ui);
+        self.compare.render_progress_bar(ui);
 
         ui.separator();
         empty_line(ui);

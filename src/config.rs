@@ -163,7 +163,7 @@ impl NodeConfig {
         }
     }
 
-    pub fn progress_bar(&mut self, ui: &mut egui::Ui) {
+    pub fn render_progress_bar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             if self.working {
                 ui.spinner();
