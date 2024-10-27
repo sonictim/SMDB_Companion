@@ -41,25 +41,14 @@ impl<T> AsyncTunnel<T> {
         }
     }
 
-    // // You might want to add methods to send and receive messages
-    // pub async fn asend(&mut self, item: T) -> Result<(), mpsc::error::SendError<T>> {
-    //     self.waiting = true;
-    //     self.tx.send(item).await
-    //     // if let Some(tx) = &self.tx {
-    //     //     tx.send(item).await
-    //     // } else {
-    //     //     Err(mpsc::error::SendError(item))
-    //     // }
-    // }
+    pub async fn send(&mut self, item: T) -> Result<(), mpsc::error::SendError<T>> {
+        self.waiting = true;
+        self.tx.send(item).await
+    }
 
-    // pub fn recv(&mut self) -> Option<T> {
-    //     let rx = &mut self.rx;
-    //     if let Ok(db) = rx.try_recv() {
-    //         Some(db)
-    //     } else {
-    //         None
-    //     }
-    // }
+    pub fn recv(&mut self) -> Option<T> {
+        self.rx.try_recv().ok()
+    }
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -151,8 +140,7 @@ impl NodeConfig {
     }
 
     pub fn receive_hashset(&mut self) -> Option<HashSet<FileRecord>> {
-        let rx = &mut self.records_io.rx;
-        if let Ok(records) = rx.try_recv() {
+        if let Some(records) = self.records_io.recv() {
             self.records = records.clone();
             self.handle = None;
             self.working = false;
@@ -160,19 +148,17 @@ impl NodeConfig {
             self.status = format! {"Found {} duplicate records", self.records.len()}.into();
             return Some(records);
         }
-
         None
     }
+
     pub fn receive_progress(&mut self) {
-        let progress_receiver = &mut self.progress_io.rx;
-        while let Ok(message) = progress_receiver.try_recv() {
-            let ProgressMessage::Update(current, total) = message;
+        while let Some(ProgressMessage::Update(current, total)) = self.progress_io.recv() {
             self.progress = (current as f32, total as f32);
         }
     }
+
     pub fn receive_status(&mut self) {
-        let status_receiver = &mut self.status_io.rx;
-        while let Ok(message) = status_receiver.try_recv() {
+        while let Some(message) = self.status_io.recv() {
             self.status = message;
         }
     }

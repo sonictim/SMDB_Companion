@@ -3,7 +3,12 @@
 
 mod app;
 pub use app::App;
+mod find_replace;
+// pub use find_replace::*;
 mod assets;
+pub use assets::*;
 mod config;
+pub use config::*;
 // mod dupe_panel;
 mod processing;
+pub use processing::*;

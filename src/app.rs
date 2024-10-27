@@ -1,4 +1,5 @@
 use crate::assets::*;
+use crate::find_replace::FindPanel;
 use crate::processing::*;
 use crate::config::*;
 // use crate::dupe_panel::*;
@@ -232,22 +233,19 @@ impl App {
 
 
 
-        if let Ok(db) = self.db_io.rx.try_recv() {
+        if let Some(db) = self.db_io.recv() {
             self.db = Some(db);
         }      
-        if let Ok(db) = self.cdb_io.rx.try_recv() {
+        if let Some(db) = self.cdb_io.recv() {
             self.compare_db = Some(db);
             self.compare.enabled = true;
         }    
         if let Some(db) = &mut self.db {
-            if let Ok(records) = self.extensions_io.rx.try_recv() {
+            if let Some(records) = self.extensions_io.recv() {
                 db.file_extensions = records;
             }
         }
-        if let Ok(count) = self.find_panel.find_io.rx.try_recv() {
-            self.find_panel.count = count;
-            self.find_panel.handle = None;
-        }
+        
         if let Some(records) = self.main.receive_hashset() {
             self.clear_status();
             self.main.status = format! {"Removed {} duplicates", records.len()}.into();
@@ -269,7 +267,7 @@ impl App {
             self.update_main_status();
         }
 
-        if let Ok(version) = self.latest_version_io.rx.try_recv() {
+        if let Some(version) = self.latest_version_io.recv() {
             self.latest_version = version;
             if self.update_window.is_some() {self.update_window = Some(true);}
             if self.latest_version == env!("CARGO_PKG_VERSION") 
@@ -1062,200 +1060,6 @@ pub async fn remove_duplicates_go(
     Ok(records)
 }
 
-
-#[derive(serde::Deserialize, serde::Serialize, Default)]
-#[serde(default)]
-pub struct FindPanel {
-    pub column: String,
-    pub find: String,
-    pub find_buf: String,
-    pub replace: String,
-    pub replace_buf: String,
-    pub search_replace_path: bool,
-    pub path_buf: bool,
-    pub dirty: bool,
-    pub case_sensitive: bool,
-    #[serde(skip)]
-    pub find_io: AsyncTunnel<usize>,
-    #[serde(skip)]
-    pub handle: Option<tokio::task::JoinHandle<()>>,
-
-    #[serde(skip)]
-    pub replace_safety: bool,
-    #[serde(skip)]
-    pub count: usize,
-}
-
-impl FindPanel {
-    fn render(&mut self, ui: &mut egui::Ui, db: Option<&Database>, registration: Option<bool>) {
-        if let Some(db) = db {
-            if db.size == 0 {
-                ui.heading("No Records in Database");
-                return;
-            }
-            if self.column.is_empty() {
-                self.column = String::from("Library");
-                self.search_replace_path = true;
-            }
-            ui.heading(RichText::new("Find and Replace").strong());
-        
-            empty_line(ui);
-            ui.horizontal(|ui| {
-                let mut text = RichText::new("Case Sensitive").size(14.0);
-                if self.case_sensitive {text = text.color(egui::Color32::from_rgb(255, 0, 0)).strong()}
-                ui.checkbox(&mut self.case_sensitive, text);
-            });
-            empty_line(ui);
-            ui.horizontal(|ui| {
-                ui.label("Find Text: ");
-                ui.text_edit_singleline(&mut self.find);
-            });
-            ui.horizontal(|ui| {
-                ui.label("Replace: ");
-                ui.add_space(8.0);
-                ui.text_edit_singleline(&mut self.replace);
-            });
-            ui.horizontal(|ui| {
-                ui.label("in Column: ");
-                ui.radio_value(&mut self.search_replace_path, true, "FilePath");
-                ui.radio_value(&mut self.search_replace_path, false, "Other");
-                let filtered_columns: Vec<_> = db
-                    .columns
-                    .iter()
-                    .filter(|col| {
-                        col.as_str() != "FilePath"
-                            && col.as_str() != "Pathname"
-                            && col.as_str() != "Filename"
-                    })
-                    .collect();
-                egui::ComboBox::from_id_salt("find_column")
-                    .selected_text(&self.column)
-                    .show_ui(ui, |ui| {
-                        for item in filtered_columns {
-                            ui.selectable_value(&mut self.column, item.clone(), item);
-                        }
-                    });
-               
-            });
-            empty_line(ui);
-            ui.separator();
-            empty_line(ui);
-            if !self.search_replace_path {
-                ui.checkbox(&mut self.dirty, "Mark Records as Dirty?");
-                ui.label("Dirty Records are audio files with metadata that is not embedded");
-                empty_line(ui);
-                ui.separator();
-                empty_line(ui);
-            }
-
-            if self.find.is_empty() {
-                return;
-            }
-            if ui
-                .button(RichText::new("Find Records").size(16.0))
-                .clicked()
-            {
-               
-                self.replace_safety = true;
-
-                let tx = self.find_io.tx.clone();
-                let Some(pool) = db.pool() else {return};
-                let mut find = self.find.clone();
-                let mut column =  if self.search_replace_path {"FilePath".to_string()} else {self.column.clone()};
-                let case_sensitive = self.case_sensitive;
-                let handle = tokio::spawn(async move {
-                    println!("Inside Find Async");
-                    let count = smreplace_get(&pool, &mut find, &mut column, case_sensitive)
-                        .await
-                        .unwrap();
-                    let _ = tx.send(count).await;
-                });
-                self.handle = Some(handle);
-            }
-            empty_line(ui);
-           
-            if self.find != self.find_buf || self.replace != self.replace_buf || self.search_replace_path != self.path_buf {
-                self.replace_safety = false;
-                self.find_buf = self.find.clone();
-                self.replace_buf = self.replace.clone();
-                self.path_buf = self.search_replace_path;
-            }
-            if self.replace_safety {
-                if self.handle.is_some() {
-                    ui.spinner();
-                } else {
-                    let column = if self.search_replace_path {"FilePath"} else {&self.column};
-                    ui.label(
-                        RichText::new(format!(
-                            "Found {} records matching '{}' in {} of SM database: {}",
-                            self.count, self.find, column, db.name
-                        ))
-                        .strong(),
-                    );
-                }
-                if self.count == 0 {
-                    return;
-                }
-
-                if registration == Some(false) {
-                    ui.label(
-                        RichText::new(
-                            "\nUNREGISTERED!\nPlease Register to Continue with Replacement",
-                        )
-                        .strong(),
-                    );
-                    return;
-                }
-                ui.label(format!("Replace with \"{}\" ?", self.replace));
-                ui.horizontal(|ui| {
-                    ui.label("This is");
-                    ui.label(RichText::new("NOT").strong());
-                    ui.label("undoable");
-                });
-                if self.search_replace_path {
-                    ui.label("This does not alter your file system.");
-                }
-                ui.separator();
-                ui.horizontal(|ui| {
-                    if ui
-                        .button(RichText::new("Replace Records").size(16.0))
-                        .clicked()
-                    {
-                        // let tx = self.find_tx.clone().expect("tx channel exists");
-                        let Some(pool) = db.pool() else {return;};
-                        let mut find = self.find.clone();
-                        let mut replace = self.replace.clone();
-                        let mut column = self.column.clone();
-                        let dirty = self.dirty;
-                        let filepath = self.search_replace_path;
-                        let case_sensitive = self.case_sensitive;
-                        tokio::spawn(async move {
-                            smreplace_process(
-                                &pool,
-                                &mut find,
-                                &mut replace,
-                                &mut column,
-                                dirty,
-                                filepath,
-                                case_sensitive,
-                            )
-                            .await;
-                        });
-                        self.replace_safety = false;
-                    }
-                    if ui.button(RichText::new("Cancel").size(16.0)).clicked() {
-                        self.count = 0;
-                        self.replace_safety = false;
-                    }
-                });
-            } else if self.count > 0 && registration == Some(true) {
-                ui.label(format!("{} records replaced", self.count));
-            }
-        } else {
-            ui.heading(RichText::new("No Open Database").weak());
-        }
-    }
-}
 
 
 #[derive(serde::Deserialize, serde::Serialize, Default)]

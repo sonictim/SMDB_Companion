@@ -110,67 +110,67 @@ const TABLE: &str = "justinmetadata";
     
 // }
 
-pub async fn smreplace_get(
-    pool: &SqlitePool,
-    find: &mut String,
-    column: &mut String,
-    case_sensitive: bool,
-) -> Result<usize, sqlx::Error> {
-    let case = if case_sensitive { "GLOB" } else { "LIKE" };
-    let search_query = format!("SELECT COUNT(rowid) FROM {TABLE} WHERE {column} {case} ?");
-    let result: (i64,) = sqlx::query_as(&search_query)
-        .bind(format!("%{}%", find))
-        .fetch_one(pool)
-        .await?;
+// pub async fn smreplace_get(
+//     pool: &SqlitePool,
+//     find: &mut String,
+//     column: &mut String,
+//     case_sensitive: bool,
+// ) -> Result<usize, sqlx::Error> {
+//     let case = if case_sensitive { "GLOB" } else { "LIKE" };
+//     let search_query = format!("SELECT COUNT(rowid) FROM {TABLE} WHERE {column} {case} ?");
+//     let result: (i64,) = sqlx::query_as(&search_query)
+//         .bind(format!("%{}%", find))
+//         .fetch_one(pool)
+//         .await?;
 
-    Ok(result.0 as usize)
-}
+//     Ok(result.0 as usize)
+// }
 
-pub async fn smreplace_process(
-    pool: &SqlitePool,
-    find: &mut String,
-    replace: &mut String,
-    column: &mut String,
-    dirty: bool,
-    is_filepath: bool,
-    case_sensitive: bool,
-) {
-    let dirty_text = if dirty && !is_filepath {
-        ", _Dirty = 1"
-    } else {
-        ""
-    };
-    let case_text = if case_sensitive { "GLOB" } else { "LIKE" };
+// pub async fn smreplace_process(
+//     pool: &SqlitePool,
+//     find: &mut String,
+//     replace: &mut String,
+//     column: &mut String,
+//     dirty: bool,
+//     is_filepath: bool,
+//     case_sensitive: bool,
+// ) {
+//     let dirty_text = if dirty && !is_filepath {
+//         ", _Dirty = 1"
+//     } else {
+//         ""
+//     };
+//     let case_text = if case_sensitive { "GLOB" } else { "LIKE" };
 
-    let replace_query = format!(
-        "UPDATE {} SET {} = REPLACE({}, '{}', '{}'){} WHERE {} {} '%{}%'",
-        TABLE, column, column, find, replace, dirty_text, column, case_text, find
-    );
-    let _ = sqlx::query(&replace_query).execute(pool).await;
+//     let replace_query = format!(
+//         "UPDATE {} SET {} = REPLACE({}, '{}', '{}'){} WHERE {} {} '%{}%'",
+//         TABLE, column, column, find, replace, dirty_text, column, case_text, find
+//     );
+//     let _ = sqlx::query(&replace_query).execute(pool).await;
 
-    if is_filepath {
-        let mut column = "Filename";
-        let replace_query = format!(
-            "UPDATE {} SET {} = REPLACE({}, '{}', '{}'){} WHERE {} {} '%{}%'",
-            TABLE, column, column, find, replace, dirty_text, column, case_text, find
-        );
-        let _ = sqlx::query(&replace_query).execute(pool).await;
+//     if is_filepath {
+//         let mut column = "Filename";
+//         let replace_query = format!(
+//             "UPDATE {} SET {} = REPLACE({}, '{}', '{}'){} WHERE {} {} '%{}%'",
+//             TABLE, column, column, find, replace, dirty_text, column, case_text, find
+//         );
+//         let _ = sqlx::query(&replace_query).execute(pool).await;
 
-        column = "Pathname";
-        let replace_query = format!(
-            "UPDATE {} SET {} = REPLACE({}, '{}', '{}'){} WHERE {} {} '%{}%'",
-            TABLE, column, column, find, replace, dirty_text, column, case_text, find
-        );
-        let _ = sqlx::query(&replace_query).execute(pool).await;
+//         column = "Pathname";
+//         let replace_query = format!(
+//             "UPDATE {} SET {} = REPLACE({}, '{}', '{}'){} WHERE {} {} '%{}%'",
+//             TABLE, column, column, find, replace, dirty_text, column, case_text, find
+//         );
+//         let _ = sqlx::query(&replace_query).execute(pool).await;
 
-        let table = "justinrdb_Pathname";
-        let replace_query = format!(
-            "UPDATE {} SET {} = REPLACE({}, '{}', '{}'){} WHERE {} {} '%{}%'",
-            table, column, column, find, replace, dirty_text, column, case_text, find
-        );
-        let _ = sqlx::query(&replace_query).execute(pool).await;
-    }
-}
+//         let table = "justinrdb_Pathname";
+//         let replace_query = format!(
+//             "UPDATE {} SET {} = REPLACE({}, '{}', '{}'){} WHERE {} {} '%{}%'",
+//             table, column, column, find, replace, dirty_text, column, case_text, find
+//         );
+//         let _ = sqlx::query(&replace_query).execute(pool).await;
+//     }
+// }
 
 
 
