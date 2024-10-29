@@ -329,6 +329,74 @@ impl Database {
         }
         None
     }
+
+    pub async fn delete_file_records(
+        &self,
+        // pool: &SqlitePool,
+        records: &HashSet<FileRecord>,
+        progress_sender: mpsc::Sender<ProgressMessage>,
+        status_sender: mpsc::Sender<Arc<str>>,
+    ) -> Result<(), sqlx::Error> {
+        const CHUNK_SIZE: usize = 12321;
+
+        let ids: Vec<i64> = records.iter().map(|record| record.id as i64).collect();
+
+        if ids.is_empty() {
+            return Ok(());
+        }
+
+        let total = records.len();
+        let mut current_count = 0;
+
+        for chunk in ids.chunks(CHUNK_SIZE) {
+            let chunk: Vec<i64> = chunk.to_vec(); // Clone the chunk for the query
+
+            // Construct the SQL query with placeholders for the chunk
+            let query = format!(
+                "DELETE FROM {} WHERE rowid IN ({})",
+                TABLE,
+                chunk.iter().map(|_| "?").collect::<Vec<&str>>().join(", ")
+            );
+
+            // Prepare the query with bound parameters
+            let mut query = sqlx::query(&query);
+            for id in &chunk {
+                query = query.bind(*id);
+            }
+
+            // Execute the query
+            match query.execute(self.pool.clone().as_ref().unwrap()).await {
+                Ok(result) => {
+                    let rows_deleted = result.rows_affected();
+                    println!("Deleted {} records", rows_deleted);
+                }
+                Err(err) => {
+                    eprintln!("Failed to delete records: {:?}", err);
+                }
+            }
+
+            // Update the current count and send progress
+            current_count += chunk.len();
+            let progress = std::cmp::min(current_count, total);
+
+            let _ = progress_sender
+                .send(ProgressMessage::Update(progress, total))
+                .await;
+            let _ = status_sender
+                .send(format!("Processed {} / {}", progress, total).into())
+                .await;
+        }
+
+        // After all deletions, perform the cleanup
+        let _ = status_sender.send("Cleaning Up Database".into()).await;
+        let _result = sqlx::query("VACUUM")
+            .execute(self.pool.clone().as_ref().unwrap())
+            .await;
+
+        println!("VACUUM done inside delete function");
+
+        Ok(())
+    }
 }
 
 // pub async fn get_db_size(pool: &SqlitePool) -> Result<usize, sqlx::Error> {
@@ -359,29 +427,6 @@ impl FileRecord {
             duration: duration.into(),
             path: path.into(),
         }
-    }
-    pub async fn fetch_filerecords_from_database(
-        pool: &SqlitePool,
-        query: &str,
-    ) -> Result<HashSet<FileRecord>, sqlx::Error> {
-        let mut file_records = HashSet::new();
-
-        let rows = sqlx::query(query).fetch_all(pool).await?;
-
-        for row in rows {
-            file_records.insert(FileRecord::new(&row));
-        }
-        Ok(file_records)
-    }
-    pub async fn fetch_all_filerecords_from_database(
-        pool: &SqlitePool,
-    ) -> Result<HashSet<FileRecord>, sqlx::Error> {
-        println!("Gathering all records from database");
-        fetch_filerecords_from_database(
-            pool,
-            &format!("SELECT rowid, filename, duration, filepath FROM {}", TABLE),
-        )
-        .await
     }
 }
 

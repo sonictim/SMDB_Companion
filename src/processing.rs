@@ -547,51 +547,6 @@ pub async fn create_duplicates_db(
     Ok(())
 }
 
-// pub async fn open_db() -> Option<Database> {
-//     let home_dir = home_dir();
-//     match home_dir {
-//         Some(home_dir) => {
-//             println!("Found SMDB dir");
-//             let db_dir = home_dir.join("Library/Application Support/SoundminerV6/Databases");
-//             if let Some(path) = FileDialog::new()
-//                 .add_filter("SQLite Database", &["sqlite"])
-//                 .set_directory(db_dir)
-//                 .pick_file()
-//             {
-//                 let db_path = path.display().to_string();
-//                 if db_path.ends_with(".sqlite") {
-//                     println!("Opening Database {}", db_path);
-//                     let db = Database::open(&db_path).await;
-//                     return Some(db);
-//                 }
-//             }
-//         }
-//         None => {
-//             println!("did not find SMDB dir");
-//             if let Some(path) = FileDialog::new()
-//                 .add_filter("SQLite Database", &["sqlite"])
-//                 .pick_file()
-//             {
-//                 let db_path = path.display().to_string();
-//                 if db_path.ends_with(".sqlite") {
-//                     println!("Opening Database {}", db_path);
-//                     let db = Database::open(&db_path).await;
-//                     return Some(db);
-//                 }
-//             }
-//         }
-//     }
-//     None
-// }
-
-// pub async fn get_db_size(pool: &SqlitePool) -> Result<usize, sqlx::Error> {
-//     let count: (i64,) = sqlx::query_as(&format!("SELECT COUNT(*) FROM {}", TABLE))
-//         .fetch_one(pool)
-//         .await?;
-
-//     Ok(count.0 as usize)
-// }
-
 
 
 pub async fn get_audio_file_types(pool: &SqlitePool) -> Result<Vec<String>, sqlx::Error> {
