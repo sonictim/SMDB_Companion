@@ -1,5 +1,3 @@
-use egui::accesskit::Node;
-
 use crate::prelude::*;
 
 #[derive(serde::Deserialize, serde::Serialize, Default)]
