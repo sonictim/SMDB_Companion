@@ -1,18 +1,14 @@
+use crate::prelude::*;
+
 use crate::assets::*;
 use crate::processing::*;
-// use egui::Order;
-// use clipboard::{ClipboardContext, ClipboardProvider};
-use eframe::egui::{self, RichText};
-use rayon::prelude::*;
-use serde::Deserialize;
-use sqlx::sqlite::SqlitePool;
-// use sqlx::Sqlite;
-use std::collections::HashSet;
+
+use dirs::home_dir;
+use rfd::FileDialog;
+use sqlx::sqlite::SqliteRow;
+
 use std::fs::{self};
 use std::hash::Hash;
-use std::path::Path;
-use std::sync::Arc;
-use tokio::sync::mpsc;
 
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)]
@@ -56,8 +52,9 @@ impl<T> AsyncTunnel<T> {
 
 pub struct NodeConfig {
     pub enabled: bool,
-    // pub list: Vec<String>,
-    // pub selected: String,
+    #[serde(skip)]
+    pub working: bool,
+
     #[serde(skip)]
     pub status: Arc<str>,
     #[serde(skip)]
@@ -65,14 +62,11 @@ pub struct NodeConfig {
     #[serde(skip)]
     pub records: HashSet<FileRecord>,
     #[serde(skip)]
-    pub working: bool,
-
-    #[serde(skip)]
     pub records_io: AsyncTunnel<HashSet<FileRecord>>,
     #[serde(skip)]
-    pub progress_io: AsyncTunnel<ProgressMessage>,
-    #[serde(skip)]
     pub progress: (f32, f32),
+    #[serde(skip)]
+    pub progress_io: AsyncTunnel<ProgressMessage>,
     #[serde(skip)]
     pub handle: Option<tokio::task::JoinHandle<()>>,
 }
@@ -80,17 +74,12 @@ pub struct NodeConfig {
 impl Clone for NodeConfig {
     fn clone(&self) -> Self {
         NodeConfig {
-            enabled: self.enabled,
-            // list: self.list.clone(),
-            // selected: self.selected.clone(),
-            status: self.status.clone(),
-            status_io: AsyncTunnel::new(1),
             records: self.records.clone(),
+            status: self.status.clone(),
+            enabled: self.enabled,
             working: self.working,
-            records_io: AsyncTunnel::new(1),
-            progress_io: AsyncTunnel::new(32),
             progress: self.progress,
-            handle: None, // JoinHandle does not implement Clone
+            ..Default::default()
         }
     }
 }
@@ -98,8 +87,6 @@ impl Default for NodeConfig {
     fn default() -> Self {
         Self {
             enabled: false,
-            // list: Vec::new(),
-            // selected: String::new(),
             status: Arc::from(""),
             status_io: AsyncTunnel::new(1),
             records: HashSet::new(),
@@ -116,27 +103,18 @@ impl NodeConfig {
     pub fn new(on: bool) -> Self {
         Self {
             enabled: on,
-            // list: Vec::new(),
-            // selected: String::new(),
-            status: Arc::from(""),
-            status_io: AsyncTunnel::new(1),
-            records: HashSet::new(),
-            working: false,
-            records_io: AsyncTunnel::new(1),
-            progress_io: AsyncTunnel::new(32),
-            progress: (0.0, 0.0),
-            handle: None,
+            ..Default::default()
         }
     }
-    pub fn abort(&mut self) {
+    pub fn abort(&mut self) -> Self {
+        let enabled = self.enabled;
         if let Some(handle) = &self.handle {
             handle.abort();
         }
-        self.handle = None;
-        self.working = false;
-        self.records.clear();
-        self.status = "".into();
-        self.progress = (0.0, 0.0);
+        Self {
+            enabled,
+            ..Default::default()
+        }
     }
 
     pub fn receive_hashset(&mut self) -> Option<HashSet<FileRecord>> {
@@ -161,6 +139,11 @@ impl NodeConfig {
         while let Some(message) = self.status_io.recv() {
             self.status = message;
         }
+    }
+    pub fn receive(&mut self) -> Option<HashSet<FileRecord>> {
+        self.receive_progress();
+        self.receive_status();
+        self.receive_hashset()
     }
 
     pub fn render_progress_bar(&mut self, ui: &mut egui::Ui) {
@@ -241,6 +224,14 @@ impl Database {
             // io: AsyncTunnel::new(1),
         }
     }
+    pub async fn get_size(&self) -> Result<usize, sqlx::Error> {
+        let pool = self.pool.as_ref().unwrap();
+        let count: (i64,) = sqlx::query_as(&format!("SELECT COUNT(*) FROM {}", TABLE))
+            .fetch_one(pool)
+            .await?;
+
+        Ok(count.0 as usize)
+    }
 
     pub fn get_extensions(&mut self, tx: mpsc::Sender<Vec<String>>) {
         let Some(pool) = self.pool() else {
@@ -259,6 +250,71 @@ impl Database {
     pub fn pool(&self) -> Option<SqlitePool> {
         self.pool.clone()
     }
+
+    pub async fn fetch_filerecords(&self, query: &str) -> Result<HashSet<FileRecord>, sqlx::Error> {
+        let mut file_records = HashSet::new();
+        if let Some(pool) = self.pool.as_ref() {
+            let rows = sqlx::query(query).fetch_all(pool).await?;
+
+            for row in rows {
+                file_records.insert(FileRecord::new(&row));
+            }
+        }
+        Ok(file_records)
+    }
+    pub async fn fetch_all_filerecords(&self) -> Result<HashSet<FileRecord>, sqlx::Error> {
+        println!("Gathering all records from database");
+        self.fetch_filerecords(&format!(
+            "SELECT rowid, filename, duration, filepath FROM {}",
+            TABLE
+        ))
+        .await
+    }
+}
+
+pub async fn open_db() -> Option<Database> {
+    let home_dir = home_dir();
+    match home_dir {
+        Some(home_dir) => {
+            println!("Found SMDB dir");
+            let db_dir = home_dir.join("Library/Application Support/SoundminerV6/Databases");
+            if let Some(path) = FileDialog::new()
+                .add_filter("SQLite Database", &["sqlite"])
+                .set_directory(db_dir)
+                .pick_file()
+            {
+                let db_path = path.display().to_string();
+                if db_path.ends_with(".sqlite") {
+                    println!("Opening Database {}", db_path);
+                    let db = Database::open(&db_path).await;
+                    return Some(db);
+                }
+            }
+        }
+        None => {
+            println!("did not find SMDB dir");
+            if let Some(path) = FileDialog::new()
+                .add_filter("SQLite Database", &["sqlite"])
+                .pick_file()
+            {
+                let db_path = path.display().to_string();
+                if db_path.ends_with(".sqlite") {
+                    println!("Opening Database {}", db_path);
+                    let db = Database::open(&db_path).await;
+                    return Some(db);
+                }
+            }
+        }
+    }
+    None
+}
+
+pub async fn get_db_size(pool: &SqlitePool) -> Result<usize, sqlx::Error> {
+    let count: (i64,) = sqlx::query_as(&format!("SELECT COUNT(*) FROM {}", TABLE))
+        .fetch_one(pool)
+        .await?;
+
+    Ok(count.0 as usize)
 }
 
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
@@ -267,6 +323,44 @@ pub struct FileRecord {
     pub filename: Arc<str>,
     pub duration: Arc<str>,
     pub path: Arc<str>,
+}
+
+impl FileRecord {
+    pub fn new(row: &SqliteRow) -> Self {
+        let id: u32 = row.get(0);
+        let filename: &str = row.get(1);
+        let duration = row.try_get(2).unwrap_or("");
+        let path: &str = row.get(3);
+        Self {
+            id: id as usize,
+            filename: filename.into(),
+            duration: duration.into(),
+            path: path.into(),
+        }
+    }
+    pub async fn fetch_filerecords_from_database(
+        pool: &SqlitePool,
+        query: &str,
+    ) -> Result<HashSet<FileRecord>, sqlx::Error> {
+        let mut file_records = HashSet::new();
+
+        let rows = sqlx::query(query).fetch_all(pool).await?;
+
+        for row in rows {
+            file_records.insert(FileRecord::new(&row));
+        }
+        Ok(file_records)
+    }
+    pub async fn fetch_all_filerecords_from_database(
+        pool: &SqlitePool,
+    ) -> Result<HashSet<FileRecord>, sqlx::Error> {
+        println!("Gathering all records from database");
+        fetch_filerecords_from_database(
+            pool,
+            &format!("SELECT rowid, filename, duration, filepath FROM {}", TABLE),
+        )
+        .await
+    }
 }
 
 pub enum ProgressMessage {

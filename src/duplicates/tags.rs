@@ -1,3 +1,7 @@
+use crate::prelude::*;
+
+use futures::stream::{self, StreamExt};
+
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 #[serde(default)]
 pub struct Tags {
@@ -6,6 +10,103 @@ pub struct Tags {
 }
 
 impl Tags {
+    pub fn enabled(&self) -> bool {
+        self.config.enabled
+    }
+
+    pub fn render(&mut self, ui: &mut egui::Ui) {
+        let enabled = !self.list().is_empty();
+        let text = enabled_text(
+            "Search for Records with AudioSuite Tags in Filename",
+            &enabled,
+        );
+        ui.checkbox(&mut self.config.enabled, text)
+            .on_hover_text_at_pointer(
+                "Filenames with Common Protools AudioSuite Tags will be marked for removal",
+            );
+
+        // if enabled {
+        //     ui.horizontal(|ui| {
+        //         ui.add_space(24.0);
+        //         if ui.button("Edit Tags List").clicked() {
+        //             self.my_panel = Panel::Tags
+        //         }
+        //     });
+        // } else {
+        //     self.config.enabled = false;
+        //     ui.horizontal(|ui| {
+        //         ui.add_space(24.0);
+        //         if ui.button("Add Tags to Enable").clicked() {
+        //             self.my_panel = Panel::Tags
+        //         }
+        //     });
+        // }
+    }
+
+
+
+    pub async fn gather(
+        pool: SqlitePool,
+        progress_sender: mpsc::Sender<ProgressMessage>,
+        status_sender: mpsc::Sender<Arc<str>>,
+        tags: Vec<String>,
+    ) -> Result<HashSet<FileRecord>, sqlx::Error> {
+        let _ = status_sender.send("Searching for Filenames with Specified Tags".into()).await;
+    
+        let total = tags.len();
+        // let mut counter = 1;
+        let mut file_records = HashSet::new();
+        let max_concurrency = 10; // Adjust based on your system's capacity and connection pool size
+    
+        // Process each tag concurrently with a controlled level of concurrency
+        let results = stream::iter(tags.into_iter())
+            .enumerate()
+            .map(|(counter, tag)| {
+                
+                let pool = pool.clone();
+                let progress_sender = progress_sender.clone();
+                let status_sender = status_sender.clone();
+                async move {
+                    let query = format!(
+                        "SELECT rowid, filename, duration, filepath FROM {TABLE} WHERE filename LIKE '%' || ? || '%'"
+                        
+                    );
+    
+                    
+                    let result = sqlx::query(&query).bind(&tag).fetch_all(&pool).await; // Return the result (Result<Vec<sqlx::sqlite::SqliteRow>, sqlx::Error>)
+                    let _ = status_sender.send((format!["Searching for tag: {}", &tag]).into()).await;
+                    let _ = progress_sender
+                        .send(ProgressMessage::Update(counter, total))
+                        .await;
+                    
+                    result
+                }
+               
+            })
+            .buffer_unordered(max_concurrency) // Control the level of concurrency
+            .collect::<Vec<Result<Vec<sqlx::sqlite::SqliteRow>, sqlx::Error>>>()
+            .await;
+    
+        // Iterate over the results and insert the file records
+        for result in results {
+            match result {
+                Ok(rows) => {
+                    for row in rows {
+                        file_records.insert(FileRecord::new(&row));
+                    }
+                }
+                Err(err) => {
+                    return Err(err); // Return early if an error occurs
+                }
+            }
+    
+        }
+    
+        println!("Found Tags");
+        Ok(file_records)
+    }
+
+
     fn render_panel(&mut self, ui: &mut egui::Ui) {
         ui.heading(RichText::new("Tag Editor").strong());
         ui.label("Protools Audiosuite Tags use the following format:  -example_");
@@ -27,34 +128,5 @@ impl Tags {
     }
     pub fn list(&self) -> &[String] {
         self.list.get()
-    }
-
-    fn render_node(&mut self, ui: &mut egui::Ui) {
-        let enabled = !self.list().is_empty();
-        let text = enabled_text(
-            "Search for Records with AudioSuite Tags in Filename",
-            &enabled,
-        );
-        ui.checkbox(&mut self.config.enabled, text)
-            .on_hover_text_at_pointer(
-                "Filenames with Common Protools AudioSuite Tags will be marked for removal",
-            );
-
-        if enabled {
-            ui.horizontal(|ui| {
-                ui.add_space(24.0);
-                if ui.button("Edit Tags List").clicked() {
-                    self.my_panel = Panel::Tags
-                }
-            });
-        } else {
-            self.config.enabled = false;
-            ui.horizontal(|ui| {
-                ui.add_space(24.0);
-                if ui.button("Add Tags to Enable").clicked() {
-                    self.my_panel = Panel::Tags
-                }
-            });
-        }
     }
 }

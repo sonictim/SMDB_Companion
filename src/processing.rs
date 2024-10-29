@@ -1,16 +1,10 @@
 #![allow(non_snake_case)]
-use crate::config::*;
-use rfd::FileDialog;
-use sqlx::sqlite::SqliteRow;
-use tokio::sync::mpsc;
-use sqlx::{sqlite::SqlitePool, Row};
-use std::collections::{HashMap, HashSet};
-use std::result::Result;
-use std::sync::Arc;
-use dirs::home_dir;
+use crate::prelude::*;
+
+
+use std::collections::HashMap;
 use futures::stream::{self, StreamExt};
-use rayon::prelude::*;
-use std::path::Path;
+
 use once_cell::sync::Lazy;
 use regex::Regex;
 use sha2::{Digest, Sha256};
@@ -227,7 +221,7 @@ pub async fn gather_duplicate_filenames_in_database(
 
     for row in rows {
         
-        file_records.insert(row_to_file_record(&row));
+        file_records.insert(FileRecord::new(&row));
         counter += 1;
 
         if counter % 100 == 0 {
@@ -264,7 +258,7 @@ pub async fn gather_deep_dive_records(
     let processed_records: Vec<(String, FileRecord)> = rows
         .par_iter() // Use a parallel iterator
         .map(|row| {
-            let file_record = row_to_file_record(row);
+            let file_record = FileRecord::new(row);
             let base_filename = get_root_filename(&file_record.filename, ignore_extension)
                 .unwrap_or_else(|| file_record.filename.to_string());
             (base_filename, file_record)
@@ -375,7 +369,7 @@ pub async fn gather_filenames_with_tags(
         match result {
             Ok(rows) => {
                 for row in rows {
-                    file_records.insert(row_to_file_record(&row));
+                    file_records.insert(FileRecord::new(&row));
                 }
             }
             Err(err) => {
@@ -410,18 +404,18 @@ pub async fn gather_compare_database_overlaps(
     Ok(matching_records.into_iter().collect())
 }
 
-pub fn row_to_file_record(row: &SqliteRow) -> FileRecord {
-    let id: u32 = row.get(0);
-        let filename: &str = row.get(1);
-        let duration = row.try_get(2).unwrap_or("");
-        let path: &str = row.get(3);
-        FileRecord {
-            id: id as usize,
-            filename: filename.into(),
-            duration: duration.into(),
-            path: path.into(),
-        }
-}
+// pub fn FileRecord::new(row: &SqliteRow) -> FileRecord {
+//     let id: u32 = row.get(0);
+//         let filename: &str = row.get(1);
+//         let duration = row.try_get(2).unwrap_or("");
+//         let path: &str = row.get(3);
+//         FileRecord {
+//             id: id as usize,
+//             filename: filename.into(),
+//             duration: duration.into(),
+//             path: path.into(),
+//         }
+// }
 
 
 pub async fn fetch_filerecords_from_database(
@@ -433,7 +427,7 @@ pub async fn fetch_filerecords_from_database(
     let rows = sqlx::query(query).fetch_all(pool).await?;
 
     for row in rows {
-        file_records.insert(row_to_file_record(&row));
+        file_records.insert(FileRecord::new(&row));
     }
     Ok(file_records)
 }
@@ -553,50 +547,50 @@ pub async fn create_duplicates_db(
     Ok(())
 }
 
-pub async fn open_db() -> Option<Database> {
-    let home_dir = home_dir();
-    match home_dir {
-        Some(home_dir) => {
-            println!("Found SMDB dir");
-            let db_dir = home_dir.join("Library/Application Support/SoundminerV6/Databases");
-            if let Some(path) = FileDialog::new()
-                .add_filter("SQLite Database", &["sqlite"])
-                .set_directory(db_dir)
-                .pick_file()
-            {
-                let db_path = path.display().to_string();
-                if db_path.ends_with(".sqlite") {
-                    println!("Opening Database {}", db_path);
-                    let db = Database::open(&db_path).await;
-                    return Some(db);
-                }
-            }
-        }
-        None => {
-            println!("did not find SMDB dir");
-            if let Some(path) = FileDialog::new()
-                .add_filter("SQLite Database", &["sqlite"])
-                .pick_file()
-            {
-                let db_path = path.display().to_string();
-                if db_path.ends_with(".sqlite") {
-                    println!("Opening Database {}", db_path);
-                    let db = Database::open(&db_path).await;
-                    return Some(db);
-                }
-            }
-        }
-    }
-    None
-}
+// pub async fn open_db() -> Option<Database> {
+//     let home_dir = home_dir();
+//     match home_dir {
+//         Some(home_dir) => {
+//             println!("Found SMDB dir");
+//             let db_dir = home_dir.join("Library/Application Support/SoundminerV6/Databases");
+//             if let Some(path) = FileDialog::new()
+//                 .add_filter("SQLite Database", &["sqlite"])
+//                 .set_directory(db_dir)
+//                 .pick_file()
+//             {
+//                 let db_path = path.display().to_string();
+//                 if db_path.ends_with(".sqlite") {
+//                     println!("Opening Database {}", db_path);
+//                     let db = Database::open(&db_path).await;
+//                     return Some(db);
+//                 }
+//             }
+//         }
+//         None => {
+//             println!("did not find SMDB dir");
+//             if let Some(path) = FileDialog::new()
+//                 .add_filter("SQLite Database", &["sqlite"])
+//                 .pick_file()
+//             {
+//                 let db_path = path.display().to_string();
+//                 if db_path.ends_with(".sqlite") {
+//                     println!("Opening Database {}", db_path);
+//                     let db = Database::open(&db_path).await;
+//                     return Some(db);
+//                 }
+//             }
+//         }
+//     }
+//     None
+// }
 
-pub async fn get_db_size(pool: &SqlitePool) -> Result<usize, sqlx::Error> {
-    let count: (i64,) = sqlx::query_as(&format!("SELECT COUNT(*) FROM {}", TABLE))
-        .fetch_one(pool)
-        .await?;
+// pub async fn get_db_size(pool: &SqlitePool) -> Result<usize, sqlx::Error> {
+//     let count: (i64,) = sqlx::query_as(&format!("SELECT COUNT(*) FROM {}", TABLE))
+//         .fetch_one(pool)
+//         .await?;
 
-    Ok(count.0 as usize)
-}
+//     Ok(count.0 as usize)
+// }
 
 pub async fn get_columns(pool: &SqlitePool) -> Result<Vec<String>, sqlx::Error> {
     // Query for table info using PRAGMA
@@ -632,63 +626,3 @@ pub async fn get_audio_file_types(pool: &SqlitePool) -> Result<Vec<String>, sqlx
 
     Ok(audio_file_types)
 }
-
-// pub fn parse_to_sql(column: &str, operator: &OrderOperator, input: &str) -> String {
-//     match operator {
-//         OrderOperator::Largest => format! {"{} DESC", column.to_lowercase()},
-//         OrderOperator::Smallest => format!("{} ASC", column.to_lowercase()),
-//         OrderOperator::Is => format!(
-//             "CASE WHEN {} IS '%{}%' THEN 0 ELSE 1 END ASC",
-//             column.to_lowercase(),
-//             input
-//         ),
-//         OrderOperator::IsNot => format!(
-//             "CASE WHEN {} IS '%{}%' THEN 1 ELSE 0 END ASC",
-//             column.to_lowercase(),
-//             input
-//         ),
-//         OrderOperator::Contains => format!(
-//             "CASE WHEN {} LIKE '%{}%' THEN 0 ELSE 1 END ASC",
-//             column.to_lowercase(),
-//             input
-//         ),
-//         OrderOperator::DoesNotContain => format!(
-//             "CASE WHEN {} LIKE '%{}%' THEN 1 ELSE 0 END ASC",
-//             column.to_lowercase(),
-//             input
-//         ),
-//         OrderOperator::IsEmpty => format!(
-//             "CASE WHEN {} IS NOT NULL AND {} != '' THEN 1 ELSE 0 END ASC",
-//             column.to_lowercase(),
-//             column.to_lowercase()
-//         ),
-//         OrderOperator::IsNotEmpty => format!(
-//             "CASE WHEN {} IS NOT NULL AND {} != '' THEN 0 ELSE 1 END ASC",
-//             column.to_lowercase(),
-//             column.to_lowercase()
-//         ),
-//     }
-// }
-
-// pub fn parse_to_user_friendly(column: &str, operator: &OrderOperator, input: &str) -> String {
-//     match operator {
-//         OrderOperator::Largest => format! {"Largest {}", column},
-//         OrderOperator::Smallest => format!("Smallest {} ", column),
-//         OrderOperator::Is => format!("{} is '{}'", column, input),
-//         OrderOperator::IsNot => format!("{} is NOT '{}'", column, input),
-//         OrderOperator::Contains => format!("{} contains '{}'", column, input),
-//         OrderOperator::DoesNotContain => format!("{} does NOT contain '{}'", column, input),
-//         OrderOperator::IsEmpty => format!("{} is empty", column,),
-//         OrderOperator::IsNotEmpty => format!("{} is NOT empty", column,),
-//     }
-// }
-
-// pub fn parse_to_struct(column: String, operator: OrderOperator, input: String) -> PreservationLogic {
-//     PreservationLogic{
-//         // column,
-//         // operator,
-//         // variable: input,    
-//         friendly: parse_to_user_friendly(&column, &operator, &input),
-//         sql: parse_to_sql(&column, &operator, &input),
-//     }
-// }

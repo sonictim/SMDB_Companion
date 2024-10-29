@@ -3,12 +3,22 @@
 
 mod app;
 pub use app::App;
-mod find_replace;
-// pub use find_replace::*;
 mod assets;
+mod find_replace;
 pub use assets::*;
 mod config;
-pub use config::*;
+
 // mod dupe_panel;
 mod processing;
 pub use processing::*;
+
+mod duplicates;
+pub use duplicates::*;
+
+mod prelude;
+
+pub use eframe::egui::{self, RichText, Ui};
+pub use sqlx::sqlite::SqlitePool;
+pub use std::collections::HashSet;
+pub use std::sync::Arc;
+pub use tokio::sync::mpsc;

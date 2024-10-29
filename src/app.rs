@@ -1,14 +1,12 @@
+use crate::prelude::*;
 use crate::assets::*;
 use crate::find_replace::FindPanel;
 use crate::processing::*;
 use crate::config::*;
 // use crate::dupe_panel::*;
-use eframe::egui::{self, RichText};
+
 use rayon::prelude::*;
-use std::collections::HashSet;
 use std::fs::{self};
-use std::sync::Arc;
-use tokio::sync::mpsc;
 
 
 
@@ -220,19 +218,6 @@ impl App {
     }
 
     fn receive_async_data(&mut self) {
-        self.main.receive_progress();
-        self.main.receive_status();
-        self.basic.receive_progress();
-        self.basic.receive_status();
-        self.deep.receive_progress();
-        self.deep.receive_status();
-        self.tags.receive_progress();
-        self.tags.receive_status();
-        self.compare.receive_progress();
-        self.compare.receive_status();
-
-
-
         if let Some(db) = self.db_io.recv() {
             self.db = Some(db);
         }      
@@ -246,23 +231,23 @@ impl App {
             }
         }
         
-        if let Some(records) = self.main.receive_hashset() {
+        if let Some(records) = self.main.receive() {
             self.clear_status();
             self.main.status = format! {"Removed {} duplicates", records.len()}.into();
         }    
-        if let Some(records) = self.basic.receive_hashset() {
+        if let Some(records) = self.basic.receive() {
             self.main.records.extend(records);
             self.update_main_status();
         }   
-        if let Some(records) = self.deep.receive_hashset() {
+        if let Some(records) = self.deep.receive() {
             self.main.records.extend(records);
             self.update_main_status();
         }    
-        if let Some(records) = self.tags.receive_hashset() {
+        if let Some(records) = self.tags.receive() {
             self.main.records.extend(records);
             self.update_main_status();
         }    
-        if let Some(records) = self.compare.receive_hashset() {
+        if let Some(records) = self.compare.receive() {
             self.main.records.extend(records);
             self.update_main_status();
         }
@@ -398,7 +383,6 @@ impl App {
         ui.menu_button(RichText::new("File").weak().size(18.0), |ui| {
             if ui.button("Open Database").clicked() {
                 ui.close_menu();
-                // self.clear_status();
                 let tx = self.db_io.tx.clone();
                 tokio::spawn(async move {
                     let db = open_db().await.unwrap();

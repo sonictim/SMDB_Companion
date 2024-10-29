@@ -1,7 +1,4 @@
-use egui::RichText;
-use sqlx::SqlitePool;
-
-use crate::{empty_line, AsyncTunnel, Database};
+use crate::prelude::*;
 
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 #[serde(default)]
@@ -229,8 +226,7 @@ impl FindPanel {
             &self.column
         };
         let case = if self.case_sensitive { "GLOB" } else { "LIKE" };
-        let search_query =
-            format!("SELECT COUNT(rowid) FROM justinmetadata WHERE {column} {case} ?");
+        let search_query = format!("SELECT COUNT(rowid) FROM {TABLE} WHERE {column} {case} ?");
 
         let handle = tokio::spawn(async move {
             println!("Inside Find Async");
@@ -267,14 +263,14 @@ impl FindPanel {
 
             let queries = if is_filepath {
                 vec![
-                    format!("UPDATE justinmetadata SET FilePath = REPLACE(Filename, '{}', '{}'){} WHERE Filename {} '%{}%'", find, replace, dirty_text, case_text, find),
-                    format!("UPDATE justinmetadata SET Filename = REPLACE(Filename, '{}', '{}'){} WHERE Filename {} '%{}%'", find, replace, dirty_text, case_text, find),
-                    format!("UPDATE justinmetadata SET Pathname = REPLACE(Pathname, '{}', '{}'){} WHERE Pathname {} '%{}%'", find, replace, dirty_text, case_text, find),
+                    format!("UPDATE {TABLE} SET FilePath = REPLACE(Filename, '{}', '{}'){} WHERE Filename {} '%{}%'", find, replace, dirty_text, case_text, find),
+                    format!("UPDATE {TABLE} SET Filename = REPLACE(Filename, '{}', '{}'){} WHERE Filename {} '%{}%'", find, replace, dirty_text, case_text, find),
+                    format!("UPDATE {TABLE} SET Pathname = REPLACE(Pathname, '{}', '{}'){} WHERE Pathname {} '%{}%'", find, replace, dirty_text, case_text, find),
                     format!("UPDATE justinrdb_Pathname SET Pathname = REPLACE(Pathname, '{}', '{}'){} WHERE Pathname {} '%{}%'", find, replace, dirty_text, case_text, find),
                 ]
             } else {
                 vec![format!(
-                    "UPDATE justinmetadata SET {} = REPLACE({}, '{}', '{}'){} WHERE {} {} '%{}%'",
+                    "UPDATE {TABLE} SET {} = REPLACE({}, '{}', '{}'){} WHERE {} {} '%{}%'",
                     column, column, find, replace, dirty_text, column, case_text, find
                 )]
             };
