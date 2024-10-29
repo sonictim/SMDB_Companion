@@ -203,29 +203,51 @@ pub struct Database {
 }
 
 impl Database {
-    pub async fn open(db_path: &str) -> Self {
-        let db_pool = SqlitePool::connect(db_path)
+    pub async fn init(db_path: &str) -> Self {
+        let pool = SqlitePool::connect(db_path)
             .await
             .expect("Pool did not open");
-        let db_size = get_db_size(&db_pool).await.expect("get db size");
-        let db_columns = get_columns(&db_pool).await.expect("get columns");
+        let size = Database::get_size(&pool).await.expect("get db size");
+        let columns = Database::get_columns(&pool).await.expect("get columns");
 
         Self {
             path: db_path.to_string(),
-            pool: Some(db_pool),
+            pool: Some(pool),
             name: db_path
                 .split('/')
                 .last()
                 .expect("Name From Pathname")
                 .to_string(),
-            size: db_size,
-            columns: db_columns,
+            size,
+            columns,
             file_extensions: Vec::new(),
             // io: AsyncTunnel::new(1),
         }
     }
-    pub async fn get_size(&self) -> Result<usize, sqlx::Error> {
-        let pool = self.pool.as_ref().unwrap();
+    async fn get_columns(pool: &SqlitePool) -> Result<Vec<String>, sqlx::Error> {
+        // Query for table info using PRAGMA
+        let columns = sqlx::query(&format!("PRAGMA table_info({});", TABLE))
+            .fetch_all(pool)
+            .await?
+            .into_iter()
+            .filter_map(|row| {
+                let column_name: String = row.try_get("name").ok()?; // Extract "name" column
+                if !column_name.starts_with('_') {
+                    Some(column_name)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<String>>();
+
+        // Sort the column names
+        let mut sorted_columns = columns;
+        sorted_columns.sort();
+        Ok(sorted_columns)
+    }
+
+    async fn get_size(pool: &SqlitePool) -> Result<usize, sqlx::Error> {
+        // let pool = self.pool.as_ref().unwrap();
         let count: (i64,) = sqlx::query_as(&format!("SELECT COUNT(*) FROM {}", TABLE))
             .fetch_one(pool)
             .await?;
@@ -270,52 +292,52 @@ impl Database {
         ))
         .await
     }
-}
 
-pub async fn open_db() -> Option<Database> {
-    let home_dir = home_dir();
-    match home_dir {
-        Some(home_dir) => {
-            println!("Found SMDB dir");
-            let db_dir = home_dir.join("Library/Application Support/SoundminerV6/Databases");
-            if let Some(path) = FileDialog::new()
-                .add_filter("SQLite Database", &["sqlite"])
-                .set_directory(db_dir)
-                .pick_file()
-            {
-                let db_path = path.display().to_string();
-                if db_path.ends_with(".sqlite") {
-                    println!("Opening Database {}", db_path);
-                    let db = Database::open(&db_path).await;
-                    return Some(db);
+    pub async fn open() -> Option<Self> {
+        let home_dir = home_dir();
+        match home_dir {
+            Some(home_dir) => {
+                println!("Found SMDB dir");
+                let db_dir = home_dir.join("Library/Application Support/SoundminerV6/Databases");
+                if let Some(path) = FileDialog::new()
+                    .add_filter("SQLite Database", &["sqlite"])
+                    .set_directory(db_dir)
+                    .pick_file()
+                {
+                    let db_path = path.display().to_string();
+                    if db_path.ends_with(".sqlite") {
+                        println!("Opening Database {}", db_path);
+                        let db = Self::init(&db_path).await;
+                        return Some(db);
+                    }
+                }
+            }
+            None => {
+                println!("did not find SMDB dir");
+                if let Some(path) = FileDialog::new()
+                    .add_filter("SQLite Database", &["sqlite"])
+                    .pick_file()
+                {
+                    let db_path = path.display().to_string();
+                    if db_path.ends_with(".sqlite") {
+                        println!("Opening Database {}", db_path);
+                        let db = Self::init(&db_path).await;
+                        return Some(db);
+                    }
                 }
             }
         }
-        None => {
-            println!("did not find SMDB dir");
-            if let Some(path) = FileDialog::new()
-                .add_filter("SQLite Database", &["sqlite"])
-                .pick_file()
-            {
-                let db_path = path.display().to_string();
-                if db_path.ends_with(".sqlite") {
-                    println!("Opening Database {}", db_path);
-                    let db = Database::open(&db_path).await;
-                    return Some(db);
-                }
-            }
-        }
+        None
     }
-    None
 }
 
-pub async fn get_db_size(pool: &SqlitePool) -> Result<usize, sqlx::Error> {
-    let count: (i64,) = sqlx::query_as(&format!("SELECT COUNT(*) FROM {}", TABLE))
-        .fetch_one(pool)
-        .await?;
+// pub async fn get_db_size(pool: &SqlitePool) -> Result<usize, sqlx::Error> {
+//     let count: (i64,) = sqlx::query_as(&format!("SELECT COUNT(*) FROM {}", TABLE))
+//         .fetch_one(pool)
+//         .await?;
 
-    Ok(count.0 as usize)
-}
+//     Ok(count.0 as usize)
+// }
 
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
 pub struct FileRecord {

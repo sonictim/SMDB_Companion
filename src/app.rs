@@ -385,7 +385,7 @@ impl App {
                 ui.close_menu();
                 let tx = self.db_io.tx.clone();
                 tokio::spawn(async move {
-                    let db = open_db().await.unwrap();
+                    let db = Database::open().await.unwrap();
                     let _ = tx.send(db).await;
                 });
 
@@ -527,7 +527,7 @@ impl App {
                     
                     let tx = self.db_io.tx.clone();
                     tokio::spawn(async move {
-                        let db = open_db().await.unwrap();
+                        let db = Database::open().await.unwrap();
                         let _ = tx.send(db).await;
                     });
                 };
@@ -539,7 +539,7 @@ impl App {
                 large_button(ui, "Open Database", || {
                     let tx = self.db_io.tx.clone();
                     tokio::spawn(async move {
-                        let db = open_db().await.unwrap();
+                        let db = Database::open().await.unwrap();
                         let _ = tx.send(db).await;
                     });
                 });
@@ -805,7 +805,7 @@ impl App {
                 if ui.selectable_label(false, &cdb.name).clicked() {
                     let tx = self.cdb_io.tx.clone();
                     tokio::spawn(async move {
-                        let db = open_db().await.unwrap();
+                        let db = Database::open().await.unwrap();
                         let _ = tx.send(db).await;
                     });
                 }
@@ -816,7 +816,7 @@ impl App {
                     self.compare.enabled = false;
                     let tx = self.cdb_io.tx.clone();
                     tokio::spawn(async move {
-                        let db = open_db().await.unwrap();
+                        let db = Database::open().await.unwrap();
                         let _ = tx.send(db).await;
                     });
                 }
@@ -1029,12 +1029,12 @@ pub async fn remove_duplicates_go(
 ) -> Result<HashSet<FileRecord>, sqlx::Error> {
     let _ = status_sender.send("Performing Record Removal".into()).await;
     if let Some(main_path) = &main_db_path {
-        let main_db = Database::open(main_path).await;
+        let main_db = Database::init(main_path).await;
         let Some(main_pool) = main_db.pool() else {return Err(sqlx::Error::PoolClosed);};
         let _result =
             delete_file_records(&main_pool, &records, progress_sender.clone(), status_sender.clone()).await;
         if let Some(path) = dupe_db_path {
-            let dupes_db = Database::open(&path).await;
+            let dupes_db = Database::init(&path).await;
             let Some(dupes_pool) = dupes_db.pool() else {return Err(sqlx::Error::PoolClosed);};
             let _result =
                 create_duplicates_db(&dupes_pool, &records, progress_sender.clone(), status_sender.clone())

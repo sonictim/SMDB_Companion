@@ -592,27 +592,7 @@ pub async fn create_duplicates_db(
 //     Ok(count.0 as usize)
 // }
 
-pub async fn get_columns(pool: &SqlitePool) -> Result<Vec<String>, sqlx::Error> {
-    // Query for table info using PRAGMA
-    let columns = sqlx::query(&format!("PRAGMA table_info({});", TABLE))
-        .fetch_all(pool)
-        .await?
-        .into_iter()
-        .filter_map(|row| {
-            let column_name: String = row.try_get("name").ok()?; // Extract "name" column
-            if !column_name.starts_with('_') {
-                Some(column_name)
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<String>>();
 
-    // Sort the column names
-    let mut sorted_columns = columns;
-    sorted_columns.sort();
-    Ok(sorted_columns)
-}
 
 pub async fn get_audio_file_types(pool: &SqlitePool) -> Result<Vec<String>, sqlx::Error> {
     let rows = sqlx::query("SELECT DISTINCT AudioFileType FROM justinmetadata")

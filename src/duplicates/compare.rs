@@ -29,7 +29,7 @@ impl Compare {
                 if ui.selectable_label(false, &cdb.name).clicked() {
                     let tx = self.cdb_io.tx.clone();
                     tokio::spawn(async move {
-                        let db = open_db().await.unwrap();
+                        let db = Database::open().await.unwrap();
                         let _ = tx.send(db).await;
                     });
                 }
@@ -40,7 +40,7 @@ impl Compare {
                     self.config.enabled = false;
                     let tx = self.cdb_io.tx.clone();
                     tokio::spawn(async move {
-                        let db = open_db().await.unwrap();
+                        let db = Database::open().await.unwrap();
                         let _ = tx.send(db).await;
                     });
                 }
