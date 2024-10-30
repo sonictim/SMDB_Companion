@@ -7,9 +7,8 @@ use crate::prelude::*;
 pub struct Compare {
     config: NodeConfig,
     #[serde(skip)]
-    compare_db: Option<Database>,
-    #[serde(skip)]
-    cdb_io: AsyncTunnel<Database>,
+    compare_db: AsyncTunnel<Option<Database>>,
+
 }
 impl Compare {
     pub fn enabled(&self) -> bool {
@@ -19,21 +18,22 @@ impl Compare {
         self.config.render_progress_bar(ui);
     }
     pub fn render(&mut self, ui: &mut egui::Ui) {
-        self.compare_db = self.cdb_io.recv();
+        self.compare_db.recv2();
+        let cdb = self.compare_db.get();
 
         ui.horizontal(|ui| {
-            let enabled = self.config.enabled || self.compare_db.is_some();
+            let enabled = self.config.enabled || self.compare_db.get().is_some();
             let text = enabled_text("Compare against database: ", &enabled);
             ui.checkbox(&mut self.config.enabled, text)
                 .on_hover_text_at_pointer
                     ("Filenames from Target Database found in Comparison Database will be Marked for Removal");
             
-            if let Some(cdb) = &self.compare_db {
+            if let Some(cdb) = cdb {
                 if ui.selectable_label(false, &cdb.name).clicked() {
-                    let tx = self.cdb_io.tx.clone();
+                    let tx = self.compare_db.tx.clone();
                     tokio::spawn(async move {
                         let db = Database::open().await.unwrap();
-                        let _ = tx.send(db).await;
+                        let _ = tx.send(Some(db)).await;
                     });
                 }
             }
@@ -41,10 +41,10 @@ impl Compare {
                 self.config.enabled = false;
                 if ui.button("Select DB").clicked()  {
                     self.config.enabled = false;
-                    let tx = self.cdb_io.tx.clone();
+                    let tx = self.compare_db.tx.clone();
                     tokio::spawn(async move {
                         let db = Database::open().await.unwrap();
-                        let _ = tx.send(db).await;
+                        let _ = tx.send(Some(db)).await;
                     });
                 }
             }
@@ -53,8 +53,9 @@ impl Compare {
 
 
     pub fn gather(&mut self, db: &Database) {
-        if self.config.enabled && self.compare_db.is_some() {
-            if let Some(cdb) = &self.compare_db {
+        let cdb = self.compare_db.get();
+        if self.config.enabled && cdb.is_some() {
+            if let Some(cdb) = &cdb {
                 self.config.working = true;
                 self.config.status = format!("Comparing against {}", cdb.name).into();
                 let db = db.clone();

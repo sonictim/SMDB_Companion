@@ -12,7 +12,8 @@ use std::hash::Hash;
 
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)]
-pub struct AsyncTunnel<T> {
+pub struct AsyncTunnel<T: Default> {
+    data: T,
     #[serde(skip)]
     pub tx: mpsc::Sender<T>,
     #[serde(skip)]
@@ -21,29 +22,44 @@ pub struct AsyncTunnel<T> {
     pub waiting: bool,
 }
 
-impl<T> Default for AsyncTunnel<T> {
+impl<T: Default> Default for AsyncTunnel<T> {
     fn default() -> Self {
         AsyncTunnel::new(1)
     }
 }
 
-impl<T> AsyncTunnel<T> {
+impl<T: Default> AsyncTunnel<T> {
     pub fn new(channels: usize) -> AsyncTunnel<T> {
         let (tx, rx) = mpsc::channel(channels);
         AsyncTunnel {
+            data: T::default(),
             tx,
             rx,
             waiting: false,
         }
     }
+    pub fn get(&self) -> &T {
+        &self.data
+    }
 
+    pub fn waiting(&self) -> bool {
+        self.waiting
+    }
     pub async fn send(&mut self, item: T) -> Result<(), mpsc::error::SendError<T>> {
         self.waiting = true;
         self.tx.send(item).await
     }
 
-    pub fn recv(&mut self) -> Option<T> {
-        self.rx.try_recv().ok()
+    // pub fn recv(&mut self) -> Option<T> {
+    //     self.rx.try_recv().ok()
+    // }
+    pub fn recv2(&mut self) -> bool {
+        if let Ok(result) = self.rx.try_recv() {
+            self.data = result;
+            self.waiting = false;
+            return true;
+        }
+        false
     }
 }
 
@@ -192,7 +208,7 @@ impl NodeConfig {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Database {
     pub path: String,
     pool: Option<SqlitePool>,
@@ -432,6 +448,12 @@ impl FileRecord {
 
 pub enum ProgressMessage {
     Update(usize, usize), // (current, total)
+}
+
+impl Default for ProgressMessage {
+    fn default() -> Self {
+        ProgressMessage::Update(0, 0) // Default values for current and total
+    }
 }
 
 #[derive(PartialEq, serde::Serialize, Deserialize, Clone, Copy)]

@@ -9,8 +9,7 @@ pub use regex::Regex;
 #[serde(default)]
 pub struct Deep {
     config: NodeConfig,
-    extensions: Vec<String>,
-    extensions_io: AsyncTunnel<Vec<String>>,
+    extensions: AsyncTunnel<Vec<String>>,
     ignore_extension: bool,
 }
 
@@ -22,9 +21,10 @@ impl Deep {
         self.config.render_progress_bar(ui);
     }
     pub fn render(&mut self, ui: &mut egui::Ui, db: &Database) {
-        if let Some(ext) = self.extensions_io.recv() {
-            self.extensions = ext;
-        }
+        self.extensions.recv2();
+        // if let Some(ext) = self.extensions_io.recv() {
+        //     self.extensions = ext;
+        // }
 
         ui.checkbox(
             &mut self.config.enabled,
@@ -34,16 +34,17 @@ impl Deep {
             "Filenames ending in .#, .#.#.#, or .M will be examined as possible duplicates",
         );
 
-        if self.extensions.is_empty() && !self.extensions_io.waiting {
-            self.extensions_io.waiting = true;
+        if self.extensions.get().is_empty() && !self.extensions.waiting() {
+            // self.extensions_io.waiting = true;
 
             let Some(pool) = db.pool() else {
                 return;
             };
-            let tx = self.extensions_io.tx.clone();
+            let tx = self.extensions.tx.clone();
 
             let _handle = tokio::spawn(async move {
                 let results = get_audio_file_types(&pool).await;
+
                 if let Ok(results) = results {
                     tx.send(results).await;
                 }
@@ -58,14 +59,14 @@ impl Deep {
             ui.horizontal(|ui| {
                 ui.add_space(24.0);
 
-                if self.extensions.len() > 1 {
+                if self.extensions.get().len() > 1 {
                     let text = if self.ignore_extension {"Checked: 'example.wav' and 'example.flac' will be considered duplicate filenames"}
                     else {"Unchecked: 'example.wav' and 'example.flac' will be considered unique filenames"};
                     ui.checkbox(&mut self.ignore_extension, "Ignore Filetypes").on_hover_text_at_pointer(text);
 
                 } else {
                     ui.label("All Records are of Filetype:");
-                    ui.label(&self.extensions[0]);
+                    ui.label(&self.extensions.get()[0]);
                 }
             });
         }
