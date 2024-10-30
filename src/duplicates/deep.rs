@@ -18,6 +18,9 @@ impl Deep {
     pub fn enabled(&self) -> bool {
         self.config.enabled
     }
+    pub fn render_progress_bar(&mut self, ui: &mut egui::Ui) {
+        self.config.render_progress_bar(ui);
+    }
     pub fn render(&mut self, ui: &mut egui::Ui, db: &Database) {
         if let Some(ext) = self.extensions_io.recv() {
             self.extensions = ext;
@@ -68,19 +71,33 @@ impl Deep {
         }
     }
 
-    pub async fn gather(&mut self, db: &Database) -> Result<HashSet<FileRecord>, sqlx::Error> {
-        let status = self.config.status_io.tx.clone();
+    pub fn gather(&mut self, db: &Database) {
+        if self.config.enabled {
+            let progress_sender = self.config.progress_io.tx.clone();
+            let status_sender = self.config.status_io.tx.clone();
+            let pool = db.pool().unwrap();
+            let ignore = self.ignore_extension;
+            self.config.wrap_async(move || {
+                Self::async_gather(pool, progress_sender, status_sender, ignore)
+            })
+        }
+    }
+
+    pub async fn async_gather(
+        pool: SqlitePool,
+        progress_sender: mpsc::Sender<ProgressMessage>,
+        status_sender: mpsc::Sender<Arc<str>>,
+        ignore_extension: bool,
+    ) -> Result<HashSet<FileRecord>, sqlx::Error> {
         let mut file_groups: HashMap<String, Vec<FileRecord>> = HashMap::new();
-        let _ = status
+        let _ = status_sender
             .send("Gathering Duplicates with Similar Filenames".into())
             .await;
 
         let query = &format!("SELECT rowid, filename, duration, filepath FROM {}", TABLE);
 
-        let rows = sqlx::query(query)
-            .fetch_all(db.pool().as_ref().unwrap())
-            .await?;
-        let _ = status.send("Organizing Results".into()).await;
+        let rows = sqlx::query(query).fetch_all(&pool).await?;
+        let _ = status_sender.send("Organizing Results".into()).await;
 
         let total = rows.len();
         let mut counter: usize = 0;
@@ -90,13 +107,13 @@ impl Deep {
             .par_iter() // Use a parallel iterator
             .map(|row| {
                 let file_record = FileRecord::new(row);
-                let base_filename = get_root_filename(&file_record.filename, self.ignore_extension)
+                let base_filename = get_root_filename(&file_record.filename, ignore_extension)
                     .unwrap_or_else(|| file_record.filename.to_string());
                 (base_filename, file_record)
             })
             .collect(); // Collect results into a Vec<(String, FileRecord)>
 
-        let _ = status.send("Processing Records".into()).await;
+        let _ = status_sender.send("Processing Records".into()).await;
         for (base_filename, file_record) in processed_records {
             file_groups
                 .entry(base_filename)
@@ -106,16 +123,13 @@ impl Deep {
             counter += 1;
 
             if counter % 100 == 0 {
-                let _ = self
-                    .config
-                    .progress_io
-                    .tx
+                let _ = progress_sender
                     .send(ProgressMessage::Update(counter, total))
                     .await;
             }
         }
 
-        let _ = status.send("Finishing up".into()).await;
+        let _ = status_sender.send("Finishing up".into()).await;
 
         let mut file_records = HashSet::new();
         for (root, records) in file_groups {
@@ -124,7 +138,7 @@ impl Deep {
             }
 
             let root_found = records.iter().any(|record| {
-                if self.ignore_extension {
+                if ignore_extension {
                     let name = Path::new(&*record.filename)
                         .file_stem()
                         .and_then(|s| s.to_str())
@@ -136,7 +150,7 @@ impl Deep {
             });
             if root_found {
                 file_records.extend(records.into_iter().filter(|record| {
-                    if self.ignore_extension {
+                    if ignore_extension {
                         let name = Path::new(&*record.filename)
                             .file_stem()
                             .and_then(|s| s.to_str())
@@ -149,7 +163,7 @@ impl Deep {
                 file_records.extend(records.into_iter().skip(1));
             }
         }
-        let _ = status
+        let _ = status_sender
             .send(format!("Found {} duplicate records", file_records.len()).into())
             .await;
 

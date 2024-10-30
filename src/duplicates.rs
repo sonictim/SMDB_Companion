@@ -56,7 +56,7 @@ impl Duplicates {
             self.basic.render(&mut column[0], db);
             self.remove.render(&mut column[1]);
         });
-        self.basic.config.render_progress_bar(ui);
+        self.basic.render_progress_bar(ui);
 
         self.deep.render(ui, db);
         self.deep.render_progress_bar(ui);

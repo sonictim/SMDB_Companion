@@ -13,6 +13,9 @@ impl Tags {
     pub fn enabled(&self) -> bool {
         self.config.enabled
     }
+    pub fn render_progress_bar(&mut self, ui: &mut egui::Ui) {
+        self.config.render_progress_bar(ui);
+    }
 
     pub fn render(&mut self, ui: &mut egui::Ui) {
         let enabled = !self.list().is_empty();
@@ -43,9 +46,21 @@ impl Tags {
         // }
     }
 
+    pub fn gather(&mut self, db: &Database) {
+        if self.config.enabled {
+            let progress_sender = self.config.progress_io.tx.clone();
+            let status_sender = self.config.status_io.tx.clone();
+            let pool = db.pool().unwrap();
+            let tags = self.list.get().to_vec();
+            self.config.wrap_async(
+                move || Self::async_gather(pool, progress_sender, status_sender, tags),
+            );
+        }
+    }
 
 
-    pub async fn gather(
+
+    pub async fn async_gather(
         pool: SqlitePool,
         progress_sender: mpsc::Sender<ProgressMessage>,
         status_sender: mpsc::Sender<Arc<str>>,

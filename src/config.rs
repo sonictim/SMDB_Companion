@@ -192,7 +192,7 @@ impl NodeConfig {
     }
 }
 
-// #[derive(Default)]
+#[derive(Clone)]
 pub struct Database {
     pub path: String,
     pool: Option<SqlitePool>,

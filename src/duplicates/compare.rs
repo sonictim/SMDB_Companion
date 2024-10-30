@@ -15,6 +15,9 @@ impl Compare {
     pub fn enabled(&self) -> bool {
         self.config.enabled
     }
+    pub fn render_progress_bar(&mut self, ui: &mut egui::Ui) {
+        self.config.render_progress_bar(ui);
+    }
     pub fn render(&mut self, ui: &mut egui::Ui) {
         self.compare_db = self.cdb_io.recv();
 
@@ -47,12 +50,36 @@ impl Compare {
             }
         });
     }
-    pub async fn gather(&self,
+
+
+    pub fn gather(&mut self, db: &Database) {
+        if self.config.enabled && self.compare_db.is_some() {
+            if let Some(cdb) = &self.compare_db {
+                self.config.working = true;
+                self.config.status = format!("Comparing against {}", cdb.name).into();
+                let db = db.clone();
+                let cdb = cdb.clone();
+                let tx = self.config.records_io.tx.clone();
+                let handle = tokio::spawn(async move {
+                    println!("tokio spawn compare");
+                    let results = Self::async_gather(&db, &cdb).await;
+                    if (tx.send(results.expect("error on compare db")).await).is_err() {
+                        eprintln!("Failed to send db");
+                    }
+                });
+                self.config.handle = Some(handle);
+                
+            }
+        }
+        
+    }
+
+    pub async fn async_gather(
         db: &Database,
-        // target_pool: &SqlitePool,
-        // compare_pool: &SqlitePool,
+        cdb: &Database
+ 
     ) -> Result<HashSet<FileRecord>, sqlx::Error> {
-        let cdb = self.compare_db.as_ref().unwrap();
+       
         let compare_records: HashSet<FileRecord> = cdb.fetch_all_filerecords().await?;
         let filenames_to_check = extract_filenames_set_from_records(&compare_records);
     

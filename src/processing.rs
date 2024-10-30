@@ -404,18 +404,7 @@ pub async fn gather_compare_database_overlaps(
     Ok(matching_records.into_iter().collect())
 }
 
-// pub fn FileRecord::new(row: &SqliteRow) -> FileRecord {
-//     let id: u32 = row.get(0);
-//         let filename: &str = row.get(1);
-//         let duration = row.try_get(2).unwrap_or("");
-//         let path: &str = row.get(3);
-//         FileRecord {
-//             id: id as usize,
-//             filename: filename.into(),
-//             duration: duration.into(),
-//             path: path.into(),
-//         }
-// }
+
 
 
 pub async fn fetch_filerecords_from_database(

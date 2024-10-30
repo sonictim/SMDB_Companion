@@ -3,7 +3,7 @@ use crate::prelude::*;
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 #[serde(default)]
 pub struct Basic {
-    config: NodeConfig,
+    pub config: NodeConfig,
     match_criteria: SelectableList,
     match_null: bool,
     preservation_order: OrderPanel,
@@ -13,6 +13,10 @@ impl Basic {
     pub fn enabled(&self) -> bool {
         self.config.enabled
     }
+    pub fn render_progress_bar(&mut self, ui: &mut egui::Ui) {
+        self.config.render_progress_bar(ui);
+    }
+
     pub fn render(&mut self, ui: &mut egui::Ui, db: &Database) {
         ui.checkbox(&mut self.config.enabled, "Basic Duplicate Search");
         ui.horizontal(|ui| {
@@ -60,6 +64,94 @@ impl Basic {
                 ui.radio_value(&mut self.match_null, true, "Process Together");
             });
         }
+    }
+
+    pub fn gather(&mut self, db: &Database) {
+        if self.config.enabled {
+            let progress_sender = self.config.progress_io.tx.clone();
+            let status_sender = self.config.status_io.tx.clone();
+            let pool = db.pool().unwrap();
+            let order = self.preservation_order.extract_sql().clone();
+            let match_groups = self.match_criteria.get().to_vec();
+            let match_null = self.match_null;
+            self.config.wrap_async(move || {
+                Self::async_gather(
+                    pool,
+                    progress_sender,
+                    status_sender,
+                    order,
+                    match_groups,
+                    match_null,
+                )
+            })
+        }
+    }
+
+    pub async fn async_gather(
+        pool: SqlitePool,
+        progress_sender: mpsc::Sender<ProgressMessage>,
+        status_sender: mpsc::Sender<Arc<str>>,
+        order: Vec<String>,
+        match_groups: Vec<String>,
+        match_null: bool,
+    ) -> Result<HashSet<FileRecord>, sqlx::Error> {
+        let mut file_records = HashSet::new();
+        let _ = status_sender
+            .send("Gathering Duplicate Records".into())
+            .await;
+        println!("basic search begin");
+        // Construct the ORDER BY clause dynamically
+        let order_clause = order.join(", ");
+        let partition_by_clause = match_groups.join(", ");
+        let where_clause = if match_null || match_groups.is_empty() {
+            String::new()
+        } else {
+            let non_null_conditions: Vec<String> = match_groups
+                .iter()
+                .map(|group| format!("{group} IS NOT NULL AND {group} !=''"))
+                .collect();
+            format!("WHERE {}", non_null_conditions.join(" AND "))
+        };
+
+        let sql = format!(
+            "
+        WITH ranked AS (
+            SELECT
+                rowid AS id,
+                filename,
+                duration,
+                filepath,
+                ROW_NUMBER() OVER (
+                    PARTITION BY {}
+                    ORDER BY {}
+                ) as rn
+            FROM {}
+            {}
+        )
+        SELECT id, filename, duration, filepath FROM ranked WHERE rn > 1
+        ",
+            partition_by_clause, order_clause, TABLE, where_clause
+        );
+        println!("fetching rows: {}", &sql);
+        let rows = sqlx::query(&sql).fetch_all(&pool).await?;
+        println!("received rows");
+        let _ = status_sender.send("Organizing Records".into()).await;
+
+        let total = rows.len();
+        let mut counter = 0;
+
+        for row in rows {
+            file_records.insert(FileRecord::new(&row));
+            counter += 1;
+
+            if counter % 100 == 0 {
+                let _ = progress_sender
+                    .send(ProgressMessage::Update(counter, total))
+                    .await;
+            }
+        }
+
+        Ok(file_records)
     }
 }
 
