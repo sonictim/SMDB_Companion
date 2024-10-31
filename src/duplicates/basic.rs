@@ -1,6 +1,6 @@
 use crate::prelude::*;
 
-#[derive(serde::Deserialize, serde::Serialize, Default)]
+#[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)]
 pub struct Basic {
     pub config: NodeConfig,
@@ -9,12 +9,42 @@ pub struct Basic {
     preservation_order: OrderPanel,
 }
 
+impl Default for Basic {
+    fn default() -> Self {
+        let mut default = Basic {
+            config: NodeConfig::default(),
+            match_criteria: SelectableList::default(),
+            match_null: false,
+            preservation_order: OrderPanel::default(),
+        };
+        default.config.enabled = true;
+        default.match_criteria.set(vec![
+            "Channels".to_owned(),
+            "Duration".to_owned(),
+            "Filename".to_owned(),
+        ]);
+        default.preservation_order.list = default_order();
+        default
+    }
+}
+
 impl Basic {
+    pub fn tjf_default() -> Self {
+        let mut default = Self::default();
+        default.config.enabled = true;
+        default.match_criteria.set(vec!["Filename".to_owned()]);
+        default.preservation_order.list = tjf_order();
+        default
+    }
+
     pub fn enabled(&self) -> bool {
         self.config.enabled
     }
     pub fn render_progress_bar(&mut self, ui: &mut egui::Ui) {
         self.config.render_progress_bar(ui);
+    }
+    pub fn abort(&mut self) {
+        self.config.abort();
     }
 
     pub fn render(&mut self, ui: &mut egui::Ui, db: &Database) {

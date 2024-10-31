@@ -8,31 +8,28 @@ pub use regex::Regex;
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 #[serde(default)]
 pub struct Deep {
-    config: NodeConfig,
+    enabled: bool,
+    #[serde(skip)]
+    pub config: NodeC,
     extensions: AsyncTunnel<Vec<String>>,
     ignore_extension: bool,
 }
 
-impl Deep {
-    pub fn enabled(&self) -> bool {
-        self.config.enabled
+impl Node for Deep {
+    fn abort(&mut self) {
+        self.config.abort();
     }
-    pub fn render_progress_bar(&mut self, ui: &mut egui::Ui) {
-        self.config.render_progress_bar(ui);
-    }
-    pub fn render(&mut self, ui: &mut egui::Ui, db: &Database) {
+
+    fn render(&mut self, ui: &mut egui::Ui, db: &Database) {
         self.extensions.recv2();
         // if let Some(ext) = self.extensions_io.recv() {
         //     self.extensions = ext;
         // }
 
-        ui.checkbox(
-            &mut self.config.enabled,
-            "Similar Filename Duplicates Search",
-        )
-        .on_hover_text_at_pointer(
-            "Filenames ending in .#, .#.#.#, or .M will be examined as possible duplicates",
-        );
+        ui.checkbox(&mut self.enabled, "Similar Filename Duplicates Search")
+            .on_hover_text_at_pointer(
+                "Filenames ending in .#, .#.#.#, or .M will be examined as possible duplicates",
+            );
 
         if self.extensions.get().is_empty() && !self.extensions.waiting() {
             // self.extensions_io.waiting = true;
@@ -72,8 +69,8 @@ impl Deep {
         }
     }
 
-    pub fn gather(&mut self, db: &Database) {
-        if self.config.enabled {
+    fn process(&mut self, db: &Database) {
+        if self.enabled {
             let progress_sender = self.config.progress_io.tx.clone();
             let status_sender = self.config.status_io.tx.clone();
             let pool = db.pool().unwrap();
@@ -83,7 +80,9 @@ impl Deep {
             })
         }
     }
+}
 
+impl Deep {
     pub async fn async_gather(
         pool: SqlitePool,
         progress_sender: mpsc::Sender<ProgressMessage>,

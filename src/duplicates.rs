@@ -3,6 +3,7 @@ use crate::prelude::*;
 pub mod basic;
 pub mod compare;
 pub mod deep;
+pub mod nodes;
 pub mod remove;
 pub mod tags;
 
@@ -12,6 +13,26 @@ use compare::Compare;
 use deep::Deep;
 use remove::Remove;
 use tags::Tags;
+
+// #[derive(serde::Deserialize, serde::Serialize)]
+// enum Nodes {
+//     Basic(Basic),
+//     Deep(Deep),
+//     Tags(Tags),
+//     Compare(Compare),
+// }
+
+// impl Nodes {
+//     fn receive(&mut self) {
+//         // Replace RecordType with your actual record type
+//         match self {
+//             Nodes::Basic(basic) => basic.config.receive(),
+//             Nodes::Deep(deep) => deep.config.receive(),
+//             Nodes::Tags(tags) => tags.config.receive(),
+//             Nodes::Compare(compare) => compare.config.receive(),
+//         };
+//     }
+// }
 
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 #[serde(default)]
@@ -24,6 +45,8 @@ pub struct Duplicates {
 
     remove: Remove,
 
+    nodes: Vec<Node>,
+
     #[serde(skip)]
     gather_dupes: bool,
     #[serde(skip)]
@@ -34,7 +57,23 @@ pub struct Duplicates {
 
 // impl Default for Duplicates {
 //     fn default() -> Self {
-//         Self {}
+//         Duplicates {
+//             Nodes: vec![
+//                 Nodes::Basic(Basic::default()),
+//                 Nodes::Deep(Deep::default()),
+//                 Nodes::Tags(Tags::default()),
+//                 Nodes::Compare(Compare::default()),
+//             ],
+//             main: NodeConfig::default(),
+//             basic: Basic::default(),
+//             deep: Deep::default(),
+//             tags: Tags::default(),
+//             compare: Compare::default(),
+//             remove: Remove::default(),
+//             gather_dupes: false,
+//             go_search: false,
+//             go_remove: false,
+//         }
 //     }
 // }
 
@@ -51,15 +90,13 @@ impl Duplicates {
 
         ui.columns(2, |column| {
             column[0].heading(RichText::new("Search for Duplicate Records").strong());
-            //BASIC BASIC BASIC
-
             self.basic.render(&mut column[0], db);
-            self.remove.render(&mut column[1]);
+            self.remove.render_options(&mut column[1]);
         });
         self.basic.render_progress_bar(ui);
 
         self.deep.render(ui, db);
-        self.deep.render_progress_bar(ui);
+        self.deep.config.render(ui);
 
         self.tags.render(ui);
         self.tags.render_progress_bar(ui);
@@ -85,7 +122,7 @@ impl Duplicates {
                             || {
                                 self.go_search = true;
                                 self.go_remove = false;
-                                self.gather_duplicates();
+                                self.gather_duplicates(db);
                             },
                         );
                     } else {
@@ -94,7 +131,7 @@ impl Duplicates {
                                 rt_button(
                                     ui,
                                     RichText::new("Search for Duplicates").size(20.0).strong(),
-                                    || self.gather_duplicates(),
+                                    || self.gather_duplicates(db),
                                 );
                             });
                             if !self.handles_active() && !self.main.records.is_empty() {
@@ -102,7 +139,7 @@ impl Duplicates {
                                     rt_button(
                                         ui,
                                         light_red_text("Remove Duplicates").size(20.0).strong(),
-                                        || self.remove_duplicates(),
+                                        || self.remove_duplicates(db),
                                     );
                                 });
                             }
@@ -120,7 +157,7 @@ impl Duplicates {
             if self.go_remove && self.go_search {
                 self.go_remove = false;
                 self.go_search = false;
-                self.remove_duplicates();
+                self.remove_duplicates(db);
             }
         });
         empty_line(ui);
@@ -132,24 +169,24 @@ impl Duplicates {
             ui.label(RichText::new(&*self.main.status).strong());
         });
 
-        if self.registration.valid == Some(true)
-            && !self.handles_active()
-            && !self.main.records.is_empty()
-            && ui.button("Show Records").clicked()
-        {
-            let mut marked_records: Vec<&str> = self
-                .main
-                .records
-                .par_iter() // Use parallel iterator
-                .map(|s| &*s.path) // Convert &String to &str
-                .collect();
+        // if self.registration.valid == Some(true)
+        //     && !self.handles_active()
+        //     && !self.main.records.is_empty()
+        //     && ui.button("Show Records").clicked()
+        // {
+        //     let mut marked_records: Vec<&str> = self
+        //         .main
+        //         .records
+        //         .par_iter() // Use parallel iterator
+        //         .map(|s| &*s.path) // Convert &String to &str
+        //         .collect();
 
-            // Sort in parallel
-            marked_records.par_sort();
-            self.marked_records = marked_records.join("\n");
-            self.scroll_to_top = true;
-            self.records_window = true;
-        }
+        //     // Sort in parallel
+        //     marked_records.par_sort();
+        //     self.marked_records = marked_records.join("\n");
+        //     self.scroll_to_top = true;
+        //     self.records_window = true;
+        // }
 
         if self.main.working {
             ui.add(
@@ -159,72 +196,75 @@ impl Duplicates {
         }
     }
 
-    pub fn gather_duplicates(&mut self) {
+    pub fn gather_duplicates(&mut self, db: &Database) {
         self.abort_all();
         self.main.records.clear();
-        if let Some(db) = self.db.as_ref() {
-            let Some(pool) = db.pool() else { return };
+        // let Some(pool) = db.pool() else { return };
 
-            self.main.status = "Searching for Duplicates".into();
+        self.main.status = "Searching for Duplicates".into();
 
-            if self.basic.enabled() {
-                let progress_sender = self.basic.progress_io.tx.clone();
-                let status_sender = self.basic.status_io.tx.clone();
-                let pool = pool.clone();
-                let order = self.order_panel.extract_sql().clone();
-                let match_groups = self.match_criteria.get().to_vec();
-                let match_null = self.match_null;
-                self.basic.wrap_async(move || {
-                    self.basic.gather(
-                        pool,
-                        progress_sender,
-                        status_sender,
-                        order,
-                        match_groups,
-                        match_null,
-                    )
-                })
-            }
+        self.basic.gather(db);
+        self.deep.gather(db);
+        self.tags.gather(db);
+        self.compare.gather(db);
 
-            if self.deep.enabled() {
-                let progress_sender = self.deep.progress_io.tx.clone();
-                let status_sender = self.deep.status_io.tx.clone();
-                let pool = pool.clone();
-                let ignore = self.ignore_extension;
-                self.deep.wrap_async(move || Deep::gather(self, db))
-            }
+        // if self.basic.enabled() {
+        //     let progress_sender = self.basic.progress_io.tx.clone();
+        //     let status_sender = self.basic.status_io.tx.clone();
+        //     let pool = pool.clone();
+        //     let order = self.order_panel.extract_sql().clone();
+        //     let match_groups = self.match_criteria.get().to_vec();
+        //     let match_null = self.match_null;
+        //     self.basic.wrap_async(move || {
+        //         self.basic.gather(
+        //             pool,
+        //             progress_sender,
+        //             status_sender,
+        //             order,
+        //             match_groups,
+        //             match_null,
+        //         )
+        //     })
+        // }
 
-            if self.tags.enabled {
-                let progress_sender = self.tags.progress_io.tx.clone();
-                let status_sender = self.tags.status_io.tx.clone();
-                let pool = pool.clone();
-                let tags = self.tags_panel.list().to_vec();
-                self.tags.wrap_async(move || {
-                    gather_filenames_with_tags(pool, progress_sender, status_sender, tags)
-                });
-            }
+        // if self.deep.enabled() {
+        //     let progress_sender = self.deep.progress_io.tx.clone();
+        //     let status_sender = self.deep.status_io.tx.clone();
+        //     let pool = pool.clone();
+        //     let ignore = self.ignore_extension;
+        //     self.deep.wrap_async(move || Deep::gather(self, db))
+        // }
 
-            if self.compare.enabled && self.compare_db.is_some() {
-                if let Some(cdb) = &self.compare_db {
-                    self.compare.working = true;
-                    self.compare.status = format!("Comparing against {}", cdb.name).into();
+        // if self.tags.enabled {
+        //     let progress_sender = self.tags.progress_io.tx.clone();
+        //     let status_sender = self.tags.status_io.tx.clone();
+        //     let pool = pool.clone();
+        //     let tags = self.tags_panel.list().to_vec();
+        //     self.tags.wrap_async(move || {
+        //         gather_filenames_with_tags(pool, progress_sender, status_sender, tags)
+        //     });
+        // }
 
-                    let tx = self.compare.records_io.tx.clone();
-                    let p = pool.clone();
-                    let Some(c_pool) = cdb.pool() else {
-                        return;
-                    };
-                    let handle = tokio::spawn(async move {
-                        println!("tokio spawn compare");
-                        let results = gather_compare_database_overlaps(&p, &c_pool).await;
-                        if (tx.send(results.expect("error on compare db")).await).is_err() {
-                            eprintln!("Failed to send db");
-                        }
-                    });
-                    self.compare.handle = Some(handle);
-                }
-            }
-        }
+        // if self.compare.enabled && self.compare_db.is_some() {
+        //     if let Some(cdb) = &self.compare_db {
+        //         self.compare.working = true;
+        //         self.compare.status = format!("Comparing against {}", cdb.name).into();
+
+        //         let tx = self.compare.records_io.tx.clone();
+        //         let p = pool.clone();
+        //         let Some(c_pool) = cdb.pool() else {
+        //             return;
+        //         };
+        //         let handle = tokio::spawn(async move {
+        //             println!("tokio spawn compare");
+        //             let results = gather_compare_database_overlaps(&p, &c_pool).await;
+        //             if (tx.send(results.expect("error on compare db")).await).is_err() {
+        //                 eprintln!("Failed to send db");
+        //             }
+        //         });
+        //         self.compare.handle = Some(handle);
+        //     }
+        // }
     }
 
     // fn reset_to_defaults(&mut self) {
@@ -238,70 +278,73 @@ impl Duplicates {
     //     self.check_for_updates();
     // }
 
-    fn reset_to_tjf_defaults(&mut self) {
-        self.default();
-        self.order_panel.list = tjf_order();
-        self.tags_panel.list.set(tjf_tags());
-        self.deep.enabled = true;
-        self.tags.enabled = true;
-        self.dupes_db = false;
-        self.ignore_extension = true;
-        self.match_criteria.set(vec!["Filename".to_owned()]);
-    }
+    // fn reset_to_tjf_defaults(&mut self) {
+    //     self.default();
+    //     self.order_panel.list = tjf_order();
+    //     self.tags_panel.list.set(tjf_tags());
+    //     self.deep.enabled = true;
+    //     self.tags.enabled = true;
+    //     self.dupes_db = false;
+    //     self.ignore_extension = true;
+    //     self.match_criteria.set(vec!["Filename".to_owned()]);
+    // }
 
-    fn clear_status(&mut self) {
-        self.main.default();
-        self.main.status = "".into();
-        self.main.records.clear();
-        self.basic.status = "".into();
-        self.basic.records.clear();
-        self.tags.status = "".into();
-        self.tags.records.clear();
-        self.deep.status = "".into();
-        self.deep.records.clear();
-        self.compare.status = "".into();
-        self.compare.records.clear();
-        self.extensions_io.waiting = false;
-    }
+    // fn clear_status(&mut self) {
+    //     self.main.default();
+    //     self.main.status = "".into();
+    //     self.main.records.clear();
+    //     self.basic.status = "".into();
+    //     self.basic.records.clear();
+    //     self.tags.status = "".into();
+    //     self.tags.records.clear();
+    //     self.deep.status = "".into();
+    //     self.deep.records.clear();
+    //     self.compare.status = "".into();
+    //     self.compare.records.clear();
+    //     self.extensions_io.waiting = false;
+    // }
 
     fn abort_all(&mut self) {
         self.main.abort();
-        self.basic.abort();
-        self.deep.abort();
-        self.tags.abort();
-        self.compare.abort();
+        self.basic.config.abort();
+        self.deep.config.abort();
+        self.tags.config.abort();
+        self.compare.config.abort();
     }
 
     fn handles_active(&self) -> bool {
         self.main.handle.is_some()
-            || self.basic.handle.is_some()
-            || self.deep.handle.is_some()
-            || self.tags.handle.is_some()
-            || self.compare.handle.is_some()
+            || self.basic.config.handle.is_some()
+            || self.deep.config.handle.is_some()
+            || self.tags.config.handle.is_some()
+            || self.compare.config.handle.is_some()
     }
 
     fn search_eligible(&self) -> bool {
         self.main.enabled
-            || self.basic.enabled
-            || self.deep.enabled
-            || self.tags.enabled
-            || self.compare.enabled
+            || self.basic.enabled()
+            || self.deep.enabled()
+            || self.tags.enabled()
+            || self.compare.enabled()
     }
 
     fn receive_async_data(&mut self) {
         if let Some(records) = self.main.receive() {
-            self.clear_status();
+            // self.clear_status();
             self.main.status = format! {"Removed {} duplicates", records.len()}.into();
         }
-        if let Some(records) = self.basic.receive() {
+
+        let main = &mut self.main; // Create a mutable reference to main
+
+        if let Some(records) = self.basic.config.receive() {
             self.main.records.extend(records);
             self.update_main_status();
         }
-        if let Some(records) = self.deep.receive() {
+        if let Some(records) = self.deep.config.receive() {
             self.main.records.extend(records);
             self.update_main_status();
         }
-        if let Some(records) = self.tags.receive() {
+        if let Some(records) = self.tags.config.receive() {
             self.main.records.extend(records);
             self.update_main_status();
         }

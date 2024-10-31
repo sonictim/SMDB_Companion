@@ -6,7 +6,7 @@ use futures::stream::{self, StreamExt};
 #[serde(default)]
 pub struct Tags {
     list: SelectableList,
-    config: NodeConfig,
+    pub config: NodeConfig,
 }
 
 impl Tags {

@@ -5,7 +5,7 @@ use crate::prelude::*;
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 #[serde(default)]
 pub struct Compare {
-    config: NodeConfig,
+    pub config: NodeConfig,
     #[serde(skip)]
     compare_db: AsyncTunnel<Option<Database>>,
 
