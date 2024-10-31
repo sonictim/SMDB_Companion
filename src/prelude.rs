@@ -10,5 +10,6 @@ pub use tokio::sync::mpsc;
 
 pub use crate::assets::*;
 pub use crate::config::*;
+pub use crate::duplicates::nodes::*;
 
 pub const TABLE: &str = "justinmetadata";

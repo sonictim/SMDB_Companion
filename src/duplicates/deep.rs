@@ -1,9 +1,8 @@
 use crate::prelude::*;
 
-use std::collections::HashMap;
-
 use once_cell::sync::Lazy;
 pub use regex::Regex;
+use std::collections::HashMap;
 
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 #[serde(default)]
@@ -71,8 +70,8 @@ impl Node for Deep {
 
     fn process(&mut self, db: &Database) {
         if self.enabled {
-            let progress_sender = self.config.progress_io.tx.clone();
-            let status_sender = self.config.status_io.tx.clone();
+            let progress_sender = self.config.progress.tx.clone();
+            let status_sender = self.config.status.tx.clone();
             let pool = db.pool().unwrap();
             let ignore = self.ignore_extension;
             self.config.wrap_async(move || {
@@ -85,7 +84,7 @@ impl Node for Deep {
 impl Deep {
     pub async fn async_gather(
         pool: SqlitePool,
-        progress_sender: mpsc::Sender<ProgressMessage>,
+        progress_sender: mpsc::Sender<Progress>,
         status_sender: mpsc::Sender<Arc<str>>,
         ignore_extension: bool,
     ) -> Result<HashSet<FileRecord>, sqlx::Error> {
@@ -111,7 +110,7 @@ impl Deep {
                     .unwrap_or_else(|| file_record.filename.to_string());
                 (base_filename, file_record)
             })
-            .collect(); // Collect results into a Vec<(String, FileRecord)>
+            .collect();
 
         let _ = status_sender.send("Processing Records".into()).await;
         for (base_filename, file_record) in processed_records {
@@ -124,7 +123,10 @@ impl Deep {
 
             if counter % 100 == 0 {
                 let _ = progress_sender
-                    .send(ProgressMessage::Update(counter, total))
+                    .send(Progress {
+                        count: counter,
+                        total,
+                    })
                     .await;
             }
         }

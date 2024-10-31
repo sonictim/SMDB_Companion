@@ -1,9 +1,9 @@
 use crate::prelude::*;
 
 #[derive(Default)]
-struct Progress {
-    count: usize,
-    total: usize,
+pub struct Progress {
+    pub count: usize,
+    pub total: usize,
 }
 
 // #[derive(serde::Deserialize, serde::Serialize)]
@@ -106,6 +106,22 @@ impl NodeC {
             );
         }
         empty_line(ui);
+    }
+    pub fn wrap_async<F, T>(&mut self, action: F)
+    where
+        F: FnOnce() -> T + Send + 'static,
+        T: std::future::Future<Output = Result<HashSet<FileRecord>, sqlx::Error>> + Send + 'static,
+    {
+        self.working = true;
+        let tx = self.records.tx.clone();
+
+        let handle = tokio::spawn(async move {
+            let results = action().await;
+            if (tx.send(results.expect("Tokio Results Error HashSet")).await).is_err() {
+                eprintln!("Failed to send db");
+            }
+        });
+        self.handle = Some(handle);
     }
 }
 
