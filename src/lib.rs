@@ -12,3 +12,5 @@ pub use config::*;
 // mod dupe_panel;
 mod processing;
 pub use processing::*;
+
+mod prelude;

@@ -1,18 +1,7 @@
-use crate::assets::*;
+use crate::prelude::*;
+
 use crate::processing::*;
-// use egui::Order;
-// use clipboard::{ClipboardContext, ClipboardProvider};
-use eframe::egui::{self, RichText};
-use rayon::prelude::*;
-use serde::Deserialize;
-use sqlx::sqlite::SqlitePool;
-// use sqlx::Sqlite;
-use std::collections::HashSet;
 use std::fs::{self};
-use std::hash::Hash;
-use std::path::Path;
-use std::sync::Arc;
-use tokio::sync::mpsc;
 
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)]

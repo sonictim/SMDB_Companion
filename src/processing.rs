@@ -1,16 +1,9 @@
 #![allow(non_snake_case)]
-use crate::config::*;
+use crate::prelude::*;
 use rfd::FileDialog;
 use sqlx::sqlite::SqliteRow;
-use tokio::sync::mpsc;
-use sqlx::{sqlite::SqlitePool, Row};
-use std::collections::{HashMap, HashSet};
-use std::result::Result;
-use std::sync::Arc;
 use dirs::home_dir;
 use futures::stream::{self, StreamExt};
-use rayon::prelude::*;
-use std::path::Path;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use sha2::{Digest, Sha256};
@@ -89,7 +82,7 @@ fn get_root_filename(filename: &str, ignore_extension: bool) -> Option<String> {
     Some(format!("{name}.{extension}"))
 }
 
-const TABLE: &str = "justinmetadata";
+// const TABLE: &str = "justinmetadata";
 
 // pub fn wrap_async<F, T>(config: &mut NodeConfig, action: F)
 // where

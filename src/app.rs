@@ -1,14 +1,8 @@
-use crate::assets::*;
+use crate::prelude::*;
 use crate::find_replace::FindPanel;
 use crate::processing::*;
-use crate::config::*;
 // use crate::dupe_panel::*;
-use eframe::egui::{self, RichText};
-use rayon::prelude::*;
-use std::collections::HashSet;
 use std::fs::{self};
-use std::sync::Arc;
-use tokio::sync::mpsc;
 
 
 
