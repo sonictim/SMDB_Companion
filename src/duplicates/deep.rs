@@ -15,11 +15,11 @@ pub struct Deep {
 }
 
 impl Deep {
-    fn abort(&mut self) {
+    pub fn abort(&mut self) {
         self.config.abort();
     }
 
-    fn render(&mut self, ui: &mut egui::Ui, db: &Database) {
+    pub fn render(&mut self, ui: &mut egui::Ui, db: &Database) {
         self.extensions.recv2();
         // if let Some(ext) = self.extensions_io.recv() {
         //     self.extensions = ext;
@@ -68,7 +68,7 @@ impl Deep {
         }
     }
 
-    fn process(&mut self, db: &Database) {
+    pub fn process(&mut self, db: &Database) {
         if self.enabled {
             let progress_sender = self.config.progress.tx.clone();
             let status_sender = self.config.status.tx.clone();

@@ -31,11 +31,11 @@ impl Default for Basic {
 }
 
 impl Basic {
-    fn abort(&mut self) {
+    pub fn abort(&mut self) {
         self.config.abort();
     }
 
-    fn render(&mut self, ui: &mut egui::Ui, db: &Database) {
+    pub fn render(&mut self, ui: &mut egui::Ui, db: &Database) {
         ui.checkbox(&mut self.enabled, "Basic Duplicate Search");
         ui.horizontal(|ui| {
             ui.add_space(24.0);
@@ -84,7 +84,7 @@ impl Basic {
         }
     }
 
-    fn process(&mut self, db: &Database) {
+    pub fn process(&mut self, db: &Database) {
         if self.enabled {
             let progress_sender = self.config.progress.tx.clone();
             let status_sender = self.config.status.tx.clone();

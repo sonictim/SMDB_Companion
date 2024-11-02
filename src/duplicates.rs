@@ -92,7 +92,9 @@ impl Duplicates {
                                     || self.gather_duplicates(db),
                                 );
                             });
-                            if !self.handles_active() && !self.remove.config.records.is_empty() {
+                            if !self.handles_active()
+                                && !self.remove.config.records.get().is_empty()
+                            {
                                 column[1].horizontal(|ui| {
                                     rt_button(
                                         ui,
@@ -129,10 +131,10 @@ impl Duplicates {
 
         if registration == Some(true)
             && !self.handles_active()
-            && !self.remove.config.records.is_empty()
+            && !self.remove.config.records.get().is_empty()
             && ui.button("Show Records").clicked()
         {
-            self.records_window.open(&self.remove.config.records);
+            self.records_window.open(&self.remove.config.records.get());
         }
 
         if self.remove.config.working {
@@ -147,7 +149,7 @@ impl Duplicates {
 
     pub fn gather_duplicates(&mut self, db: &Database) {
         self.abort_all();
-        self.remove.config.records.clear();
+        self.remove.config.records.get().clear();
         self.remove.config.status = "Searching for Duplicates".into();
 
         self.basic.process(db);
@@ -220,14 +222,14 @@ impl Duplicates {
 
     fn update_main_status(&mut self, records: HashSet<FileRecord>) {
         // if self.handles_active() { return }
-        self.remove.config.records.get().extend(records);
-        if self.remove.config.records.get().is_empty() {
+        self.remove.config.records.get().get().extend(records);
+        if self.remove.config.records.get().get().is_empty() {
             self.remove.config.status = "No Records Marked for Removal".into()
         } else {
             self.remove.config.status.set(
                 format!(
                     "{} total records marked for removal",
-                    self.remove.config.records.get().len()
+                    self.remove.config.records.get().get().len()
                 )
                 .into(),
             );
