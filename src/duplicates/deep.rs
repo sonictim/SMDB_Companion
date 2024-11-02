@@ -9,7 +9,7 @@ use std::collections::HashMap;
 pub struct Deep {
     pub enabled: bool,
     #[serde(skip)]
-    pub config: NodeC,
+    pub config: Node,
     extensions: AsyncTunnel<Vec<String>>,
     pub ignore_extension: bool,
 }

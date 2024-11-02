@@ -7,7 +7,7 @@ use crate::prelude::*;
 pub struct Compare {
     pub enabled: bool,
     #[serde(skip)]
-    pub config: NodeC,
+    pub config: Node,
     #[serde(skip)]
     compare_db: AsyncTunnel<Option<Database>>,
 

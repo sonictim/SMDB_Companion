@@ -46,6 +46,10 @@ impl<T: Default> AsyncTunnel<T> {
         &self.data
     }
 
+    pub fn get_mut(&mut self) -> &mut T {
+        &mut self.data
+    }
+
     pub fn set(&mut self, data: T) {
         self.data = data;
     }

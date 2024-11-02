@@ -1,6 +1,6 @@
 use crate::prelude::*;
 
-pub struct NodeC {
+pub struct Node {
     pub working: bool,
     pub records: AsyncTunnel<HashSet<FileRecord>>,
     pub status: AsyncTunnel<Arc<str>>,
@@ -8,7 +8,7 @@ pub struct NodeC {
     pub handle: Option<tokio::task::JoinHandle<()>>,
 }
 
-impl Default for NodeC {
+impl Default for Node {
     fn default() -> Self {
         Self {
             records: AsyncTunnel::new(1),
@@ -20,7 +20,7 @@ impl Default for NodeC {
     }
 }
 
-impl NodeC {
+impl Node {
     pub fn clear(&mut self) {
         *self = Self::default();
     }
@@ -120,38 +120,38 @@ impl Progress {
     }
 }
 
-trait Renderable {
-    fn render(&self);
-}
+// trait Renderable {
+//     fn render(&self);
+// }
 
-struct StructA;
-struct StructB;
-// Define more structures as needed...
+// struct StructA;
+// struct StructB;
+// // Define more structures as needed...
 
-impl Renderable for StructA {
-    fn render(&self) {
-        println!("Rendering StructA");
-    }
-}
+// impl Renderable for StructA {
+//     fn render(&self) {
+//         println!("Rendering StructA");
+//     }
+// }
 
-impl Renderable for StructB {
-    fn render(&self) {
-        println!("Rendering StructB");
-    }
-}
+// impl Renderable for StructB {
+//     fn render(&self) {
+//         println!("Rendering StructB");
+//     }
+// }
 
-// Add implementations for additional structures...
+// // Add implementations for additional structures...
 
-fn main() {
-    // Create a vector of trait objects
-    let renderables: Vec<Box<dyn Renderable>> = vec![
-        Box::new(StructA),
-        Box::new(StructB),
-        // Add more structures as needed...
-    ];
+// fn main() {
+//     // Create a vector of trait objects
+//     let renderables: Vec<Box<dyn Renderable>> = vec![
+//         Box::new(StructA),
+//         Box::new(StructB),
+//         // Add more structures as needed...
+//     ];
 
-    // Call render on each structure
-    for renderable in renderables {
-        renderable.render();
-    }
-}
+//     // Call render on each structure
+//     for renderable in renderables {
+//         renderable.render();
+//     }
+// }

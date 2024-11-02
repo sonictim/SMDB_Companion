@@ -9,7 +9,7 @@ pub struct Tags {
     pub enabled: bool,
     pub list: SelectableList,
     #[serde(skip)]
-    pub config: NodeC,
+    pub config: Node,
 }
 
 impl Default for Tags {
@@ -17,7 +17,7 @@ impl Default for Tags {
         let mut default = Self {
             enabled: false,
             list: SelectableList::default(),
-            config: NodeC::default(),
+            config: Node::default(),
         };
         default.list.set(default_tags());
         default

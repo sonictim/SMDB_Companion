@@ -335,7 +335,7 @@ impl App {
             }
     
             add_tab_button(ui, &mut self.my_panel, Panel::Find, "Find & Replace", size_big, size_small, column_width);
-            add_tab_button(ui, &mut self.my_panel, Panel::Duplicates, "Search for Duplicates2", size_big, size_small, column_width);
+            add_tab_button(ui, &mut self.my_panel, Panel::Duplicates, "Search for Duplicates", size_big, size_small, column_width);
             add_tab_button(ui, &mut self.my_panel, Panel::Order, "Preservation Priority", size_big, size_small, column_width);
             add_tab_button(ui, &mut self.my_panel, Panel::Tags, "Tag Editor", size_big, size_small, column_width);
         });

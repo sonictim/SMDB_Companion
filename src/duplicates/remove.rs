@@ -5,9 +5,11 @@ use std::fs::{self};
 #[serde(default)]
 pub struct Remove {
     #[serde(skip)]
-    enabled: bool,
+    pub enabled: bool,
     #[serde(skip)]
-    pub config: NodeC,
+    pub run: bool,
+    #[serde(skip)]
+    pub config: Node,
     safe: bool,
     pub dupes_db: bool,
     remove_files: bool,
@@ -18,7 +20,8 @@ impl Default for Remove {
     fn default() -> Self {
         Self {
             enabled: false,
-            config: NodeC::default(),
+            run: false,
+            config: Node::default(),
             safe: true,
             dupes_db: true,
             remove_files: false,
@@ -73,12 +76,16 @@ impl Remove {
         });
     }
 
-    pub fn remove_duplicates(&mut self, db: &Database) {
-        // if self.registration.valid == Some(false) {
-        //     self.config.records.clear();
-        //     self.config.status = "Unregistered!\nPlease Register to Remove Duplicates".into();
-        //     return;
-        // }
+    pub fn remove_duplicates(&mut self, db: &Database, registration: Option<bool>) {
+        if registration == Some(false) {
+            self.config.records.clear();
+            self.config
+                .status
+                .set("Unregistered!\nPlease Register to Remove Duplicates".into());
+            return;
+        }
+        self.enabled = false;
+        self.run = false;
         let mut work_db_path: Option<String> = Some(db.path.clone());
         let mut duplicate_db_path: Option<String> = None;
         let records = self.config.records.get().clone();
@@ -123,6 +130,7 @@ impl Remove {
 
             let _ = self.delete_action.delete_files(files);
         }
+        self.enabled = false;
     }
 
     pub async fn delete_file_records(

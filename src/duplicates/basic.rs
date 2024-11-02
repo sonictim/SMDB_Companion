@@ -5,7 +5,7 @@ use crate::prelude::*;
 pub struct Basic {
     pub enabled: bool,
     #[serde(skip)]
-    pub config: NodeC,
+    pub config: Node,
     pub match_criteria: SelectableList,
     match_null: bool,
     pub preservation_order: OrderPanel,
@@ -15,7 +15,7 @@ impl Default for Basic {
     fn default() -> Self {
         let mut default = Basic {
             enabled: true,
-            config: NodeC::default(),
+            config: Node::default(),
             match_criteria: SelectableList::default(),
             match_null: false,
             preservation_order: OrderPanel::default(),

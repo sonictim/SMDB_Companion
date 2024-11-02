@@ -17,20 +17,18 @@ use tags::Tags;
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 #[serde(default)]
 pub struct Duplicates {
-    // main: NodeConfig,
     pub basic: Basic,
     deep: Deep,
     pub tags: Tags,
     compare: Compare,
     remove: Remove,
 
-    // nodes: Vec<Node>,
     #[serde(skip)]
     gather_dupes: bool,
-    #[serde(skip)]
-    go_search: bool,
-    #[serde(skip)]
-    go_remove: bool,
+    // #[serde(skip)]
+    // go_search: bool,
+    // #[serde(skip)]
+    // remove.run: bool,
     #[serde(skip)]
     pub records_window: RecordsWindow,
 }
@@ -68,18 +66,18 @@ impl Duplicates {
 
         ui.horizontal(|ui| {
             if self.handles_active() {
-                self.go_remove = false;
+                self.remove.enabled = false;
                 button(ui, "Cancel", || self.abort_all());
             } else {
-                self.go_remove = true;
+                self.remove.run = true;
                 if self.search_eligible() {
                     if ui.input(|i| i.modifiers.alt) {
                         rt_button(
                             ui,
                             light_red_text("Search and Remove Duplicates").size(20.0),
                             || {
-                                self.go_search = true;
-                                self.go_remove = false;
+                                self.remove.enabled = true;
+                                self.remove.run = false;
                                 self.gather_duplicates(db);
                             },
                         );
@@ -94,12 +92,13 @@ impl Duplicates {
                             });
                             if !self.handles_active()
                                 && !self.remove.config.records.get().is_empty()
+                                && self.remove.run
                             {
                                 column[1].horizontal(|ui| {
                                     rt_button(
                                         ui,
                                         light_red_text("Remove Duplicates").size(20.0).strong(),
-                                        || self.remove.remove_duplicates(db),
+                                        || self.remove.remove_duplicates(db, registration),
                                     );
                                 });
                             }
@@ -114,10 +113,8 @@ impl Duplicates {
                 }
             }
 
-            if self.go_remove && self.go_search {
-                self.go_remove = false;
-                self.go_search = false;
-                self.remove.remove_duplicates(db);
+            if self.remove.enabled && self.remove.run {
+                self.remove.remove_duplicates(db, registration);
             }
         });
         empty_line(ui);
@@ -126,7 +123,7 @@ impl Duplicates {
             if self.remove.config.working {
                 ui.spinner();
             }
-            ui.label(RichText::new(&*self.remove.config.status).strong());
+            ui.label(RichText::new(&**self.remove.config.status.get()).strong());
         });
 
         if registration == Some(true)
@@ -134,13 +131,14 @@ impl Duplicates {
             && !self.remove.config.records.get().is_empty()
             && ui.button("Show Records").clicked()
         {
-            self.records_window.open(&self.remove.config.records.get());
+            self.records_window.open(self.remove.config.records.get());
         }
 
         if self.remove.config.working {
             ui.add(
                 egui::ProgressBar::new(
-                    self.remove.config.progress.0 / self.remove.config.progress.1,
+                    self.remove.config.progress.get().count as f32
+                        / self.remove.config.progress.get().total as f32,
                 )
                 .desired_height(4.0),
             );
@@ -149,13 +147,16 @@ impl Duplicates {
 
     pub fn gather_duplicates(&mut self, db: &Database) {
         self.abort_all();
-        self.remove.config.records.get().clear();
-        self.remove.config.status = "Searching for Duplicates".into();
+        self.remove.config.records.clear();
+        self.remove
+            .config
+            .status
+            .set("Searching for Duplicates".into());
 
         self.basic.process(db);
         self.deep.process(db);
         self.tags.gather(db);
-        self.compare.gather(db);
+        self.compare.process(db);
     }
 
     pub fn reset_to_tjf_defaults(&mut self) {
@@ -163,7 +164,7 @@ impl Duplicates {
         self.basic.tjf_default();
         self.deep.enabled = true;
         self.deep.ignore_extension = true;
-        self.tags.config.enabled = true;
+        self.tags.enabled = true;
         self.tags.list.set(tjf_tags());
         self.remove.dupes_db = false;
     }
@@ -193,17 +194,20 @@ impl Duplicates {
     }
 
     fn search_eligible(&self) -> bool {
-        self.remove.config.enabled
+        self.remove.enabled
             || self.basic.enabled
             || self.deep.enabled
-            || self.tags.enabled()
-            || self.compare.enabled()
+            || self.tags.enabled
+            || self.compare.enabled
     }
 
     fn receive_async_data(&mut self) {
         if let Some(records) = self.remove.config.receive() {
             // self.clear_status();
-            self.remove.config.status = format! {"Removed {} duplicates", records.len()}.into();
+            self.remove
+                .config
+                .status
+                .set(format! {"Removed {} duplicates", records.len()}.into());
         }
 
         if let Some(records) = self.basic.config.receive() {
@@ -222,14 +226,17 @@ impl Duplicates {
 
     fn update_main_status(&mut self, records: HashSet<FileRecord>) {
         // if self.handles_active() { return }
-        self.remove.config.records.get().get().extend(records);
-        if self.remove.config.records.get().get().is_empty() {
-            self.remove.config.status = "No Records Marked for Removal".into()
+        self.remove.config.records.get_mut().extend(records);
+        if self.remove.config.records.get().is_empty() {
+            self.remove
+                .config
+                .status
+                .set("No Records Marked for Removal".into())
         } else {
             self.remove.config.status.set(
                 format!(
                     "{} total records marked for removal",
-                    self.remove.config.records.get().get().len()
+                    self.remove.config.records.get().len()
                 )
                 .into(),
             );
