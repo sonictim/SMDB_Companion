@@ -1,6 +1,7 @@
 pub use eframe::egui::{self, RichText};
 pub use rayon::prelude::*;
 pub use serde::Deserialize;
+
 pub use sqlx::{sqlite::SqlitePool, Row};
 pub use std::collections::HashSet;
 pub use std::path::Path;
@@ -11,5 +12,8 @@ pub use tokio::sync::mpsc;
 pub use crate::assets::*;
 pub use crate::config::*;
 pub use crate::duplicates::nodes::*;
+pub use crate::duplicates::*;
+pub use crate::find_replace::FindPanel;
+pub use crate::processing::*;
 
 pub const TABLE: &str = "justinmetadata";

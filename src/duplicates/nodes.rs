@@ -1,23 +1,5 @@
 use crate::prelude::*;
 
-#[derive(Default)]
-pub struct Progress {
-    pub count: usize,
-    pub total: usize,
-}
-
-// #[derive(serde::Deserialize, serde::Serialize)]
-// #[serde(default)]
-// struct Status {
-//     #[serde(skip)]
-//     pub status: AsyncTunnel<Arc<str>>,
-//     #[serde(skip)]
-//     pub records: AsyncTunnel<HashSet<FileRecord>>,
-// }
-
-// #[derive(serde::Deserialize, serde::Serialize)]
-// #[serde(default)]
-
 pub struct NodeC {
     pub working: bool,
     pub records: AsyncTunnel<HashSet<FileRecord>>,
@@ -40,7 +22,7 @@ impl Default for NodeC {
 
 impl NodeC {
     pub fn clear(&mut self) {
-        *self = NodeC::default();
+        *self = Self::default();
     }
 
     pub fn abort(&mut self) {
@@ -125,16 +107,18 @@ impl NodeC {
     }
 }
 
-// impl<N: Node> Node for N {
-//     fn clear(&mut self) {
-//         self.status.clear();
-//          self.progress.clear();
-//          self.records.clear();
-//          self.handle = None;
-//          self.working = false;
+#[derive(Default)]
+pub struct Progress {
+    pub count: usize,
+    pub total: usize,
+}
 
-//     }
-// }
+impl Progress {
+    pub fn set(&mut self, count: usize, total: usize) {
+        self.count = count;
+        self.total = total;
+    }
+}
 
 trait Renderable {
     fn render(&self);

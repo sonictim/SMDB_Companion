@@ -1,20 +1,33 @@
+
 use crate::prelude::*;
 
 use futures::stream::{self, StreamExt};
 
-#[derive(serde::Deserialize, serde::Serialize, Default)]
+#[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)]
 pub struct Tags {
-    list: SelectableList,
-    pub config: NodeConfig,
+    pub enabled: bool,
+    pub list: SelectableList,
+    #[serde(skip)]
+    pub config: NodeC,
+}
+
+impl Default for Tags {
+    fn default() -> Self {
+        let mut default = Self {
+            enabled: false,
+            list: SelectableList::default(),
+            config: NodeC::default(),
+        };
+        default.list.set(default_tags());
+        default
+    }
 }
 
 impl Tags {
-    pub fn enabled(&self) -> bool {
-        self.config.enabled
-    }
+
     pub fn render_progress_bar(&mut self, ui: &mut egui::Ui) {
-        self.config.render_progress_bar(ui);
+        self.config.render(ui);
     }
 
     pub fn render(&mut self, ui: &mut egui::Ui) {
@@ -23,33 +36,18 @@ impl Tags {
             "Search for Records with AudioSuite Tags in Filename",
             &enabled,
         );
-        ui.checkbox(&mut self.config.enabled, text)
+        ui.checkbox(&mut self.enabled, text)
             .on_hover_text_at_pointer(
                 "Filenames with Common Protools AudioSuite Tags will be marked for removal",
             );
 
-        // if enabled {
-        //     ui.horizontal(|ui| {
-        //         ui.add_space(24.0);
-        //         if ui.button("Edit Tags List").clicked() {
-        //             self.my_panel = Panel::Tags
-        //         }
-        //     });
-        // } else {
-        //     self.config.enabled = false;
-        //     ui.horizontal(|ui| {
-        //         ui.add_space(24.0);
-        //         if ui.button("Add Tags to Enable").clicked() {
-        //             self.my_panel = Panel::Tags
-        //         }
-        //     });
-        // }
+
     }
 
     pub fn gather(&mut self, db: &Database) {
-        if self.config.enabled {
-            let progress_sender = self.config.progress_io.tx.clone();
-            let status_sender = self.config.status_io.tx.clone();
+        if self.enabled {
+            let progress_sender = self.config.progress.tx.clone();
+            let status_sender = self.config.status.tx.clone();
             let pool = db.pool().unwrap();
             let tags = self.list.get().to_vec();
             self.config.wrap_async(
@@ -62,21 +60,21 @@ impl Tags {
 
     pub async fn async_gather(
         pool: SqlitePool,
-        progress_sender: mpsc::Sender<ProgressMessage>,
+        progress_sender: mpsc::Sender<Progress>,
         status_sender: mpsc::Sender<Arc<str>>,
         tags: Vec<String>,
     ) -> Result<HashSet<FileRecord>, sqlx::Error> {
         let _ = status_sender.send("Searching for Filenames with Specified Tags".into()).await;
     
         let total = tags.len();
-        // let mut counter = 1;
+        // let mut count = 1;
         let mut file_records = HashSet::new();
         let max_concurrency = 10; // Adjust based on your system's capacity and connection pool size
     
         // Process each tag concurrently with a controlled level of concurrency
         let results = stream::iter(tags.into_iter())
             .enumerate()
-            .map(|(counter, tag)| {
+            .map(|(count, tag)| {
                 
                 let pool = pool.clone();
                 let progress_sender = progress_sender.clone();
@@ -91,7 +89,7 @@ impl Tags {
                     let result = sqlx::query(&query).bind(&tag).fetch_all(&pool).await; // Return the result (Result<Vec<sqlx::sqlite::SqliteRow>, sqlx::Error>)
                     let _ = status_sender.send((format!["Searching for tag: {}", &tag]).into()).await;
                     let _ = progress_sender
-                        .send(ProgressMessage::Update(counter, total))
+                        .send(Progress{count, total})
                         .await;
                     
                     result
@@ -122,7 +120,7 @@ impl Tags {
     }
 
 
-    fn render_panel(&mut self, ui: &mut egui::Ui) {
+    pub fn render_panel(&mut self, ui: &mut egui::Ui) {
         ui.heading(RichText::new("Tag Editor").strong());
         ui.label("Protools Audiosuite Tags use the following format:  -example_");
         ui.label("You can enter any string of text and if it is a match, the file will be marked for removal");

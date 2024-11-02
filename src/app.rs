@@ -1,12 +1,4 @@
 use crate::prelude::*;
-use crate::assets::*;
-use crate::find_replace::FindPanel;
-use crate::processing::*;
-use crate::config::*;
-// use crate::dupe_panel::*;
-
-use rayon::prelude::*;
-use std::fs::{self};
 
 
 
@@ -30,50 +22,16 @@ pub struct App {
     #[serde(skip)]
     update_window: Option<bool>,
     
-    
     #[serde(skip)]
     my_panel: Panel,
     find_panel: FindPanel,
-    order_panel: OrderPanel,
-    tags_panel: TagsPanel, 
+    duplicates_panel: Duplicates, 
     registration: RegistrationPanel,
-    
-    main: NodeConfig,
-    basic: NodeConfig,
-    match_criteria: SelectableList,
-    match_null: bool,
-    
-    deep: NodeConfig,
-    ignore_extension: bool,
-    tags: NodeConfig,
-    compare: NodeConfig,
-    #[serde(skip)]
-    compare_db: Option<Database>,
-    #[serde(skip)]
-    cdb_io: AsyncTunnel<Database>,
-
-    safe: bool,
-    dupes_db: bool,
-    remove_files: bool,
-    delete_action: Delete,
-
-    #[serde(skip)]
-    gather_dupes: bool,
-    #[serde(skip)]
-    go_search: bool,
-    #[serde(skip)]
-    go_remove: bool,
-
-    #[serde(skip)]
-    marked_records: String,
-    #[serde(skip)]
-    records_window: bool,
-    scroll_to_top: bool,
 }
 
 impl Default for App {
     fn default() -> Self {
-        let mut app = Self {
+        Self {
             db: None,
             db_io: AsyncTunnel::new(1),
             extensions_io: AsyncTunnel::new(1),
@@ -82,215 +40,17 @@ impl Default for App {
             update_available: false,
             update_window: None,
             
-            compare_db: None,
-            cdb_io: AsyncTunnel::new(1),
-            
             my_panel: Panel::Duplicates,
             find_panel: FindPanel::default(),
-            order_panel: OrderPanel::default(),
-            tags_panel: TagsPanel::default(),
+            duplicates_panel: Duplicates::default(),
             registration: RegistrationPanel::default(),
-            
-            main: NodeConfig::new(false),
-            basic: NodeConfig::new(true),
-            match_criteria: SelectableList::default(),
-            match_null: false,
-            
-            tags: NodeConfig::new(false),
-            deep: NodeConfig::new(false),
-            ignore_extension: false,
-            compare: NodeConfig::new(false),
-           
-            safe: true,
-            dupes_db: true,
-            remove_files: false,
-            delete_action: Delete::Trash,
-
-            gather_dupes: false,
-            go_search: false,
-            go_remove: false,
-
-            marked_records: String::new(),
-            records_window: false,
-            scroll_to_top: false,
-
-           
-        };
-        app.match_criteria.set(vec!["Channels".to_owned(), "Duration".to_owned(), "Filename".to_owned()]);      
-        app.tags_panel.list.set(default_tags());
-        app.order_panel.list = default_order();
-
-        app
+        }
     }
 }
 
 
 impl App {
-    /// Called once before the first frame.
-    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        // This is also where you can customize the look and feel of egui using
-        // `cc.egui_ctx.set_visuals` and `cc.egui_ctx.set_fonts`.
 
-        // let stroke = egui::Stroke {
-        //     width: 1.0,
-        //     color: egui::Color32::LIGHT_RED
-        // };
-
-        // let w = Widgets {
-        //     active: true,
-            
-        // }
-        // let visuals = egui::Visuals {
-        //     widgets.active: false,
-        //     dark_mode: false,
-            
-        //     ..Default::default()
-        // };
-
-        // cc.egui_ctx.set_visuals(visuals);
-
-        // Load previous app state (if any).
-        // Note that you must enable the `persistence` feature for this to work.
-        if let Some(storage) = cc.storage {
-            return eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
-        }
-        Default::default()
-    }
-
-    fn reset_to_defaults(&mut self)  {
-        let db = self.db.take();
-        let panel = self.my_panel;
-        let registration = self.registration.clone();
-        *self = Self::default();
-        self.db = db;
-        self.my_panel = panel;
-        self.registration = registration;
-        self.check_for_updates();
-    }
-
-    fn reset_to_tjf_defaults(&mut self) {
-        self.reset_to_defaults();
-        self.order_panel.list = tjf_order();
-        self.tags_panel.list.set(tjf_tags());
-        self.deep.enabled = true;
-        self.tags.enabled = true;
-        self.dupes_db = false;
-        self.ignore_extension = true;
-        self.match_criteria.set(vec!("Filename".to_owned()));
-    }
-
-    fn clear_status(&mut self) {
-        self.main.status = "".into();
-        self.main.records.clear();
-        self.basic.status = "".into();
-        self.basic.records.clear();
-        self.tags.status = "".into();
-        self.tags.records.clear();
-        self.deep.status = "".into();
-        self.deep.records.clear();
-        self.compare.status = "".into();
-        self.compare.records.clear();
-        self.extensions_io.waiting = false;
-    }
-    
-    fn abort_all(&mut self) {
-        self.main.abort();
-        self.basic.abort();
-        self.deep.abort();
-        self.tags.abort();
-        self.compare.abort();
-    }
-    
-    fn handles_active(&self) -> bool {
-        self.main.handle.is_some() ||
-        self.basic.handle.is_some() ||
-        self.deep.handle.is_some() ||
-        self.tags.handle.is_some() ||
-        self.compare.handle.is_some()
-    }
-    
-    fn search_eligible(&self) -> bool {
-        self.main.enabled || 
-        self.basic.enabled || 
-        self.deep.enabled || 
-        self.tags.enabled || 
-        self.compare.enabled 
-    }
-
-    fn receive_async_data(&mut self) {
-        if let Some(db) = self.db_io.recv() {
-            self.db = Some(db);
-        }      
-        if let Some(db) = self.cdb_io.recv() {
-            self.compare_db = Some(db);
-            self.compare.enabled = true;
-        }    
-        if let Some(db) = &mut self.db {
-            if let Some(records) = self.extensions_io.recv() {
-                db.file_extensions = records;
-            }
-        }
-        
-        if let Some(records) = self.main.receive() {
-            self.clear_status();
-            self.main.status = format! {"Removed {} duplicates", records.len()}.into();
-        }    
-        if let Some(records) = self.basic.receive() {
-            self.main.records.extend(records);
-            self.update_main_status();
-        }   
-        if let Some(records) = self.deep.receive() {
-            self.main.records.extend(records);
-            self.update_main_status();
-        }    
-        if let Some(records) = self.tags.receive() {
-            self.main.records.extend(records);
-            self.update_main_status();
-        }    
-        if let Some(records) = self.compare.receive() {
-            self.main.records.extend(records);
-            self.update_main_status();
-        }
-
-        if let Some(version) = self.latest_version_io.recv() {
-            self.latest_version = version;
-            if self.update_window.is_some() {self.update_window = Some(true);}
-            if self.latest_version == env!("CARGO_PKG_VERSION") 
-            {
-                println!("No Update Needed");
-                self.update_available = false;
-            }
-            else {
-                println!("Update Recommended");
-                self.update_available = true;
-            }
-        }
-    }
-
-    fn update_main_status(&mut self) {
-        // if self.handles_active() { return }
-
-        if self.main.records.is_empty() {self.main.status = "No Records Marked for Removal".into()}
-        else {
-            self.main.status = format!(
-                "{} total records marked for removal",
-                self.main.records.len()
-            ).into();
-
-        }      
-    }
-
-    pub fn check_for_updates(&mut self) {
-        let tx = self.latest_version_io.tx.clone();
-        tokio::spawn(async move {
-            println!("Inside Async Task - checking version");
-    
-            let results = fetch_latest_version().await;
-            if (tx.send(results.expect("Tokio Results Error HashSet")).await).is_err() {
-                eprintln!("Failed to send db");
-            }
-        });
-    }
 }
 
 
@@ -347,16 +107,13 @@ impl eframe::App for App {
                         self.find_panel.render(ui, self.db.as_ref(), self.registration.valid);
                     }
                     Panel::Duplicates => {
-                        self.duplictes_panel(ui);
-                    }
-                    Panel::NewDuplicates => {
-                        // self.duplicates_panel.render(ui, self.db.as_ref(), self.registration.valid, &self.order_panel, &self.tags_panel.list);
+                        self.duplicates_panel.render(ui, self.db.as_ref(), self.registration.valid);
                     }
                     Panel::Order => {
-                        self.order_panel.render(ui, self.db.as_ref());
+                        self.duplicates_panel.basic.preservation_order.render(ui, self.db.as_ref());
                     }
                     Panel::Tags => {
-                        self.tags_panel.render(ui);
+                        self.duplicates_panel.tags.render_panel(ui);
                     }
                     Panel::KeyGen => {
                         self.registration.render(ui);
@@ -364,7 +121,7 @@ impl eframe::App for App {
                 }
                 empty_line(ui);
             });
-            records_window(ctx, &self.marked_records, &mut self.records_window, &mut self.scroll_to_top);
+            self.duplicates_panel.records_window.render(ctx);
          
             if self.update_window.is_some() {
                 update_window(ctx, &mut self.update_window, &self.latest_version, self.update_available);
@@ -379,6 +136,85 @@ impl eframe::App for App {
 }
 
 impl App {
+        /// Called once before the first frame.
+        pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+            // This is also where you can customize the look and feel of egui using
+            // `cc.egui_ctx.set_visuals` and `cc.egui_ctx.set_fonts`.
+    
+            // let stroke = egui::Stroke {
+            //     width: 1.0,
+            //     color: egui::Color32::LIGHT_RED
+            // };
+    
+            // let w = Widgets {
+            //     active: true,
+                
+            // }
+            // let visuals = egui::Visuals {
+            //     widgets.active: false,
+            //     dark_mode: false,
+                
+            //     ..Default::default()
+            // };
+    
+            // cc.egui_ctx.set_visuals(visuals);
+    
+            // Load previous app state (if any).
+            // Note that you must enable the `persistence` feature for this to work.
+            if let Some(storage) = cc.storage {
+                return eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
+            }
+            Default::default()
+        }
+    
+        fn reset_to_defaults(&mut self)  {
+            self.duplicates_panel = Duplicates::default();
+            self.find_panel = FindPanel::default();
+        }
+        fn reset_to_tjf_defaults(&mut self) {
+            self.reset_to_defaults();
+            self.duplicates_panel.reset_to_tjf_defaults();
+        }
+    
+        fn receive_async_data(&mut self) {
+            if let Some(db) = self.db_io.recv() {
+                self.db = Some(db);
+            }      
+    
+            if let Some(db) = &mut self.db {
+                if let Some(records) = self.extensions_io.recv() {
+                    db.file_extensions = records;
+                }
+            }
+            
+            if let Some(version) = self.latest_version_io.recv() {
+                self.latest_version = version;
+                if self.update_window.is_some() {self.update_window = Some(true);}
+                if self.latest_version == env!("CARGO_PKG_VERSION") 
+                {
+                    println!("No Update Needed");
+                    self.update_available = false;
+                }
+                else {
+                    println!("Update Recommended");
+                    self.update_available = true;
+                }
+            }
+        }
+    
+    
+    
+        pub fn check_for_updates(&mut self) {
+            let tx = self.latest_version_io.tx.clone();
+            tokio::spawn(async move {
+                println!("Inside Async Task - checking version");
+        
+                let results = fetch_latest_version().await;
+                if (tx.send(results.expect("Tokio Results Error HashSet")).await).is_err() {
+                    eprintln!("Failed to send db");
+                }
+            });
+        }
     fn file_menu(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         ui.menu_button(RichText::new("File").weak().size(18.0), |ui| {
             if ui.button("Open Database").clicked() {
@@ -392,20 +228,20 @@ impl App {
             }
             if ui.button("Close Database").clicked() {
                 ui.close_menu();
-                self.clear_status();
-                self.abort_all();
+                self.duplicates_panel.clear_status();
+                self.duplicates_panel.abort_all();
                 self.db = None;
             }
 
             ui.separator();
             if ui.button("Restore Defaults").clicked() {
                 ui.close_menu();
-                self.clear_status();
+                // self.clear_status();
                 self.reset_to_defaults();
             }
             if ui.input(|i| i.modifiers.alt) && ui.button("TJF Defaults").clicked() {
                 ui.close_menu();
-                self.clear_status();
+                // self.clear_status();
                 self.reset_to_tjf_defaults();
             }
             egui::widgets::global_theme_preference_buttons(ui);
@@ -499,11 +335,7 @@ impl App {
             }
     
             add_tab_button(ui, &mut self.my_panel, Panel::Find, "Find & Replace", size_big, size_small, column_width);
-            // if ui.input(|i| i.modifiers.alt) {
-            //     add_tab_button(ui, &mut self.my_panel, Panel::NewDuplicates, "Search for Duplicates2", size_big, size_small, column_width);
-            // } else {
-                add_tab_button(ui, &mut self.my_panel, Panel::Duplicates, "Search for Duplicates", size_big, size_small, column_width);
-            // }
+            add_tab_button(ui, &mut self.my_panel, Panel::Duplicates, "Search for Duplicates2", size_big, size_small, column_width);
             add_tab_button(ui, &mut self.my_panel, Panel::Order, "Preservation Priority", size_big, size_small, column_width);
             add_tab_button(ui, &mut self.my_panel, Panel::Tags, "Tag Editor", size_big, size_small, column_width);
         });
@@ -595,664 +427,6 @@ impl App {
                 });
             });
     }
-
-
-    fn duplictes_panel(&mut self, ui: &mut egui::Ui) {
-
-        
-        // let w =    Widgets  {
-        //         noninteractive: WidgetVisuals {
-        //             weak_bg_fill: Color32::from_gray(27),
-        //             bg_fill: Color32::from_gray(27),
-        //             bg_stroke: egui::Stroke::new(1.0, Color32::from_gray(60)), // separators, indentation lines
-        //             fg_stroke: egui::Stroke::new(1.0, Color32::from_gray(140)), // normal text color
-        //             rounding: Rounding::same(2.0),
-        //             expansion: 0.0,
-        //         },
-        //         inactive: WidgetVisuals {
-        //             weak_bg_fill: Color32::from_gray(60), // button background
-        //             bg_fill: Color32::from_gray(60),      // checkbox background
-        //             bg_stroke: Default::default(),
-        //             fg_stroke: egui::Stroke::new(1.0, Color32::from_gray(180)), // button text CHECK MARKS #1
-        //             rounding: Rounding::same(2.0),
-        //             expansion: 0.0,
-        //         },
-        //         hovered: WidgetVisuals {
-        //             weak_bg_fill: Color32::from_gray(70),
-        //             bg_fill: Color32::from_gray(70),
-        //             bg_stroke: egui::Stroke::new(1.0, Color32::from_gray(150)), // e.g. hover over window edge or button
-        //             fg_stroke: egui::Stroke::new(1.5, Color32::from_gray(240)), //CHECK MARKS #2
-        //             rounding: Rounding::same(3.0),
-        //             expansion: 1.0,
-        //         },
-        //         active: WidgetVisuals {
-        //             weak_bg_fill: Color32::from_gray(55),
-        //             bg_fill: Color32::from_gray(55),
-        //             bg_stroke: egui::Stroke::new(1.0, Color32::WHITE),
-        //             fg_stroke: egui::Stroke::new(2.0, Color32::WHITE),
-        //             rounding: Rounding::same(2.0),
-        //             expansion: 1.0,
-        //         },
-        //         open: WidgetVisuals {
-        //             weak_bg_fill: Color32::from_gray(45),
-        //             bg_fill: Color32::from_gray(27),
-        //             bg_stroke: egui::Stroke::new(1.0, Color32::from_gray(60)),
-        //             fg_stroke: egui::Stroke::new(1.0, Color32::from_gray(210)),
-        //             rounding: Rounding::same(2.0),
-        //             expansion: 0.0,
-        //         },
-        // };
-
-        // ui.visuals_mut().widgets = w;
-        // // ui.visuals_mut().widgets.active.bg_stroke = stroke;
-        // // ui.visuals_mut().widgets.inactive = visuals;
-
-        
-        let Some(db) = &mut self.db else {
-            ui.heading(RichText::new("No Open Database").weak());
-            return;
-        };
-        if db.size == 0 {
-            ui.heading("No Records in Database");
-            return;
-        }
-        
-        
-        ui.columns(2, |column|{
-            column[0].heading(RichText::new("Search for Duplicate Records").strong());
-            //BASIC BASIC BASIC
-            column[0].checkbox(&mut self.basic.enabled, "Basic Duplicate Search");
-            column[0].horizontal(|ui| {
-                ui.add_space(24.0);
-                ui.label("Duplicate Match Criteria: ");
-
-            });
-            if self.match_criteria.get().is_empty() {
-                self.basic.enabled = false;
-                column[0].horizontal(|ui|{
-                    ui.add_space(24.0);
-                    ui.label(light_red_text("Add Match Criteria to Enable Search").size(14.0));
-                });
-                column[0].horizontal(|ui|{
-                    ui.add_space(24.0);
-                    button(ui, "Restore Defaults", ||{self.match_criteria.set(vec!{"Filename".to_owned(), "Duration".to_owned(), "Channels".to_owned()}) });
-                });
-                empty_line(&mut column[0]);
-            } else {
-                column[0].horizontal(|ui|{
-                    ui.add_space(24.0);
-                    self.match_criteria.render(ui, 3, "Match Criteria", true);
-                });
-            }
-            column[0].horizontal(|ui|{
-                ui.add_space(24.0);
-                ui.label(RichText::new("Add:"));
-                self.match_criteria.add_combo_box(ui, &db.columns);
-
-                button(ui, "Remove Selected", ||{
-                    self.match_criteria.remove_selected();
-
-                });
-            });
-
-            if column[0].input(|i| i.modifiers.alt) {
-                column[0].horizontal(|ui| {
-                    ui.add_space(24.0);
-                    ui.label("Unmatched Records: ");
-                    ui.radio_value(&mut self.match_null, false, "Ignore");
-                    ui.radio_value(&mut self.match_null, true, "Process Together");
-                });
-            } 
-            
-            column[1].heading(RichText::new("Remove Options").strong());
-            let mut text = RichText::new("Create New Safety Database of Thinned Records");
-            if !self.safe {text = text.strong().color(egui::Color32::from_rgb(255, 100, 100))}
-            column[1].checkbox(&mut self.safe, text);
-            if !&self.safe {
-                column[1].horizontal(|ui| {
-                        ui.label(
-                            red_text("UNSAFE!")
-                        );
-                        ui.label(RichText::new("Will remove records from current database").strong());
-                    });
-                }
-            column[1].checkbox(&mut self.dupes_db, "Create New Database of Duplicate Records");
-            column[1].horizontal_wrapped(|ui| {
-                let mut text = RichText::new("Remove Duplicate Files From Disk ");
-                if self.remove_files {text = text.strong().size(14.0).color(egui::Color32::from_rgb(255, 100, 100))}
-                ui.checkbox(&mut self.remove_files, text);
-                
-                if self.remove_files {
-                    enum_combo_box(ui, &mut self.delete_action);
-                    if self.remove_files && self.delete_action == Delete::Permanent {
-                        ui.label(
-                            RichText::new("UNSAFE!")
-                            .color(egui::Color32::from_rgb(255, 0, 0))
-                            .strong(),
-                        );
-                        ui.label(RichText::new("This is NOT undoable").strong());
-                    }
-                }
-            });
-        });
-        self.basic.render_progress_bar(ui);
-
-
-        //DEEP DIVE DEEP DIVE DEEP DIVE
-        ui.checkbox(&mut self.deep.enabled, "Similar Filename Duplicates Search")
-            .on_hover_text_at_pointer("Filenames ending in .#, .#.#.#, or .M will be examined as possible duplicates");
-
-        if db.file_extensions.is_empty() && !self.extensions_io.waiting  {
-            self.extensions_io.waiting  = true;
-            db.get_extensions(self.extensions_io.tx.clone());
-            
-            ui.horizontal(|ui| {
-                ui.spinner();
-                ui.label("Gathering Filetypes from DB");
-                self.clear_status();
-            });
-        }
-        else {
-            ui.horizontal(|ui| {
-                ui.add_space(24.0);
-
-                if db.file_extensions.len() > 1 {
-                    let text = if self.ignore_extension {"Checked: 'example.wav' and 'example.flac' will be considered duplicate filenames"}
-                    else {"Unchecked: 'example.wav' and 'example.flac' will be considered unique filenames"};
-                    ui.checkbox(&mut self.ignore_extension, "Ignore Filetypes").on_hover_text_at_pointer(text);
-
-                } else {
-                    ui.label("All Records are of Filetype:");
-                    ui.label(&db.file_extensions[0]);
-                }
-            });
-        }
-        self.deep.render_progress_bar(ui);
-
-
-        //TAGS TAGS TAGS TAGS
-        let enabled = !self.tags_panel.list().is_empty();
-        let text = enabled_text("Search for Records with AudioSuite Tags in Filename", &enabled);
-        ui.checkbox(&mut self.tags.enabled,text,)
-            .on_hover_text_at_pointer("Filenames with Common Protools AudioSuite Tags will be marked for removal");
-       
-        if enabled {
-            ui.horizontal(|ui| {
-                ui.add_space(24.0);
-                if ui.button("Edit Tags List").clicked() {self.my_panel=Panel::Tags}
-            });
-
-        } else {
-            self.tags.enabled = false;
-            ui.horizontal(|ui| {
-                ui.add_space(24.0);
-                if ui.button("Add Tags to Enable").clicked() {self.my_panel=Panel::Tags}
-            });
-
-        }
-        self.tags.render_progress_bar(ui);
-        
-
-        //COMPARE COMPARE COMPARE COMPARE
-        ui.horizontal(|ui| {
-            let enabled = self.compare.enabled || self.compare_db.is_some();
-            let text = enabled_text("Compare against database: ", &enabled);
-            ui.checkbox(&mut self.compare.enabled, text)
-                .on_hover_text_at_pointer
-                    ("Filenames from Target Database found in Comparison Database will be Marked for Removal");
-            
-            if let Some(cdb) = &self.compare_db {
-                if ui.selectable_label(false, &cdb.name).clicked() {
-                    let tx = self.cdb_io.tx.clone();
-                    tokio::spawn(async move {
-                        let db = Database::open().await.unwrap();
-                        let _ = tx.send(db).await;
-                    });
-                }
-            }
-            else {
-                self.compare.enabled = false;
-                if ui.button("Select DB").clicked()  {
-                    self.compare.enabled = false;
-                    let tx = self.cdb_io.tx.clone();
-                    tokio::spawn(async move {
-                        let db = Database::open().await.unwrap();
-                        let _ = tx.send(db).await;
-                    });
-                }
-            }
-        });
-        self.compare.render_progress_bar(ui);
-
-        ui.separator();
-        empty_line(ui);
-
-        ui.horizontal(|ui| {
-            if self.handles_active() {
-                self.go_remove = false;
-                button(ui, "Cancel", || self.abort_all());
-            } else {
-                self.go_remove = true;
-                if self.search_eligible() {
-                    if ui.input(|i| i.modifiers.alt) {
-                        rt_button(ui, light_red_text("Search and Remove Duplicates").size(20.0), || {
-                            self.go_search = true;
-                            self.go_remove = false;
-                            self.gather_duplicates();
-                        });
-                    } else {
-                        ui.columns(2, |column|{
-                            column[0].horizontal(|ui| {
-                                rt_button(ui, RichText::new("Search for Duplicates").size(20.0).strong(), || self.gather_duplicates());
-                            });
-                            if !self.handles_active() && !self.main.records.is_empty() {
-                                column[1].horizontal(|ui|{
-                                    rt_button(ui, light_red_text("Remove Duplicates").size(20.0).strong(), || self.remove_duplicates());
-                                });
-                            }
-                        });
-                    }
-                }
-                else {
-                    ui.label(RichText::new("No Search Methods are enabled").strong().size(20.0));
-                }
-
-            }
-
-            if self.go_remove && self.go_search {
-                self.go_remove = false;
-                self.go_search = false;
-                self.remove_duplicates();
-            }
-        });
-        empty_line(ui);
-
-        ui.horizontal(|ui| {
-            if self.main.working {
-                ui.spinner();
-            }
-            ui.label(RichText::new(&*self.main.status).strong());
-        });
-
-        if self.registration.valid == Some(true)
-            && !self.handles_active()
-            && !self.main.records.is_empty()
-            && ui.button("Show Records").clicked()
-        {
-            let mut marked_records: Vec<&str> = self
-                .main
-                .records
-                .par_iter() // Use parallel iterator
-                .map(|s| &*s.path) // Convert &String to &str
-                .collect();
-
-            // Sort in parallel
-            marked_records.par_sort();
-            self.marked_records = marked_records.join("\n");
-            self.scroll_to_top = true;
-            self.records_window = true;
-        }
-
-        if self.main.working {
-            ui.add(
-                egui::ProgressBar::new(self.main.progress.0 / self.main.progress.1)
-                    .desired_height(4.0),
-            );
-        }
-            
-      
-    }
-    pub fn gather_duplicates(&mut self) {
-        self.abort_all();
-        self.main.records.clear();
-        if let Some(db) = self.db.as_ref() {
-            let Some(pool) = db.pool() else {return};
-    
-          
-            self.main.status = "Searching for Duplicates".into();
-           
-    
-            if self.basic.enabled {
-                let progress_sender = self.basic.progress_io.tx.clone(); 
-                let status_sender = self.basic.status_io.tx.clone(); 
-                let pool = pool.clone();
-                let order = self.order_panel.extract_sql().clone();  
-                let match_groups = self.match_criteria.get().to_vec();               
-                let match_null = self.match_null;
-                self.basic.wrap_async(
-                    move || gather_duplicate_filenames_in_database(pool, progress_sender, status_sender, order, match_groups, match_null),
-                )
-            }
-    
-            if self.deep.enabled {
-                let progress_sender = self.deep.progress_io.tx.clone(); 
-                let status_sender = self.deep.status_io.tx.clone();
-                let pool = pool.clone();
-                let ignore = self.ignore_extension;
-                self.deep.wrap_async(
-                    move || gather_deep_dive_records(pool, progress_sender, status_sender, ignore),
-                )
-                    
-                
-            }
-    
-            if self.tags.enabled {
-                let progress_sender = self.tags.progress_io.tx.clone();
-                let status_sender = self.tags.status_io.tx.clone();
-                let pool = pool.clone();
-                let tags = self.tags_panel.list().to_vec();
-                self.tags.wrap_async(
-                    move || gather_filenames_with_tags(pool, progress_sender, status_sender, tags),
-                );
-            }
-    
-            if self.compare.enabled && self.compare_db.is_some() {
-                if let Some(cdb) = &self.compare_db {
-                    self.compare.working = true;
-                    self.compare.status = format!("Comparing against {}", cdb.name).into();
-        
-                    let tx = self.compare.records_io.tx.clone();
-                        let p = pool.clone();
-                        let Some(c_pool) = cdb.pool() else {return;};
-                        let handle = tokio::spawn(async move {
-                            println!("tokio spawn compare");
-                            let results = gather_compare_database_overlaps(&p, &c_pool).await;
-                            if (tx.send(results.expect("error on compare db")).await).is_err() {
-                                eprintln!("Failed to send db");
-                            }
-                        });
-                        self.compare.handle = Some(handle);
-                    
-                }
-            }
-        }
-    }
-
-    
-    
-    
-    fn remove_duplicates(&mut self) {
-        if self.registration.valid == Some(false) {
-            self.main.records.clear();
-            self.main.status = "Unregistered!\nPlease Register to Remove Duplicates".into();
-            return;
-        }
-        if let Some(db) = self.db.as_ref() {
-            let mut work_db_path: Option<String> = Some(db.path.clone());
-            let mut duplicate_db_path: Option<String> = None;
-            let records = self.main.records.clone();
-    
-            self.main.working = true;
-            if self.safe {
-                self.main.status = "Creating Safety Database".into();
-                let path = format!("{}_thinned.sqlite", &db.path.trim_end_matches(".sqlite"));
-                let _result = fs::copy(&db.path, &path);
-                work_db_path = Some(path);
-            }
-            if self.dupes_db {
-                self.main.status = "Creating Database of Duplicates".into();
-                let path = format!("{}_dupes.sqlite", &db.path.trim_end_matches(".sqlite"));
-                let _result = fs::copy(&db.path, &path);
-                duplicate_db_path = Some(path);
-            }
-    
-            let progress_sender = self.main.progress_io.tx.clone();
-            let status_sender = self.main.status_io.tx.clone(); 
-            self.main.wrap_async(move || {
-                remove_duplicates_go(records, work_db_path, duplicate_db_path, progress_sender, status_sender)
-            });
-                
-            
-            if self.remove_files {
-                println!("Removing Files");
-                let files: HashSet<&str> = self
-                    .main
-                    .records
-                    .par_iter()
-                    .map(|record| &*record.path)
-                    .collect();
-    
-                let _ = self.delete_action.delete_files(files);
-          
-            }
-        }
-    }
-
-}
-
-pub async fn remove_duplicates_go(
-    records: HashSet<FileRecord>,
-    main_db_path: Option<String>,
-    dupe_db_path: Option<String>,
-    progress_sender: mpsc::Sender<ProgressMessage>,
-    status_sender: mpsc::Sender<Arc<str>>,
-) -> Result<HashSet<FileRecord>, sqlx::Error> {
-    let _ = status_sender.send("Performing Record Removal".into()).await;
-    if let Some(main_path) = &main_db_path {
-        let main_db = Database::init(main_path).await;
-        let Some(main_pool) = main_db.pool() else {return Err(sqlx::Error::PoolClosed);};
-        let _result =
-            delete_file_records(&main_pool, &records, progress_sender.clone(), status_sender.clone()).await;
-        if let Some(path) = dupe_db_path {
-            let dupes_db = Database::init(&path).await;
-            let Some(dupes_pool) = dupes_db.pool() else {return Err(sqlx::Error::PoolClosed);};
-            let _result =
-                create_duplicates_db(&dupes_pool, &records, progress_sender.clone(), status_sender.clone())
-                    .await;
-        }
-    }
-    Ok(records)
-}
-
-
-
-#[derive(serde::Deserialize, serde::Serialize, Default)]
-#[serde(default)]
-pub struct OrderPanel {
-    pub list: Vec<PreservationLogic>,
-    #[serde(skip)]
-    pub sel_line: Option<usize>,
-    pub column: String,
-    pub operator: OrderOperator,
-    #[serde(skip)]
-    pub input: String,
-}
-
-
-impl OrderPanel {
-    pub fn render(&mut self, ui: &mut egui::Ui, db: Option<&Database>) {
-        ui.heading(RichText::new("Duplicate Filename Preservation Priority").strong());
-        ui.label("or... How to decide which file to keep when duplicates are found");
-        ui.label("Entries at the top of list take precedence to those below");
-        empty_line(ui);
-        // ui.separator();
-        if let Some(db) = db {
-            self.top_toolbar(ui, &db.columns);
-        }
-        else {ui.label(light_red_text("Open DB to enable ADD NEW"));}
-        empty_line(ui);
-        ui.separator();
-
-        ui.with_layout(
-            egui::Layout::top_down_justified(egui::Align::Center),
-            |ui| {
-                // Determine the width available for the scrollable area
-                let width = ui.available_width();
-                let height = ui.available_height();
-
-                // Create a vertical scrollable area with a specified width and height
-                egui::ScrollArea::vertical()
-                    .max_height(height - 55.0) // Set the maximum height of the scroll area
-                    .show(ui, |ui| {
-                        // Create a container with the desired width and height
-                        ui.horizontal(|ui| {
-                            ui.set_min_width(width);
-
-                            // Create a grid layout within the scrollable area
-                            egui::Grid::new("Order Grid")
-                                .spacing([20.0, 8.0])
-                                .striped(true)
-                                .show(ui, |ui| {
-                                 
-                                    for (index, line) in self.list.iter_mut().enumerate()
-                                    {
-                                        let checked = self.sel_line == Some(index);
-                                        let text: &str = if ui.input(|i| i.modifiers.alt) {&line.get_sql()} else {&line.get_friendly()};
-                                        if ui
-                                            .selectable_label(
-                                                checked,
-                                                RichText::new(format!(
-                                                    "{:02} : {}",
-                                                    index + 1,
-                                                    text
-                                                ))
-                                                .size(14.0),
-                                            )
-                                            .clicked()
-                                        {
-                                            self.sel_line =
-                                                if checked { None } else { Some(index) };
-                                        }
-                                        ui.end_row();
-                                    }
-                                });
-                           
-                            
-                        });
-                    });
-                ui.separator();
-                empty_line(ui);
-
-                self.bottom_toolbar(ui);
-            },
-        );
-
-    }
-
-    pub fn top_toolbar(&mut self, ui: &mut egui::Ui, db_columns: &[String]) {
-        ui.horizontal(|ui| {
-            
-
-            combo_box(ui, "order_column", &mut self.column, db_columns);
-  
-            enum_combo_box(ui, &mut self.operator);
-            match self.operator {
-                OrderOperator::Largest
-                | OrderOperator::Smallest
-                | OrderOperator::IsEmpty
-                | OrderOperator::IsNotEmpty => {}
-                _ => {
-                    ui.text_edit_singleline(&mut self.input);
-                }
-            }
-    
-            if ui.button("Add Line").clicked {
-                match self.operator {
-                    OrderOperator::Largest
-                    | OrderOperator::Smallest
-                    | OrderOperator::IsEmpty
-                    | OrderOperator::IsNotEmpty => {
-        
-                        self.list.insert(
-                            0,
-                            PreservationLogic {
-                                column: self.column.clone(),
-                                operator: self.operator,
-                                variable: self.input.clone(),
-                            },
-                        );
-                        self.input.clear();
-                    }
-                    _ => {
-                        if !self.input.is_empty() {
-    
-                           self.list.insert(
-                                0,
-                                PreservationLogic {
-                                    column: self.column.clone(),
-                                    operator: self.operator,
-                                    variable: self.input.clone(),
-                                },
-                            );
-                            self.input.clear();
-                        }
-                    }
-                }
-            }
-       
-        });
-    }
-
-    pub fn bottom_toolbar(&mut self, ui: &mut egui::Ui) {
-          ui.horizontal(|ui| {
-        if ui.button("Move Up").clicked() {
-            if let Some(index) = self.sel_line {
-                if index > 0 {
-                    self.sel_line = Some(index - 1);
-  
-                    self.list.swap(index, index - 1);
-                }
-            }
-        }
-        if ui.button("Move Down").clicked() {
-            if let Some(index) = self.sel_line {
-                if index < self.list.len() - 1 {
-                    self.sel_line = Some(index + 1);
-
-                    self.list.swap(index, index + 1);
-                }
-            }
-        }
-        if ui.button("Remove").clicked() {
-            if let Some(index) = self.sel_line {
-                self.list.remove(index);
-                self.sel_line = None;
-            }
-        }
-
-
-    });
-
-    }
-
-    pub fn extract_sql(&self) -> Vec<String> {
-        self.list.iter().map(|logic| logic.get_sql()).collect()
-    }
-}
-
-
-
-#[derive(serde::Deserialize, serde::Serialize, Default)]
-#[serde(default)]
-pub struct TagsPanel {          // Use &str for new
-    list: SelectableList,   // Use &str for the grid
-
-}
-
-impl TagsPanel {
-    pub fn render(&mut self, ui: &mut egui::Ui) {
-        ui.heading(RichText::new("Tag Editor").strong());
-        ui.label("Protools Audiosuite Tags use the following format:  -example_");
-        ui.label("You can enter any string of text and if it is a match, the file will be marked for removal");
-        empty_line(ui);
-        ui.separator();
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            self.list.render(ui, 6, "tags editor", false);
-            if !self.list().is_empty() {
-                ui.separator();
-            }
-            empty_line(ui);
-            self.list.add_text_input(ui);
-
-            if !self.list.get().is_empty() && ui.button("Remove Selected Tags").clicked() {
-                self.list.remove_selected();
-            }
-        });
-    }
-    pub fn list(&self) -> &[String] {
-        self.list.get()
-    }
-
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Default, Clone)]
@@ -1307,10 +481,5 @@ impl RegistrationPanel {
         self.valid = Some(false);
     }
 }
-
-
-
-
-
 
 

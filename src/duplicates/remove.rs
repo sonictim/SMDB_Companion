@@ -1,15 +1,30 @@
 use crate::prelude::*;
+use std::fs::{self};
 
-#[derive(serde::Deserialize, serde::Serialize, Default)]
+#[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)]
 pub struct Remove {
     #[serde(skip)]
-    pub config: NodeConfig,
     enabled: bool,
+    #[serde(skip)]
+    pub config: NodeC,
     safe: bool,
-    dupes_db: bool,
+    pub dupes_db: bool,
     remove_files: bool,
     delete_action: Delete,
+}
+
+impl Default for Remove {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            config: NodeC::default(),
+            safe: true,
+            dupes_db: true,
+            remove_files: false,
+            delete_action: Delete::Trash,
+        }
+    }
 }
 
 impl Remove {
@@ -58,7 +73,7 @@ impl Remove {
         });
     }
 
-    fn remove_duplicates(&mut self, db: &Database) {
+    pub fn remove_duplicates(&mut self, db: &Database) {
         // if self.registration.valid == Some(false) {
         //     self.config.records.clear();
         //     self.config.status = "Unregistered!\nPlease Register to Remove Duplicates".into();
@@ -66,24 +81,26 @@ impl Remove {
         // }
         let mut work_db_path: Option<String> = Some(db.path.clone());
         let mut duplicate_db_path: Option<String> = None;
-        let records = self.config.records.clone();
+        let records = self.config.records.get().clone();
 
         self.config.working = true;
         if self.safe {
-            self.config.status = "Creating Safety Database".into();
+            self.config.status.set("Creating Safety Database".into());
             let path = format!("{}_thinned.sqlite", &db.path.trim_end_matches(".sqlite"));
             let _result = fs::copy(&db.path, &path);
             work_db_path = Some(path);
         }
         if self.dupes_db {
-            self.config.status = "Creating Database of Duplicates".into();
+            self.config
+                .status
+                .set("Creating Database of Duplicates".into());
             let path = format!("{}_dupes.sqlite", &db.path.trim_end_matches(".sqlite"));
             let _result = fs::copy(&db.path, &path);
             duplicate_db_path = Some(path);
         }
 
-        let progress_sender = self.config.progress_io.tx.clone();
-        let status_sender = self.config.status_io.tx.clone();
+        let progress_sender = self.config.progress.tx.clone();
+        let status_sender = self.config.status.tx.clone();
         self.config.wrap_async(move || {
             remove_duplicates_go(
                 records,
@@ -99,51 +116,13 @@ impl Remove {
             let files: HashSet<&str> = self
                 .config
                 .records
+                .get()
                 .par_iter()
                 .map(|record| &*record.path)
                 .collect();
 
             let _ = self.delete_action.delete_files(files);
         }
-    }
-
-    pub async fn remove_duplicates_go(
-        &mut self,
-        records: HashSet<FileRecord>,
-        main_db_path: Option<String>,
-        dupe_db_path: Option<String>,
-        progress_sender: mpsc::Sender<ProgressMessage>,
-        status_sender: mpsc::Sender<Arc<str>>,
-    ) -> Result<HashSet<FileRecord>, sqlx::Error> {
-        let _ = status_sender.send("Performing Record Removal".into()).await;
-        if let Some(main_path) = &main_db_path {
-            let main_db = Database::init(main_path).await;
-            let Some(main_pool) = main_db.pool() else {
-                return Err(sqlx::Error::PoolClosed);
-            };
-            let _result = self
-                .delete_file_records(
-                    &main_pool,
-                    // &records,
-                    // progress_sender.clone(),
-                    // status_sender.clone(),
-                )
-                .await;
-            if let Some(path) = dupe_db_path {
-                let dupes_db = Database::init(&path).await;
-                let Some(dupes_pool) = dupes_db.pool() else {
-                    return Err(sqlx::Error::PoolClosed);
-                };
-                let _result = create_duplicates_db(
-                    &dupes_pool,
-                    &records,
-                    progress_sender.clone(),
-                    status_sender.clone(),
-                )
-                .await;
-            }
-        }
-        Ok(records)
     }
 
     pub async fn delete_file_records(
@@ -158,6 +137,7 @@ impl Remove {
         let ids: Vec<i64> = self
             .config
             .records
+            .get()
             .iter()
             .map(|record| record.id as i64)
             .collect();
@@ -166,7 +146,7 @@ impl Remove {
             return Ok(());
         }
 
-        let total = self.config.records.len();
+        let total = self.config.records.get().len();
         let mut current_count = 0;
 
         for chunk in ids.chunks(CHUNK_SIZE) {
@@ -197,25 +177,25 @@ impl Remove {
             }
 
             current_count += chunk.len();
-            let progress = std::cmp::min(current_count, total);
+            let count = std::cmp::min(current_count, total);
 
             let _ = self
                 .config
-                .progress_io
+                .progress
                 .tx
-                .send(ProgressMessage::Update(progress, total))
+                .send(Progress { count, total })
                 .await;
             let _ = self
                 .config
-                .status_io
+                .status
                 .tx
-                .send(format!("Processed {} / {}", progress, total).into())
+                .send(format!("Processed {} / {}", count, total).into())
                 .await;
         }
 
         let _ = self
             .config
-            .status_io
+            .status
             .tx
             .send("Cleaning Up Database".into())
             .await;
@@ -227,33 +207,58 @@ impl Remove {
     }
 }
 
-pub async fn create_duplicates_db(
-    pool: &SqlitePool,
-    dupe_records_to_keep: &HashSet<FileRecord>,
-    progress_sender: mpsc::Sender<ProgressMessage>,
+pub async fn remove_duplicates_go(
+    records: HashSet<FileRecord>,
+    main_db_path: Option<String>,
+    dupe_db_path: Option<String>,
+    progress_sender: mpsc::Sender<Progress>,
     status_sender: mpsc::Sender<Arc<str>>,
-) -> Result<(), sqlx::Error> {
-    println!("Generating Duplicates Only Database. This can take a while.");
-    let _ = status_sender
-        .send("Creating Duplicates Only Database. This can be slow.".into())
-        .await;
+) -> Result<HashSet<FileRecord>, sqlx::Error> {
+    let _ = status_sender.send("Performing Record Removal".into()).await;
+    if let Some(main_path) = &main_db_path {
+        let main_db = Database::init(main_path).await;
+        let _ = main_db
+            .delete_file_records(&records, progress_sender.clone(), status_sender.clone())
+            .await;
 
-    if let Ok(all_records) = fetch_all_filerecords_from_database(pool).await {
-        // Use a parallel iterator to process records
-        let dupe_records_to_delete: HashSet<FileRecord> = all_records
-            .par_iter() // Parallel iterator
-            .filter(|record| !dupe_records_to_keep.contains(record)) // Filter out records to keep
-            .cloned() // Clone the records to create a new HashSet
-            .collect(); // Collect into a HashSet
-
-        let _result = delete_file_records(
-            pool,
-            &dupe_records_to_delete,
-            progress_sender,
-            status_sender,
-        )
-        .await;
+        if let Some(path) = dupe_db_path {
+            let mut dupes_db = Database::init(&path).await;
+            let _ = dupes_db
+                .keep_file_records(&records, progress_sender, status_sender)
+                .await;
+        }
     }
-
-    Ok(())
+    Ok(records)
 }
+
+// pub async fn create_duplicates_db(
+//     db: &Database,
+//     // pool: &SqlitePool,
+//     dupe_records_to_keep: &HashSet<FileRecord>,
+//     progress_sender: mpsc::Sender<ProgressMessage>,
+//     status_sender: mpsc::Sender<Arc<str>>,
+// ) -> Result<(), sqlx::Error> {
+//     println!("Generating Duplicates Only Database. This can take a while.");
+//     let _ = status_sender
+//         .send("Creating Duplicates Only Database. This can be slow.".into())
+//         .await;
+
+//     if let Ok(all_records) = db.fetch_all_filerecords().await {
+//         // Use a parallel iterator to process records
+//         let dupe_records_to_delete: HashSet<FileRecord> = all_records
+//             .par_iter() // Parallel iterator
+//             .filter(|record| !dupe_records_to_keep.contains(record)) // Filter out records to keep
+//             .cloned() // Clone the records to create a new HashSet
+//             .collect(); // Collect into a HashSet
+
+//         let _result = delete_file_records(
+//             pool,
+//             &dupe_records_to_delete,
+//             progress_sender,
+//             status_sender,
+//         )
+//         .await;
+//     }
+
+//     Ok(())
+// }

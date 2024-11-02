@@ -10,12 +10,6 @@ use sqlx::sqlite::SqliteRow;
 use std::fs::{self};
 use std::hash::Hash;
 
-pub trait Node {
-    fn render(&mut self, ui: &mut egui::Ui, db: &Database);
-    fn process(&mut self, db: &Database);
-    fn abort(&mut self);
-}
-
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)]
 pub struct AsyncTunnel<T: Default> {
@@ -74,151 +68,6 @@ impl<T: Default> AsyncTunnel<T> {
             return true;
         }
         false
-    }
-}
-
-#[derive(serde::Deserialize, serde::Serialize)]
-#[serde(default)]
-
-pub struct NodeConfig {
-    pub enabled: bool,
-    #[serde(skip)]
-    pub working: bool,
-
-    #[serde(skip)]
-    pub status: Arc<str>,
-    #[serde(skip)]
-    pub status_io: AsyncTunnel<Arc<str>>,
-    #[serde(skip)]
-    pub records: HashSet<FileRecord>,
-    #[serde(skip)]
-    pub records_io: AsyncTunnel<HashSet<FileRecord>>,
-    #[serde(skip)]
-    pub progress: (f32, f32),
-    #[serde(skip)]
-    pub progress_io: AsyncTunnel<ProgressMessage>,
-    #[serde(skip)]
-    pub handle: Option<tokio::task::JoinHandle<()>>,
-}
-
-impl Clone for NodeConfig {
-    fn clone(&self) -> Self {
-        NodeConfig {
-            records: self.records.clone(),
-            status: self.status.clone(),
-            enabled: self.enabled,
-            working: self.working,
-            progress: self.progress,
-            ..Default::default()
-        }
-    }
-}
-impl Default for NodeConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            status: Arc::from(""),
-            status_io: AsyncTunnel::new(1),
-            records: HashSet::new(),
-            working: false,
-            records_io: AsyncTunnel::new(1),
-            progress_io: AsyncTunnel::new(32),
-            progress: (0.0, 0.0),
-            handle: None,
-        }
-    }
-}
-
-impl NodeConfig {
-    pub fn new(on: bool) -> Self {
-        Self {
-            enabled: on,
-            ..Default::default()
-        }
-    }
-    pub fn abort(&mut self) -> Self {
-        let enabled = self.enabled;
-        if let Some(handle) = &self.handle {
-            handle.abort();
-        }
-        Self {
-            enabled,
-            ..Default::default()
-        }
-    }
-
-    pub fn receive_hashset(&mut self) -> Option<HashSet<FileRecord>> {
-        if let Some(records) = self.records_io.recv() {
-            self.records = records.clone();
-            self.handle = None;
-            self.working = false;
-            self.progress = (0.0, 0.0);
-            self.status = format! {"Found {} duplicate records", self.records.len()}.into();
-            return Some(records);
-        }
-        None
-    }
-
-    pub fn receive_progress(&mut self) {
-        while let Some(ProgressMessage::Update(current, total)) = self.progress_io.recv() {
-            self.progress = (current as f32, total as f32);
-        }
-    }
-
-    pub fn receive_status(&mut self) {
-        while let Some(message) = self.status_io.recv() {
-            self.status = message;
-        }
-    }
-    pub fn receive(&mut self) -> Option<HashSet<FileRecord>> {
-        self.receive_progress();
-        self.receive_status();
-        self.receive_hashset()
-    }
-
-    pub fn render_progress_bar(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            if self.working {
-                ui.spinner();
-            } else {
-                ui.add_space(24.0)
-            }
-            ui.label(RichText::new(&*self.status).strong());
-            if self.working {
-                ui.label(format!(
-                    "Progress: {} / {}",
-                    self.progress.0, self.progress.1
-                ));
-            }
-        });
-
-        if self.working {
-            ui.add(
-                egui::ProgressBar::new(self.progress.0 / self.progress.1)
-                    // .text("progress")
-                    .desired_height(4.0),
-            );
-        } else {
-            // ui.separator();
-        }
-        empty_line(ui);
-    }
-
-    pub fn wrap_async<F, T>(&mut self, action: F)
-    where
-        F: FnOnce() -> T + Send + 'static,
-        T: std::future::Future<Output = Result<HashSet<FileRecord>, sqlx::Error>> + Send + 'static,
-    {
-        self.working = true;
-        let tx = self.records_io.tx.clone();
-
-        let handle = tokio::spawn(async move {
-            let results = action().await;
-            if (tx.send(results.expect("Tokio Results Error HashSet")).await).is_err() {
-                eprintln!("Failed to send db");
-            }
-        });
-        self.handle = Some(handle);
     }
 }
 
@@ -360,11 +209,38 @@ impl Database {
         None
     }
 
+    pub async fn keep_file_records(
+        &mut self,
+        dupe_records_to_keep: &HashSet<FileRecord>,
+        progress_sender: mpsc::Sender<Progress>,
+        status_sender: mpsc::Sender<Arc<str>>,
+    ) -> Result<(), sqlx::Error> {
+        println!("Generating Duplicates Only Database. This can take a while.");
+        let _ = status_sender
+            .send("Creating Duplicates Only Database. This can be slow.".into())
+            .await;
+
+        if let Ok(all_records) = self.fetch_all_filerecords().await {
+            // Use a parallel iterator to process records
+            let dupe_records_to_delete: HashSet<FileRecord> = all_records
+                .par_iter() // Parallel iterator
+                .filter(|record| !dupe_records_to_keep.contains(record)) // Filter out records to keep
+                .cloned() // Clone the records to create a new HashSet
+                .collect(); // Collect into a HashSet
+
+            let _result = self
+                .delete_file_records(&dupe_records_to_delete, progress_sender, status_sender)
+                .await;
+        }
+
+        Ok(())
+    }
+
     pub async fn delete_file_records(
         &self,
         // pool: &SqlitePool,
         records: &HashSet<FileRecord>,
-        progress_sender: mpsc::Sender<ProgressMessage>,
+        progress_sender: mpsc::Sender<Progress>,
         status_sender: mpsc::Sender<Arc<str>>,
     ) -> Result<(), sqlx::Error> {
         const CHUNK_SIZE: usize = 12321;
@@ -407,13 +283,11 @@ impl Database {
 
             // Update the current count and send progress
             current_count += chunk.len();
-            let progress = std::cmp::min(current_count, total);
+            let count = std::cmp::min(current_count, total);
 
-            let _ = progress_sender
-                .send(ProgressMessage::Update(progress, total))
-                .await;
+            let _ = progress_sender.send(Progress { count, total }).await;
             let _ = status_sender
-                .send(format!("Processed {} / {}", progress, total).into())
+                .send(format!("Processed {} / {}", count, total).into())
                 .await;
         }
 
@@ -428,14 +302,6 @@ impl Database {
         Ok(())
     }
 }
-
-// pub async fn get_db_size(pool: &SqlitePool) -> Result<usize, sqlx::Error> {
-//     let count: (i64,) = sqlx::query_as(&format!("SELECT COUNT(*) FROM {}", TABLE))
-//         .fetch_one(pool)
-//         .await?;
-
-//     Ok(count.0 as usize)
-// }
 
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
 pub struct FileRecord {
@@ -460,20 +326,9 @@ impl FileRecord {
     }
 }
 
-pub enum ProgressMessage {
-    Update(usize, usize), // (current, total)
-}
-
-impl Default for ProgressMessage {
-    fn default() -> Self {
-        ProgressMessage::Update(0, 0) // Default values for current and total
-    }
-}
-
 #[derive(PartialEq, serde::Serialize, Deserialize, Clone, Copy)]
 pub enum Panel {
     Duplicates,
-    NewDuplicates,
     Order,
     Tags,
     Find,
@@ -526,8 +381,6 @@ pub struct PreservationLogic {
     pub column: String,
     pub operator: OrderOperator,
     pub variable: String,
-    // pub friendly: String,
-    // pub sql: String,
 }
 
 impl PreservationLogic {
@@ -583,7 +436,6 @@ pub enum Delete {
     Trash,
     Permanent,
 }
-
 impl EnumComboBox for Delete {
     fn as_str(&self) -> &'static str {
         match self {
@@ -913,112 +765,3 @@ pub fn tjf_order() -> Vec<PreservationLogic> {
         },
     ]
 }
-
-// pub fn default_order() -> Vec<String> {
-//     const DEFAULT_ORDER_VEC: [&str; 12] = [
-//         "CASE WHEN Description IS NOT NULL AND Description != '' THEN 0 ELSE 1 END ASC",
-//         "CASE WHEN pathname LIKE '%Audio Files%' THEN 1 ELSE 0 END ASC",
-//         "CASE WHEN pathname LIKE '%LIBRARIES%' THEN 0 ELSE 1 END ASC",
-//         "CASE WHEN pathname LIKE '%LIBRARY%' THEN 0 ELSE 1 END ASC",
-//         "CASE WHEN pathname LIKE '%/LIBRARY%' THEN 0 ELSE 1 END ASC",
-//         "CASE WHEN pathname LIKE '%LIBRARY/%' THEN 0 ELSE 1 END ASC",
-//         "duration DESC",
-//         "channels DESC",
-//         "sampleRate DESC",
-//         "bitDepth DESC",
-//         "BWDate ASC",
-//         "scannedDate ASC",
-//     ];
-//     DEFAULT_ORDER_VEC.map(|s| s.to_string()).to_vec()
-// }
-// pub fn default_order_friendly() -> Vec<String> {
-//     const DEFAULT_ORDER_FRIENDLY: [&str; 12] = [
-//         "Description is NOT Empty",
-//         "Pathname does NOT contain 'Audio Files'",
-//         "Pathname contains 'LIBRARIES'",
-//         "Pathname contains 'LIBRARY'",
-//         "Pathname contains '/LIBRARY'",
-//         "Pathname contains 'LIBRARY/'",
-//         "Largest Duration",
-//         "Largest Channel Count",
-//         "Largest Sample Rate",
-//         "Largest Bit Depth",
-//         "Smallest BWDate",
-//         "Smallest Scanned Date",
-//     ];
-//     DEFAULT_ORDER_FRIENDLY.map(|s| s.to_string()).to_vec()
-// }
-
-// pub fn tjf_order() -> Vec<String> {
-//     const TJF_ORDER_VEC: [&str; 22] = [
-//         "CASE WHEN pathname LIKE '%TJF RECORDINGS%' THEN 0 ELSE 1 END ASC",
-//         "CASE WHEN pathname LIKE '%LIBRARIES%' THEN 0 ELSE 1 END ASC",
-//         "CASE WHEN pathname LIKE '%SHOWS/Tim Farrell%' THEN 1 ELSE 0 END ASC",
-//         "CASE WHEN Description IS NOT NULL AND Description != '' THEN 0 ELSE 1 END ASC",
-//         "CASE WHEN pathname LIKE '%Audio Files%' THEN 1 ELSE 0 END ASC",
-//         "CASE WHEN pathname LIKE '%RECORD%' THEN 0 ELSE 1 END ASC",
-//         "CASE WHEN pathname LIKE '%CREATED SFX%' THEN 0 ELSE 1 END ASC",
-//         "CASE WHEN pathname LIKE '%CREATED FX%' THEN 0 ELSE 1 END ASC",
-//         "CASE WHEN pathname LIKE '%LIBRARY%' THEN 0 ELSE 1 END ASC",
-//         "CASE WHEN pathname LIKE '%/LIBRARY%' THEN 0 ELSE 1 END ASC",
-//         "CASE WHEN pathname LIKE '%LIBRARY/%' THEN 0 ELSE 1 END ASC",
-//         "CASE WHEN pathname LIKE '%SIGNATURE%' THEN 0 ELSE 1 END ASC",
-//         "CASE WHEN pathname LIKE '%PULLS%' THEN 0 ELSE 1 END ASC",
-//         "CASE WHEN pathname LIKE '%EDIT%' THEN 1 ELSE 0 END ASC",
-//         "CASE WHEN pathname LIKE '%MIX%' THEN 1 ELSE 0 END ASC",
-//         "CASE WHEN pathname LIKE '%SESSION%' THEN 1 ELSE 0 END ASC",
-//         "duration DESC",
-//         "channels DESC",
-//         "sampleRate DESC",
-//         "bitDepth DESC",
-//         "BWDate ASC",
-//         "scannedDate ASC",
-//     ];
-//     TJF_ORDER_VEC.map(|s| s.to_string()).to_vec()
-// }
-
-// pub fn tjf_order_friendly() -> Vec<String> {
-//     const TJF_ORDER_FRIENDLY: [&str; 22] = [
-//         "Pathname contains 'TJF RECORDINGS'",
-//         "Pathname contains 'LIBRARIES'",
-//         "Pathname does NOT contain 'SHOWS/Tim Farrell'",
-//         "Description is NOT Empty",
-//         "Pathname does NOT contain 'Audio Files'",
-//         "Pathname contains 'RECORD'",
-//         "Pathname contains 'CREATED SFX'",
-//         "Pathname contains 'CREATED FX'",
-//         "Pathname contains 'LIBRARY'",
-//         "Pathname contains '/LIBRARY'",
-//         "Pathname contains 'LIBRARY/'",
-//         "Pathname contains 'SIGNATURE'",
-//         "Pathname contains 'PULLS'",
-//         "Pathname does NOT contain 'EDIT'",
-//         "Pathname does NOT contain 'MIX'",
-//         "Pathname does NOT contain 'SESSION'",
-//         "Largest Duration",
-//         "Largest Channel Count",
-//         "Largest Sample Rate",
-//         "Largest Bit Depth",
-//         "Smallest BWDate",
-//         "Smallest Scanned Date",
-//     ];
-//     TJF_ORDER_FRIENDLY.map(|s| s.to_string()).to_vec()
-// }
-
-#[derive(Default)]
-struct Progress {
-    count: usize,
-    total: usize,
-}
-
-// #[derive(serde::Deserialize, serde::Serialize)]
-// #[serde(default)]
-// struct Status {
-//     #[serde(skip)]
-//     pub status: AsyncTunnel<Arc<str>>,
-//     #[serde(skip)]
-//     pub records: AsyncTunnel<HashSet<FileRecord>>,
-// }
-
-// #[derive(serde::Deserialize, serde::Serialize)]
-// #[serde(default)]

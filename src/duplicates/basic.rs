@@ -3,21 +3,23 @@ use crate::prelude::*;
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)]
 pub struct Basic {
-    pub config: NodeConfig,
-    match_criteria: SelectableList,
+    pub enabled: bool,
+    #[serde(skip)]
+    pub config: NodeC,
+    pub match_criteria: SelectableList,
     match_null: bool,
-    preservation_order: OrderPanel,
+    pub preservation_order: OrderPanel,
 }
 
 impl Default for Basic {
     fn default() -> Self {
         let mut default = Basic {
-            config: NodeConfig::default(),
+            enabled: true,
+            config: NodeC::default(),
             match_criteria: SelectableList::default(),
             match_null: false,
             preservation_order: OrderPanel::default(),
         };
-        default.config.enabled = true;
         default.match_criteria.set(vec![
             "Channels".to_owned(),
             "Duration".to_owned(),
@@ -29,32 +31,18 @@ impl Default for Basic {
 }
 
 impl Basic {
-    pub fn tjf_default() -> Self {
-        let mut default = Self::default();
-        default.config.enabled = true;
-        default.match_criteria.set(vec!["Filename".to_owned()]);
-        default.preservation_order.list = tjf_order();
-        default
-    }
-
-    pub fn enabled(&self) -> bool {
-        self.config.enabled
-    }
-    pub fn render_progress_bar(&mut self, ui: &mut egui::Ui) {
-        self.config.render_progress_bar(ui);
-    }
-    pub fn abort(&mut self) {
+    fn abort(&mut self) {
         self.config.abort();
     }
 
-    pub fn render(&mut self, ui: &mut egui::Ui, db: &Database) {
-        ui.checkbox(&mut self.config.enabled, "Basic Duplicate Search");
+    fn render(&mut self, ui: &mut egui::Ui, db: &Database) {
+        ui.checkbox(&mut self.enabled, "Basic Duplicate Search");
         ui.horizontal(|ui| {
             ui.add_space(24.0);
             ui.label("Duplicate Match Criteria: ");
         });
         if self.match_criteria.get().is_empty() {
-            self.config.enabled = false;
+            self.enabled = false;
             ui.horizontal(|ui| {
                 ui.add_space(24.0);
                 ui.label(light_red_text("Add Match Criteria to Enable Search").size(14.0));
@@ -96,10 +84,10 @@ impl Basic {
         }
     }
 
-    pub fn gather(&mut self, db: &Database) {
-        if self.config.enabled {
-            let progress_sender = self.config.progress_io.tx.clone();
-            let status_sender = self.config.status_io.tx.clone();
+    fn process(&mut self, db: &Database) {
+        if self.enabled {
+            let progress_sender = self.config.progress.tx.clone();
+            let status_sender = self.config.status.tx.clone();
             let pool = db.pool().unwrap();
             let order = self.preservation_order.extract_sql().clone();
             let match_groups = self.match_criteria.get().to_vec();
@@ -116,10 +104,23 @@ impl Basic {
             })
         }
     }
+}
+
+impl Basic {
+    pub fn tjf_default(&mut self) {
+        *self = Self::default();
+
+        self.match_criteria.set(vec!["Filename".to_owned()]);
+        self.preservation_order.list = tjf_order();
+    }
+
+    pub fn render_progress_bar(&mut self, ui: &mut egui::Ui) {
+        self.config.render(ui);
+    }
 
     pub async fn async_gather(
         pool: SqlitePool,
-        progress_sender: mpsc::Sender<ProgressMessage>,
+        progress_sender: mpsc::Sender<Progress>,
         status_sender: mpsc::Sender<Arc<str>>,
         order: Vec<String>,
         match_groups: Vec<String>,
@@ -168,16 +169,14 @@ impl Basic {
         let _ = status_sender.send("Organizing Records".into()).await;
 
         let total = rows.len();
-        let mut counter = 0;
+        let mut count = 0;
 
         for row in rows {
             file_records.insert(FileRecord::new(&row));
-            counter += 1;
+            count += 1;
 
-            if counter % 100 == 0 {
-                let _ = progress_sender
-                    .send(ProgressMessage::Update(counter, total))
-                    .await;
+            if count % 100 == 0 {
+                let _ = progress_sender.send(Progress { count, total }).await;
             }
         }
 

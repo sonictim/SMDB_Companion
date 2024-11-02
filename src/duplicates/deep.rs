@@ -7,14 +7,14 @@ use std::collections::HashMap;
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 #[serde(default)]
 pub struct Deep {
-    enabled: bool,
+    pub enabled: bool,
     #[serde(skip)]
     pub config: NodeC,
     extensions: AsyncTunnel<Vec<String>>,
-    ignore_extension: bool,
+    pub ignore_extension: bool,
 }
 
-impl Node for Deep {
+impl Deep {
     fn abort(&mut self) {
         self.config.abort();
     }
@@ -42,7 +42,7 @@ impl Node for Deep {
                 let results = get_audio_file_types(&pool).await;
 
                 if let Ok(results) = results {
-                    tx.send(results).await;
+                    let _ = tx.send(results).await;
                 }
             });
 
@@ -99,7 +99,7 @@ impl Deep {
         let _ = status_sender.send("Organizing Results".into()).await;
 
         let total = rows.len();
-        let mut counter: usize = 0;
+        let mut count: usize = 0;
 
         // Use a parallel iterator to process the rows
         let processed_records: Vec<(String, FileRecord)> = rows
@@ -119,15 +119,10 @@ impl Deep {
                 .or_default()
                 .push(file_record);
 
-            counter += 1;
+            count += 1;
 
-            if counter % 100 == 0 {
-                let _ = progress_sender
-                    .send(Progress {
-                        count: counter,
-                        total,
-                    })
-                    .await;
+            if count % 100 == 0 {
+                let _ = progress_sender.send(Progress { count, total }).await;
             }
         }
 

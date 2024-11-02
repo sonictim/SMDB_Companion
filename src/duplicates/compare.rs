@@ -5,26 +5,28 @@ use crate::prelude::*;
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 #[serde(default)]
 pub struct Compare {
-    pub config: NodeConfig,
+    pub enabled: bool,
+    #[serde(skip)]
+    pub config: NodeC,
     #[serde(skip)]
     compare_db: AsyncTunnel<Option<Database>>,
 
 }
 impl Compare {
     pub fn enabled(&self) -> bool {
-        self.config.enabled
+        self.enabled
     }
     pub fn render_progress_bar(&mut self, ui: &mut egui::Ui) {
-        self.config.render_progress_bar(ui);
+        self.config.render(ui);
     }
     pub fn render(&mut self, ui: &mut egui::Ui) {
         self.compare_db.recv2();
         let cdb = self.compare_db.get();
 
         ui.horizontal(|ui| {
-            let enabled = self.config.enabled || self.compare_db.get().is_some();
+            let enabled = self.enabled || self.compare_db.get().is_some();
             let text = enabled_text("Compare against database: ", &enabled);
-            ui.checkbox(&mut self.config.enabled, text)
+            ui.checkbox(&mut self.enabled, text)
                 .on_hover_text_at_pointer
                     ("Filenames from Target Database found in Comparison Database will be Marked for Removal");
             
@@ -38,9 +40,9 @@ impl Compare {
                 }
             }
             else {
-                self.config.enabled = false;
+                self.enabled = false;
                 if ui.button("Select DB").clicked()  {
-                    self.config.enabled = false;
+                    self.enabled = false;
                     let tx = self.compare_db.tx.clone();
                     tokio::spawn(async move {
                         let db = Database::open().await.unwrap();
@@ -52,15 +54,15 @@ impl Compare {
     }
 
 
-    pub fn gather(&mut self, db: &Database) {
+    pub fn process(&mut self, db: &Database) {
         let cdb = self.compare_db.get();
-        if self.config.enabled && cdb.is_some() {
+        if self.enabled && cdb.is_some() {
             if let Some(cdb) = &cdb {
                 self.config.working = true;
-                self.config.status = format!("Comparing against {}", cdb.name).into();
+                self.config.status.set(format!("Comparing against {}", cdb.name).into());
                 let db = db.clone();
                 let cdb = cdb.clone();
-                let tx = self.config.records_io.tx.clone();
+                let tx = self.config.records.tx.clone();
                 let handle = tokio::spawn(async move {
                     println!("tokio spawn compare");
                     let results = Self::async_gather(&db, &cdb).await;

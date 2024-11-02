@@ -14,71 +14,29 @@ use deep::Deep;
 use remove::Remove;
 use tags::Tags;
 
-// #[derive(serde::Deserialize, serde::Serialize)]
-// enum Nodes {
-//     Basic(Basic),
-//     Deep(Deep),
-//     Tags(Tags),
-//     Compare(Compare),
-// }
-
-// impl Nodes {
-//     fn receive(&mut self) {
-//         // Replace RecordType with your actual record type
-//         match self {
-//             Nodes::Basic(basic) => basic.config.receive(),
-//             Nodes::Deep(deep) => deep.config.receive(),
-//             Nodes::Tags(tags) => tags.config.receive(),
-//             Nodes::Compare(compare) => compare.config.receive(),
-//         };
-//     }
-// }
-
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 #[serde(default)]
 pub struct Duplicates {
-    main: NodeConfig,
-    basic: Basic,
+    // main: NodeConfig,
+    pub basic: Basic,
     deep: Deep,
-    tags: Tags,
+    pub tags: Tags,
     compare: Compare,
-
     remove: Remove,
 
-    nodes: Vec<Node>,
-
+    // nodes: Vec<Node>,
     #[serde(skip)]
     gather_dupes: bool,
     #[serde(skip)]
     go_search: bool,
     #[serde(skip)]
     go_remove: bool,
+    #[serde(skip)]
+    pub records_window: RecordsWindow,
 }
 
-// impl Default for Duplicates {
-//     fn default() -> Self {
-//         Duplicates {
-//             Nodes: vec![
-//                 Nodes::Basic(Basic::default()),
-//                 Nodes::Deep(Deep::default()),
-//                 Nodes::Tags(Tags::default()),
-//                 Nodes::Compare(Compare::default()),
-//             ],
-//             main: NodeConfig::default(),
-//             basic: Basic::default(),
-//             deep: Deep::default(),
-//             tags: Tags::default(),
-//             compare: Compare::default(),
-//             remove: Remove::default(),
-//             gather_dupes: false,
-//             go_search: false,
-//             go_remove: false,
-//         }
-//     }
-// }
-
 impl Duplicates {
-    pub fn render(&mut self, ui: &mut egui::Ui, db: Option<&Database>) {
+    pub fn render(&mut self, ui: &mut egui::Ui, db: Option<&Database>, registration: Option<bool>) {
         let Some(db) = db else {
             ui.heading(RichText::new("No Open Database").weak());
             return;
@@ -87,7 +45,7 @@ impl Duplicates {
             ui.heading("No Records in Database");
             return;
         }
-
+        self.receive_async_data();
         ui.columns(2, |column| {
             column[0].heading(RichText::new("Search for Duplicate Records").strong());
             self.basic.render(&mut column[0], db);
@@ -134,12 +92,12 @@ impl Duplicates {
                                     || self.gather_duplicates(db),
                                 );
                             });
-                            if !self.handles_active() && !self.main.records.is_empty() {
+                            if !self.handles_active() && !self.remove.config.records.is_empty() {
                                 column[1].horizontal(|ui| {
                                     rt_button(
                                         ui,
                                         light_red_text("Remove Duplicates").size(20.0).strong(),
-                                        || self.remove_duplicates(db),
+                                        || self.remove.remove_duplicates(db),
                                     );
                                 });
                             }
@@ -157,155 +115,67 @@ impl Duplicates {
             if self.go_remove && self.go_search {
                 self.go_remove = false;
                 self.go_search = false;
-                self.remove_duplicates(db);
+                self.remove.remove_duplicates(db);
             }
         });
         empty_line(ui);
 
         ui.horizontal(|ui| {
-            if self.main.working {
+            if self.remove.config.working {
                 ui.spinner();
             }
-            ui.label(RichText::new(&*self.main.status).strong());
+            ui.label(RichText::new(&*self.remove.config.status).strong());
         });
 
-        // if self.registration.valid == Some(true)
-        //     && !self.handles_active()
-        //     && !self.main.records.is_empty()
-        //     && ui.button("Show Records").clicked()
-        // {
-        //     let mut marked_records: Vec<&str> = self
-        //         .main
-        //         .records
-        //         .par_iter() // Use parallel iterator
-        //         .map(|s| &*s.path) // Convert &String to &str
-        //         .collect();
+        if registration == Some(true)
+            && !self.handles_active()
+            && !self.remove.config.records.is_empty()
+            && ui.button("Show Records").clicked()
+        {
+            self.records_window.open(&self.remove.config.records);
+        }
 
-        //     // Sort in parallel
-        //     marked_records.par_sort();
-        //     self.marked_records = marked_records.join("\n");
-        //     self.scroll_to_top = true;
-        //     self.records_window = true;
-        // }
-
-        if self.main.working {
+        if self.remove.config.working {
             ui.add(
-                egui::ProgressBar::new(self.main.progress.0 / self.main.progress.1)
-                    .desired_height(4.0),
+                egui::ProgressBar::new(
+                    self.remove.config.progress.0 / self.remove.config.progress.1,
+                )
+                .desired_height(4.0),
             );
         }
     }
 
     pub fn gather_duplicates(&mut self, db: &Database) {
         self.abort_all();
-        self.main.records.clear();
-        // let Some(pool) = db.pool() else { return };
+        self.remove.config.records.clear();
+        self.remove.config.status = "Searching for Duplicates".into();
 
-        self.main.status = "Searching for Duplicates".into();
-
-        self.basic.gather(db);
-        self.deep.gather(db);
+        self.basic.process(db);
+        self.deep.process(db);
         self.tags.gather(db);
         self.compare.gather(db);
-
-        // if self.basic.enabled() {
-        //     let progress_sender = self.basic.progress_io.tx.clone();
-        //     let status_sender = self.basic.status_io.tx.clone();
-        //     let pool = pool.clone();
-        //     let order = self.order_panel.extract_sql().clone();
-        //     let match_groups = self.match_criteria.get().to_vec();
-        //     let match_null = self.match_null;
-        //     self.basic.wrap_async(move || {
-        //         self.basic.gather(
-        //             pool,
-        //             progress_sender,
-        //             status_sender,
-        //             order,
-        //             match_groups,
-        //             match_null,
-        //         )
-        //     })
-        // }
-
-        // if self.deep.enabled() {
-        //     let progress_sender = self.deep.progress_io.tx.clone();
-        //     let status_sender = self.deep.status_io.tx.clone();
-        //     let pool = pool.clone();
-        //     let ignore = self.ignore_extension;
-        //     self.deep.wrap_async(move || Deep::gather(self, db))
-        // }
-
-        // if self.tags.enabled {
-        //     let progress_sender = self.tags.progress_io.tx.clone();
-        //     let status_sender = self.tags.status_io.tx.clone();
-        //     let pool = pool.clone();
-        //     let tags = self.tags_panel.list().to_vec();
-        //     self.tags.wrap_async(move || {
-        //         gather_filenames_with_tags(pool, progress_sender, status_sender, tags)
-        //     });
-        // }
-
-        // if self.compare.enabled && self.compare_db.is_some() {
-        //     if let Some(cdb) = &self.compare_db {
-        //         self.compare.working = true;
-        //         self.compare.status = format!("Comparing against {}", cdb.name).into();
-
-        //         let tx = self.compare.records_io.tx.clone();
-        //         let p = pool.clone();
-        //         let Some(c_pool) = cdb.pool() else {
-        //             return;
-        //         };
-        //         let handle = tokio::spawn(async move {
-        //             println!("tokio spawn compare");
-        //             let results = gather_compare_database_overlaps(&p, &c_pool).await;
-        //             if (tx.send(results.expect("error on compare db")).await).is_err() {
-        //                 eprintln!("Failed to send db");
-        //             }
-        //         });
-        //         self.compare.handle = Some(handle);
-        //     }
-        // }
     }
 
-    // fn reset_to_defaults(&mut self) {
-    //     let db = self.db.take();
-    //     let panel = self.my_panel;
-    //     let registration = self.registration.clone();
-    //     *self = Self::default();
-    //     self.db = db;
-    //     self.my_panel = panel;
-    //     self.registration = registration;
-    //     self.check_for_updates();
-    // }
+    pub fn reset_to_tjf_defaults(&mut self) {
+        *self = Self::default();
+        self.basic.tjf_default();
+        self.deep.enabled = true;
+        self.deep.ignore_extension = true;
+        self.tags.config.enabled = true;
+        self.tags.list.set(tjf_tags());
+        self.remove.dupes_db = false;
+    }
 
-    // fn reset_to_tjf_defaults(&mut self) {
-    //     self.default();
-    //     self.order_panel.list = tjf_order();
-    //     self.tags_panel.list.set(tjf_tags());
-    //     self.deep.enabled = true;
-    //     self.tags.enabled = true;
-    //     self.dupes_db = false;
-    //     self.ignore_extension = true;
-    //     self.match_criteria.set(vec!["Filename".to_owned()]);
-    // }
+    pub fn clear_status(&mut self) {
+        self.basic.config.clear();
+        self.deep.config.clear();
+        self.tags.config.clear();
+        self.compare.config.clear();
+        self.remove.config.clear();
+    }
 
-    // fn clear_status(&mut self) {
-    //     self.main.default();
-    //     self.main.status = "".into();
-    //     self.main.records.clear();
-    //     self.basic.status = "".into();
-    //     self.basic.records.clear();
-    //     self.tags.status = "".into();
-    //     self.tags.records.clear();
-    //     self.deep.status = "".into();
-    //     self.deep.records.clear();
-    //     self.compare.status = "".into();
-    //     self.compare.records.clear();
-    //     self.extensions_io.waiting = false;
-    // }
-
-    fn abort_all(&mut self) {
-        self.main.abort();
+    pub fn abort_all(&mut self) {
+        self.remove.config.abort();
         self.basic.config.abort();
         self.deep.config.abort();
         self.tags.config.abort();
@@ -313,7 +183,7 @@ impl Duplicates {
     }
 
     fn handles_active(&self) -> bool {
-        self.main.handle.is_some()
+        self.remove.config.handle.is_some()
             || self.basic.config.handle.is_some()
             || self.deep.config.handle.is_some()
             || self.tags.config.handle.is_some()
@@ -321,50 +191,101 @@ impl Duplicates {
     }
 
     fn search_eligible(&self) -> bool {
-        self.main.enabled
-            || self.basic.enabled()
-            || self.deep.enabled()
+        self.remove.config.enabled
+            || self.basic.enabled
+            || self.deep.enabled
             || self.tags.enabled()
             || self.compare.enabled()
     }
 
     fn receive_async_data(&mut self) {
-        if let Some(records) = self.main.receive() {
+        if let Some(records) = self.remove.config.receive() {
             // self.clear_status();
-            self.main.status = format! {"Removed {} duplicates", records.len()}.into();
+            self.remove.config.status = format! {"Removed {} duplicates", records.len()}.into();
         }
-
-        let main = &mut self.main; // Create a mutable reference to main
 
         if let Some(records) = self.basic.config.receive() {
-            self.main.records.extend(records);
-            self.update_main_status();
+            self.update_main_status(records);
         }
         if let Some(records) = self.deep.config.receive() {
-            self.main.records.extend(records);
-            self.update_main_status();
+            self.update_main_status(records);
         }
         if let Some(records) = self.tags.config.receive() {
-            self.main.records.extend(records);
-            self.update_main_status();
+            self.update_main_status(records);
         }
         if let Some(records) = self.compare.config.receive() {
-            self.main.records.extend(records);
-            self.update_main_status();
+            self.update_main_status(records);
         }
     }
 
-    fn update_main_status(&mut self) {
+    fn update_main_status(&mut self, records: HashSet<FileRecord>) {
         // if self.handles_active() { return }
-
-        if self.main.records.is_empty() {
-            self.main.status = "No Records Marked for Removal".into()
+        self.remove.config.records.get().extend(records);
+        if self.remove.config.records.get().is_empty() {
+            self.remove.config.status = "No Records Marked for Removal".into()
         } else {
-            self.main.status = format!(
-                "{} total records marked for removal",
-                self.main.records.len()
-            )
-            .into();
+            self.remove.config.status.set(
+                format!(
+                    "{} total records marked for removal",
+                    self.remove.config.records.get().len()
+                )
+                .into(),
+            );
         }
+    }
+}
+
+#[derive(Default)]
+pub struct RecordsWindow {
+    open: bool,
+    scroll_to_top: bool,
+    Display_Data: String,
+}
+
+impl RecordsWindow {
+    pub fn render(&mut self, ctx: &egui::Context) {
+        let available_size = ctx.available_rect(); // Get the full available width and height
+        let width = available_size.width() - 20.0;
+        let height = available_size.height();
+        egui::Window::new("Records Marked as Duplicates")
+            .open(&mut self.open) // Control whether the window is open
+            .resizable(false) // Make window non-resizable if you want it fixed
+            .min_width(width)
+            .min_height(height)
+            .max_width(width)
+            .max_height(height)
+            .show(ctx, |ui| {
+                // ui.label("To Be Implemented\n Testing line break");
+
+                if self.scroll_to_top {
+                    egui::ScrollArea::vertical()
+                        .max_height(height)
+                        .max_width(width)
+                        .scroll_offset(egui::vec2(0.0, 0.0))
+                        .show(ui, |ui| {
+                            ui.label(RichText::new(&self.Display_Data).size(14.0));
+                        });
+                    self.scroll_to_top = false;
+                } else {
+                    egui::ScrollArea::vertical()
+                        .max_height(height)
+                        .max_width(width)
+                        .show(ui, |ui| {
+                            ui.label(RichText::new(&self.Display_Data).size(14.0));
+                        });
+                }
+            });
+    }
+    fn open(&mut self, records: &HashSet<FileRecord>) {
+        let mut marked_records: Vec<&str> = records
+            .par_iter() // Use parallel iterator
+            .map(|s| &*s.path) // Convert &String to &str
+            .collect();
+
+        // Sort in parallel
+        marked_records.par_sort();
+        self.Display_Data = marked_records.join("\n");
+        self.scroll_to_top = true;
+        self.open = true;
     }
 }
