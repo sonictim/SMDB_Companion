@@ -66,7 +66,7 @@ impl Duplicates {
 
         ui.horizontal(|ui| {
             if self.handles_active() {
-                self.remove.enabled = false;
+                self.remove.run = false;
                 button(ui, "Cancel", || self.abort_all());
             } else {
                 self.remove.run = true;
@@ -92,7 +92,6 @@ impl Duplicates {
                             });
                             if !self.handles_active()
                                 && !self.remove.config.records.get().is_empty()
-                                && self.remove.run
                             {
                                 column[1].horizontal(|ui| {
                                     rt_button(
@@ -114,6 +113,8 @@ impl Duplicates {
             }
 
             if self.remove.enabled && self.remove.run {
+                self.remove.enabled = false;
+                self.remove.run = false;
                 self.remove.remove_duplicates(db, registration);
             }
         });
@@ -203,7 +204,7 @@ impl Duplicates {
 
     fn receive_async_data(&mut self) {
         if let Some(records) = self.remove.config.receive() {
-            // self.clear_status();
+            self.clear_status();
             self.remove
                 .config
                 .status

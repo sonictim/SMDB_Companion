@@ -84,8 +84,7 @@ impl Remove {
                 .set("Unregistered!\nPlease Register to Remove Duplicates".into());
             return;
         }
-        self.enabled = false;
-        self.run = false;
+
         let mut work_db_path: Option<String> = Some(db.path.clone());
         let mut duplicate_db_path: Option<String> = None;
         let records = self.config.records.get().clone();
@@ -131,6 +130,7 @@ impl Remove {
             let _ = self.delete_action.delete_files(files);
         }
         self.enabled = false;
+        self.run = false;
     }
 
     pub async fn delete_file_records(
