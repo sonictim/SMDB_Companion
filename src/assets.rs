@@ -1,5 +1,4 @@
-use crate::processing::open_download_url;
-use eframe::egui::{self, RichText, Ui};
+use crate::prelude::*;
 
 // A reusable button component that takes a function (callback) to run when clicked
 pub fn button<F>(ui: &mut Ui, label: &str, action: F)

@@ -1,7 +1,6 @@
 use crate::prelude::*;
 
 use crate::assets::*;
-use crate::processing::*;
 
 use dirs::home_dir;
 use rfd::FileDialog;
@@ -9,6 +8,11 @@ use sqlx::sqlite::SqliteRow;
 
 use std::fs::{self};
 use std::hash::Hash;
+
+pub fn open_download_url() {
+    let url = r#"https://drive.google.com/open?id=1qdGqoUMqq_xCrbA6IxUTYliZUmd3Tn3i&usp=drive_fs"#;
+    let _ = webbrowser::open(url).is_ok();
+}
 
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)]
@@ -305,6 +309,19 @@ impl Database {
 
         Ok(())
     }
+}
+
+pub async fn get_audio_file_types(pool: &SqlitePool) -> Result<Vec<String>, sqlx::Error> {
+    let rows = sqlx::query("SELECT DISTINCT AudioFileType FROM justinmetadata")
+        .fetch_all(pool)
+        .await?;
+
+    let audio_file_types: Vec<String> = rows
+        .iter()
+        .filter_map(|row| row.get::<Option<String>, _>("AudioFileType")) // Access the column directly
+        .collect();
+
+    Ok(audio_file_types)
 }
 
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]

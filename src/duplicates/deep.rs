@@ -195,16 +195,3 @@ fn get_root_filename(filename: &str, ignore_extension: bool) -> Option<String> {
     // Reattach the extension if it's not being ignored
     Some(format!("{name}.{extension}"))
 }
-
-pub async fn get_audio_file_types(pool: &SqlitePool) -> Result<Vec<String>, sqlx::Error> {
-    let rows = sqlx::query("SELECT DISTINCT AudioFileType FROM justinmetadata")
-        .fetch_all(pool)
-        .await?;
-
-    let audio_file_types: Vec<String> = rows
-        .iter()
-        .filter_map(|row| row.get::<Option<String>, _>("AudioFileType")) // Access the column directly
-        .collect();
-
-    Ok(audio_file_types)
-}

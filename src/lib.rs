@@ -8,10 +8,6 @@ mod find_replace;
 pub use assets::*;
 mod config;
 
-// mod dupe_panel;
-mod processing;
-pub use processing::*;
-
 mod duplicates;
 pub use duplicates::*;
 

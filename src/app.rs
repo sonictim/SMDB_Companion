@@ -1,5 +1,10 @@
 use crate::prelude::*;
 
+use clipboard::{ClipboardContext, ClipboardProvider};
+use reqwest::Client;
+use sha2::{Digest, Sha256};
+use std::error::Error;
+
 
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
@@ -449,7 +454,7 @@ impl RegistrationPanel {
             ui.label("Email: ");
             ui.text_edit_singleline(&mut self.email);
         });
-        self.key = generate_license_key(&self.name, &self.email);
+        self.key = self.generate_license_key(&self.name, &self.email);
         ui.horizontal(|ui| {
             ui.label("License Key: ");
             ui.label(&self.key);
@@ -468,7 +473,7 @@ impl RegistrationPanel {
 
     }
     pub fn validate(&mut self) {
-        if generate_license_key(&self.name, &self.email) == self.key {
+        if self.generate_license_key(&self.name, &self.email) == self.key {
             self.valid = Some(true);
         } else {
             self.valid = Some(false);
@@ -480,6 +485,38 @@ impl RegistrationPanel {
         self.key.clear();
         self.valid = Some(false);
     }
+    fn generate_license_key(&self, username: &str, email: &str) -> String {
+        let salt = "Valhalla Delay";
+        let mut hasher = Sha256::new();
+        hasher.update(format!("{}{}{}", username, email, salt).as_bytes());
+        let hash = hasher.finalize();
+        hex::encode_upper(hash)
+    }
 }
 
+
+pub fn copy_to_clipboard(text: String) {
+    let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
+
+    ctx.set_contents(text).unwrap();
+}
+
+// pub fn remove_all_spaces(input: &str) -> String {
+//     input.chars().filter(|c| !c.is_whitespace()).collect()
+// }
+
+pub async fn fetch_latest_version() -> Result<String, Box<dyn Error>> {
+    let file_id = "1C8jyVjkMgeglYK-FnmTuoRqwf5Nd6PGG";
+    let download_url = format!("https://drive.google.com/uc?export=download&id={}", file_id);
+    let client = Client::new();
+
+    let response = client.get(&download_url).send().await?;
+
+    if response.status().is_success() {
+        let content = response.text().await?;
+        Ok(content.trim().to_string())
+    } else {
+        Err(format!("Failed to retrieve the file: {}", response.status()).into())
+    }
+}
 
