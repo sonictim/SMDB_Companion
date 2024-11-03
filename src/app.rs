@@ -5,6 +5,14 @@ use reqwest::Client;
 use sha2::{Digest, Sha256};
 use std::error::Error;
 
+#[derive(PartialEq, serde::Serialize, Deserialize, Clone, Copy)]
+pub enum Panel {
+    Duplicates,
+    Order,
+    Tags,
+    Find,
+    KeyGen,
+}
 
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
@@ -31,7 +39,7 @@ pub struct App {
     my_panel: Panel,
     find_panel: FindPanel,
     duplicates_panel: Duplicates, 
-    registration: RegistrationPanel,
+    registration: Registration,
 }
 
 impl Default for App {
@@ -48,7 +56,7 @@ impl Default for App {
             my_panel: Panel::Duplicates,
             find_panel: FindPanel::default(),
             duplicates_panel: Duplicates::default(),
-            registration: RegistrationPanel::default(),
+            registration: Registration::default(),
         }
     }
 }
@@ -436,7 +444,7 @@ impl App {
 
 #[derive(serde::Deserialize, serde::Serialize, Default, Clone)]
 #[serde(default)]
-pub struct RegistrationPanel {
+pub struct Registration {
     pub name: String,
     pub email: String,
     pub key: String,
@@ -444,7 +452,7 @@ pub struct RegistrationPanel {
     pub valid: Option<bool>,
 }
 
-impl RegistrationPanel {
+impl Registration {
     pub fn render(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.label("Name: ");
@@ -494,6 +502,54 @@ impl RegistrationPanel {
     }
 }
 
+pub fn update_window(ctx: &egui::Context, open: &mut Option<bool>, version: &str, update: bool) {
+    let width = 200.0;
+    let height = 100.0;
+    let mut close_window = false;
+
+    if let Some(open) = open {
+        if update {
+            egui::Window::new(RichText::new("Update Available").strong())
+                .open(open) // Control whether the window is open
+                .resizable(false) // Make window non-resizable if you want it fixed
+                .min_width(width)
+                .min_height(height)
+                .max_width(width)
+                .max_height(height)
+                .show(ctx, |ui| {
+                    ui.vertical_centered(|ui| {
+                        ui.label(format!("Latest Version is {}", version));
+                        large_button(ui, "Download", || {
+                            open_download_url();
+                            close_window = true; // Set the flag to close the window
+                        });
+                    });
+                });
+        } else {
+            egui::Window::new(RichText::new("No Update Available").strong())
+                .open(open) // Control whether the window is open
+                .resizable(false) // Make window non-resizable if you want it fixed
+                .min_width(width)
+                .min_height(height)
+                .max_width(width)
+                .max_height(height)
+                .show(ctx, |ui| {
+                    ui.vertical_centered(|ui| {
+                        ui.label(format!("Version {} is the Current Version", version));
+                        // large_button(ui, "Download", || {
+                        //     open_download_url();
+                        //     close_window = true; // Set the flag to close the window
+                        // });
+                    });
+                });
+        }
+    }
+
+    if close_window {
+        *open = None; // Dereference to set the value outside of the closure
+    }
+}
+
 
 pub fn copy_to_clipboard(text: String) {
     let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
@@ -518,5 +574,10 @@ pub async fn fetch_latest_version() -> Result<String, Box<dyn Error>> {
     } else {
         Err(format!("Failed to retrieve the file: {}", response.status()).into())
     }
+}
+
+pub fn open_download_url() {
+    let url = r#"https://drive.google.com/open?id=1qdGqoUMqq_xCrbA6IxUTYliZUmd3Tn3i&usp=drive_fs"#;
+    let _ = webbrowser::open(url).is_ok();
 }
 

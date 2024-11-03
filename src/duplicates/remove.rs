@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use std::fs::{self};
 
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)]
@@ -76,7 +75,7 @@ impl Remove {
         });
     }
 
-    pub fn remove_duplicates(&mut self, db: &Database, registration: Option<bool>) {
+    pub fn process(&mut self, db: &Database, registration: Option<bool>) {
         if registration == Some(false) {
             self.config.records.clear();
             self.config

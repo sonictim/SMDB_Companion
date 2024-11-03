@@ -3,11 +3,9 @@ use crate::prelude::*;
 pub mod basic;
 pub mod compare;
 pub mod deep;
-pub mod nodes;
 pub mod remove;
 pub mod tags;
 
-use crate::config::*;
 use basic::Basic;
 use compare::Compare;
 use deep::Deep;
@@ -64,6 +62,25 @@ impl Duplicates {
         ui.separator();
         empty_line(ui);
 
+        self.render_action_buttons(ui, db, registration);
+
+        empty_line(ui);
+
+        ui.horizontal(|ui| {
+            if self.remove.config.working {
+                ui.spinner();
+            }
+            ui.label(RichText::new(&**self.remove.config.status.get()).strong());
+        });
+
+        self.render_records_button(ui, registration);
+    }
+    fn render_action_buttons(
+        &mut self,
+        ui: &mut egui::Ui,
+        db: &Database,
+        registration: Option<bool>,
+    ) {
         ui.horizontal(|ui| {
             if self.handles_active() {
                 self.remove.run = false;
@@ -78,7 +95,7 @@ impl Duplicates {
                             || {
                                 self.remove.enabled = true;
                                 self.remove.run = false;
-                                self.gather_duplicates(db);
+                                self.gather(db);
                             },
                         );
                     } else {
@@ -87,7 +104,7 @@ impl Duplicates {
                                 rt_button(
                                     ui,
                                     RichText::new("Search for Duplicates").size(20.0).strong(),
-                                    || self.gather_duplicates(db),
+                                    || self.gather(db),
                                 );
                             });
                             if !self.handles_active()
@@ -97,7 +114,7 @@ impl Duplicates {
                                     rt_button(
                                         ui,
                                         light_red_text("Remove Duplicates").size(20.0).strong(),
-                                        || self.remove.remove_duplicates(db, registration),
+                                        || self.remove.process(db, registration),
                                     );
                                 });
                             }
@@ -115,18 +132,12 @@ impl Duplicates {
             if self.remove.enabled && self.remove.run {
                 self.remove.enabled = false;
                 self.remove.run = false;
-                self.remove.remove_duplicates(db, registration);
+                self.remove.process(db, registration);
             }
         });
-        empty_line(ui);
+    }
 
-        ui.horizontal(|ui| {
-            if self.remove.config.working {
-                ui.spinner();
-            }
-            ui.label(RichText::new(&**self.remove.config.status.get()).strong());
-        });
-
+    fn render_records_button(&mut self, ui: &mut egui::Ui, registration: Option<bool>) {
         if registration == Some(true)
             && !self.handles_active()
             && !self.remove.config.records.get().is_empty()
@@ -146,7 +157,7 @@ impl Duplicates {
         }
     }
 
-    pub fn gather_duplicates(&mut self, db: &Database) {
+    pub fn gather(&mut self, db: &Database) {
         self.abort_all();
         self.remove.config.records.clear();
         self.remove
@@ -245,6 +256,126 @@ impl Duplicates {
     }
 }
 
+pub struct Node {
+    pub working: bool,
+    pub records: AsyncTunnel<HashSet<FileRecord>>,
+    pub status: AsyncTunnel<Arc<str>>,
+    pub progress: AsyncTunnel<Progress>,
+    pub handle: Option<tokio::task::JoinHandle<()>>,
+}
+
+impl Default for Node {
+    fn default() -> Self {
+        Self {
+            records: AsyncTunnel::new(1),
+            working: false,
+            status: AsyncTunnel::new(1),
+            progress: AsyncTunnel::new(32),
+            handle: None,
+        }
+    }
+}
+
+impl Node {
+    pub fn clear(&mut self) {
+        *self = Self::default();
+    }
+
+    pub fn abort(&mut self) {
+        if let Some(handle) = &self.handle {
+            handle.abort();
+        }
+        self.clear();
+    }
+
+    pub fn receive_hashset(&mut self) -> Option<HashSet<FileRecord>> {
+        if let Some(records) = self.records.recv() {
+            self.records.set(records.clone());
+            self.handle = None;
+            self.working = false;
+            self.progress.set(Progress::default());
+            self.status
+                .set(format! {"Found {} duplicate records", records.len()}.into());
+            return Some(records);
+        }
+        None
+    }
+
+    pub fn receive_progress(&mut self) {
+        while let Some(progress) = self.progress.recv() {
+            self.progress.set(progress);
+        }
+    }
+
+    pub fn receive_status(&mut self) {
+        while let Some(message) = self.status.recv() {
+            self.status.set(message);
+        }
+    }
+    pub fn receive(&mut self) -> Option<HashSet<FileRecord>> {
+        self.receive_progress();
+        self.receive_status();
+        self.receive_hashset()
+    }
+
+    pub fn render(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            if self.working {
+                ui.spinner();
+            } else {
+                ui.add_space(24.0)
+            }
+            ui.label(RichText::new(&**self.status.get()).strong());
+            if self.working {
+                ui.label(format!(
+                    "Progress: {} / {}",
+                    self.progress.get().count,
+                    self.progress.get().total
+                ));
+            }
+        });
+
+        if self.working {
+            ui.add(
+                egui::ProgressBar::new(
+                    self.progress.get().count as f32 / self.progress.get().total as f32,
+                )
+                .desired_height(4.0),
+            );
+        }
+        empty_line(ui);
+    }
+    pub fn wrap_async<F, T>(&mut self, action: F)
+    where
+        F: FnOnce() -> T + Send + 'static,
+        T: std::future::Future<Output = Result<HashSet<FileRecord>, sqlx::Error>> + Send + 'static,
+    {
+        self.working = true;
+        let tx = self.records.tx.clone();
+
+        let handle = tokio::spawn(async move {
+            let results = action().await;
+            if (tx.send(results.expect("Tokio Results Error HashSet")).await).is_err() {
+                eprintln!("Failed to send db");
+            }
+        });
+        self.handle = Some(handle);
+    }
+}
+
+#[derive(Default)]
+pub struct Progress {
+    pub count: usize,
+    pub total: usize,
+}
+
+impl Progress {
+    pub fn set(&mut self, count: usize, total: usize) {
+        self.count = count;
+        self.total = total;
+    }
+}
+
 #[derive(Default)]
 pub struct RecordsWindow {
     open: bool,
@@ -297,5 +428,151 @@ impl RecordsWindow {
         self.Display_Data = marked_records.join("\n");
         self.scroll_to_top = true;
         self.open = true;
+    }
+}
+
+#[derive(PartialEq, serde::Serialize, Deserialize, Clone, Copy, Default)]
+pub enum OrderOperator {
+    Largest,
+    Smallest,
+    #[default]
+    Contains,
+    DoesNotContain,
+    Is,
+    IsNot,
+    IsEmpty,
+    IsNotEmpty,
+}
+
+impl EnumComboBox for OrderOperator {
+    fn as_str(&self) -> &'static str {
+        match self {
+            OrderOperator::Largest => "Largest",
+            OrderOperator::Smallest => "Smallest",
+            OrderOperator::Is => "is",
+            OrderOperator::IsNot => "is NOT",
+            OrderOperator::Contains => "Contains",
+            OrderOperator::DoesNotContain => "Does NOT Contain",
+            OrderOperator::IsEmpty => "Is Empty",
+            OrderOperator::IsNotEmpty => "Is NOT Empty",
+        }
+    }
+
+    fn variants() -> &'static [OrderOperator] {
+        &[
+            OrderOperator::Largest,
+            OrderOperator::Smallest,
+            OrderOperator::Contains,
+            OrderOperator::DoesNotContain,
+            OrderOperator::Is,
+            OrderOperator::IsNot,
+            OrderOperator::IsEmpty,
+            OrderOperator::IsNotEmpty,
+        ]
+    }
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Clone)]
+pub struct PreservationLogic {
+    pub column: String,
+    pub operator: OrderOperator,
+    pub variable: String,
+}
+
+impl PreservationLogic {
+    pub fn get_sql(&self) -> String {
+        match self.operator {
+            OrderOperator::Largest => format! {"{} DESC", self.column.to_lowercase()},
+            OrderOperator::Smallest => format!("{} ASC", self.column.to_lowercase()),
+            OrderOperator::Is => format!(
+                "CASE WHEN {} IS '%{}%' THEN 0 ELSE 1 END ASC",
+                self.column, self.variable,
+            ),
+            OrderOperator::IsNot => format!(
+                "CASE WHEN {} IS '%{}%' THEN 1 ELSE 0 END ASC",
+                self.column, self.variable
+            ),
+            OrderOperator::Contains => format!(
+                "CASE WHEN {} LIKE '%{}%' THEN 0 ELSE 1 END ASC",
+                self.column, self.variable
+            ),
+            OrderOperator::DoesNotContain => format!(
+                "CASE WHEN {} LIKE '%{}%' THEN 1 ELSE 0 END ASC",
+                self.column, self.variable
+            ),
+            OrderOperator::IsEmpty => format!(
+                "CASE WHEN {} IS NOT NULL AND {} != '' THEN 1 ELSE 0 END ASC",
+                self.column, self.column
+            ),
+            OrderOperator::IsNotEmpty => format!(
+                "CASE WHEN {} IS NOT NULL AND {} != '' THEN 0 ELSE 1 END ASC",
+                self.column, self.column
+            ),
+        }
+    }
+    pub fn get_friendly(&self) -> String {
+        match self.operator {
+            OrderOperator::Largest => format! {"Largest {}", self.column},
+            OrderOperator::Smallest => format!("Smallest {} ", self.column),
+            OrderOperator::Is => format!("{} is '{}'", self.column, self.variable),
+            OrderOperator::IsNot => format!("{} is NOT '{}'", self.column, self.variable),
+            OrderOperator::Contains => format!("{} contains '{}'", self.column, self.variable),
+            OrderOperator::DoesNotContain => {
+                format!("{} does NOT contain '{}'", self.column, self.variable)
+            }
+            OrderOperator::IsEmpty => format!("{} is empty", self.column,),
+            OrderOperator::IsNotEmpty => format!("{} is NOT empty", self.column,),
+        }
+    }
+}
+
+#[derive(PartialEq, serde::Serialize, Deserialize, Clone, Copy, Default)]
+pub enum Delete {
+    #[default]
+    Trash,
+    Permanent,
+}
+impl EnumComboBox for Delete {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Delete::Trash => "Move to Trash",
+            Delete::Permanent => "Permanently Delete",
+        }
+    }
+    fn variants() -> &'static [Delete] {
+        &[Delete::Trash, Delete::Permanent]
+    }
+}
+impl Delete {
+    pub fn delete_files(&self, files: HashSet<&str>) -> Result<(), Box<dyn std::error::Error>> {
+        println!("Removing Files");
+
+        // Filter valid files directly and collect them into a Vec
+        let valid_files: Vec<&str> = files
+            .par_iter()
+            .filter(|&&file| Path::new(file).exists())
+            .cloned() // Convert &str to str for collection
+            .collect();
+
+        match self {
+            Delete::Trash => {
+                if !valid_files.is_empty() {
+                    trash::delete_all(&valid_files).map_err(|e| {
+                        eprintln!("Move to Trash Failed: {}", e);
+                        e
+                    })?;
+                }
+            }
+            Delete::Permanent => {
+                for file in valid_files {
+                    fs::remove_file(file).map_err(|e| {
+                        eprintln!("Failed to remove file {}: {}", file, e);
+                        e
+                    })?;
+                }
+            }
+        }
+
+        Ok(())
     }
 }

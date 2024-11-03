@@ -6,12 +6,12 @@ pub use app::App;
 mod assets;
 mod find_replace;
 pub use assets::*;
-mod config;
 
 mod duplicates;
 pub use duplicates::*;
 
 mod prelude;
+pub use crate::prelude::*;
 
 pub use eframe::egui::{self, RichText, Ui};
 pub use sqlx::sqlite::SqlitePool;
