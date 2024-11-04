@@ -197,7 +197,7 @@ impl FindPanel {
     }
 
     fn receive_async_data(&mut self) {
-        if let Ok(count) = self.find_io.rx.try_recv() {
+        if let Ok(count) = self.find_io.rx.lock().unwrap().try_recv() {
             self.count = count;
             self.handle = None;
         }

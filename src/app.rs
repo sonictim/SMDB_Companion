@@ -182,13 +182,11 @@ impl App {
 
             if let Some(db) = self.db.recv() {
                 self.db.set(db);
-            }      
-    
-            // if let Some(db) = &mut self.db.get_mut() {
-            //     if let Some(records) = self.extensions_io.recv() {
-            //         db.file_extensions = records;
-            //     }
-            // }
+            }    
+            
+            if let Some(db) = self.db.get_mut() {
+                db.extensions.recv2();
+            }
             
             if let Some(version) = self.update.latest_version.recv() {
                 self.update.latest_version.set(version);
@@ -203,6 +201,9 @@ impl App {
                     self.update.available = true;
                 }
             }
+          
+    
+
         }
     
     

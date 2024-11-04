@@ -47,7 +47,7 @@ impl NodeCommon for Deep {
                 "Filenames ending in .#, .#.#.#, or .M will be examined as possible duplicates",
             );
 
-        match db.extensions.len() {
+        match db.extensions.get().len() {
             0 => {
                 ui.horizontal(|ui| {
                     ui.spinner();
@@ -59,13 +59,13 @@ impl NodeCommon for Deep {
                 ui.horizontal(|ui| {
                     ui.add_space(24.0);
                     ui.label("All Records are of Filetype:");
-                    ui.label(&db.extensions[0]);
+                    ui.label(&db.extensions.get()[0]);
                 });
             }
             _ => {
                 ui.horizontal(|ui| {
                     ui.add_space(24.0);
-                    let text = &db.extensions.join(", ");
+                    let text = &db.extensions.get().join(", ");
                     ui.label(format! {"Database contains: {text}"});
                 });
                 ui.horizontal(|ui| {

@@ -8,7 +8,7 @@ pub use sqlx::{sqlite::SqlitePool, Row};
 pub use std::collections::HashSet;
 pub use std::path::Path;
 pub use std::result::Result;
-pub use std::sync::Arc;
+pub use std::sync::{Arc, Mutex};
 pub use tokio::sync::mpsc;
 
 pub use dirs::home_dir;
@@ -52,7 +52,7 @@ pub struct AsyncTunnel<T: Default> {
     #[serde(skip)]
     pub tx: mpsc::Sender<T>,
     #[serde(skip)]
-    pub rx: mpsc::Receiver<T>,
+    pub rx: Arc<Mutex<mpsc::Receiver<T>>>,
     #[serde(skip)]
     pub waiting: bool,
 }
@@ -63,13 +63,24 @@ impl<T: Default> Default for AsyncTunnel<T> {
     }
 }
 
+impl<T: Clone + std::default::Default> Clone for AsyncTunnel<T> {
+    fn clone(&self) -> Self {
+        Self {
+            data: self.data.clone(),
+            tx: self.tx.clone(),
+            rx: self.rx.clone(),
+            waiting: self.waiting,
+        }
+    }
+}
+
 impl<T: Default> AsyncTunnel<T> {
     pub fn new(channels: usize) -> AsyncTunnel<T> {
         let (tx, rx) = mpsc::channel(channels);
         AsyncTunnel {
             data: T::default(),
             tx,
-            rx,
+            rx: Arc::new(Mutex::new(rx)),
             waiting: false,
         }
     }
@@ -95,10 +106,10 @@ impl<T: Default> AsyncTunnel<T> {
     }
 
     pub fn recv(&mut self) -> Option<T> {
-        self.rx.try_recv().ok()
+        self.rx.lock().unwrap().try_recv().ok()
     }
     pub fn recv2(&mut self) -> bool {
-        if let Ok(result) = self.rx.try_recv() {
+        if let Ok(result) = self.rx.lock().unwrap().try_recv() {
             self.data = result;
             self.waiting = false;
             return true;
@@ -114,7 +125,8 @@ pub struct Database {
     pub name: String,
     pub size: usize,
     pub columns: Vec<String>,
-    pub extensions: Arc<[String]>,
+    // pub extensions: Arc<[String]>,
+    pub extensions: AsyncTunnel<Vec<String>>,
 }
 
 impl Database {
@@ -126,11 +138,10 @@ impl Database {
         let pool = SqlitePool::connect(db_path)
             .await
             .expect("Pool did not open");
-        let pool2 = pool.clone();
         let size = Database::get_size(&pool).await.expect("get db size");
         let columns = Database::get_columns(&pool).await.expect("get columns");
 
-        Self {
+        let mut db = Self {
             path: db_path.to_string(),
             pool: Some(pool),
             name: db_path
@@ -140,9 +151,13 @@ impl Database {
                 .to_string(),
             size,
             columns,
-            extensions: get_audio_file_types(&pool2).await.unwrap().into(),
+            // extensions: get_audio_file_types(&pool2).await.unwrap().into(),
+            extensions: AsyncTunnel::default(),
             // io: AsyncTunnel::new(1),
-        }
+        };
+        let tx = db.extensions.tx.clone();
+        db.fetch_extensions(tx);
+        db
     }
     async fn get_columns(pool: &SqlitePool) -> Result<Vec<String>, sqlx::Error> {
         // Query for table info using PRAGMA
@@ -175,7 +190,8 @@ impl Database {
         Ok(count.0 as usize)
     }
 
-    pub fn get_extensions(&mut self, tx: mpsc::Sender<Vec<String>>) {
+    pub fn fetch_extensions(&mut self, tx: mpsc::Sender<Vec<String>>) {
+        println!("Fetching extensions");
         let Some(pool) = self.pool() else {
             return;
         };
@@ -188,6 +204,8 @@ impl Database {
             }
         });
     }
+
+    pub fn receive_extensions(&mut self) {}
 
     pub fn pool(&self) -> Option<SqlitePool> {
         self.pool.clone()
