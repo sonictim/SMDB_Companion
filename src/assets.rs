@@ -113,11 +113,11 @@ pub trait EnumComboBox {
         Self: Sized;
 }
 
-pub fn enum_combo_box<T>(ui: &mut egui::Ui, selected_variant: &mut T)
+pub fn enum_combo_box<T>(ui: &mut egui::Ui, selected_variant: &mut T, label: &str)
 where
     T: EnumComboBox + PartialEq + Copy + 'static, // Ensure T implements EnumComboBox, PartialEq, Copy, and is 'static
 {
-    egui::ComboBox::from_id_salt("variants")
+    egui::ComboBox::from_id_salt(label)
         .selected_text(selected_variant.as_str())
         .show_ui(ui, |ui| {
             for variant in T::variants() {

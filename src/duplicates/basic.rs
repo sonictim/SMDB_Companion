@@ -276,7 +276,7 @@ impl OrderPanel {
         ui.horizontal(|ui| {
             combo_box(ui, "order_column", &mut self.column, db_columns);
 
-            enum_combo_box(ui, &mut self.operator);
+            enum_combo_box(ui, &mut self.operator, "order column");
             match self.operator {
                 OrderOperator::Largest
                 | OrderOperator::Smallest

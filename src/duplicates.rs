@@ -33,8 +33,8 @@ impl Duplicates {
         self.tags.render_panel(ui);
     }
 
-    fn nodes(&mut self) -> Vec<&mut dyn NodeCommon> {
-        vec![
+    fn nodes(&mut self) -> [&mut dyn NodeCommon; 4] {
+        [
             &mut self.basic as &mut dyn NodeCommon,
             &mut self.deep as &mut dyn NodeCommon,
             &mut self.tags as &mut dyn NodeCommon,
@@ -51,22 +51,28 @@ impl Duplicates {
             ui.heading("No Records in Database");
             return;
         }
+
         self.receive_async_data();
         ui.columns(2, |column| {
             column[0].heading(RichText::new("Search for Duplicate Records").strong());
-            self.basic.render(&mut column[0], db);
+            for node in self.nodes() {
+                node.render(&mut column[0], db);
+                node.render_progress_bar(&mut column[0]);
+            }
             self.remove.render_options(&mut column[1]);
+
+            // self.basic.render(&mut column[0], db);
         });
-        self.basic.render_progress_bar(ui);
+        // self.basic.render_progress_bar(ui);
 
-        self.deep.render(ui, db);
-        self.deep.render_progress_bar(ui);
+        // self.deep.render(ui, db);
+        // self.deep.render_progress_bar(ui);
 
-        self.tags.render(ui, db);
-        self.tags.render_progress_bar(ui);
+        // self.tags.render(ui, db);
+        // self.tags.render_progress_bar(ui);
 
-        self.compare.render(ui, db);
-        self.compare.render_progress_bar(ui);
+        // self.compare.render(ui, db);
+        // self.compare.render_progress_bar(ui);
 
         ui.separator();
         empty_line(ui);
@@ -228,23 +234,20 @@ impl Duplicates {
                 .set(format! {"Removed {} duplicates", records.len()}.into());
         }
 
-        if let Some(records) = self.basic.config.receive() {
-            self.update_main_status(records);
+        let mut updates = Vec::new();
+
+        for node in &mut self.nodes() {
+            if let Some(records) = node.receive() {
+                updates.push(records);
+            }
         }
 
-        if let Some(records) = self.deep.config.receive() {
-            self.update_main_status(records);
-        }
-        if let Some(records) = self.tags.config.receive() {
-            self.update_main_status(records);
-        }
-        if let Some(records) = self.compare.config.receive() {
+        for records in updates {
             self.update_main_status(records);
         }
     }
 
     fn update_main_status(&mut self, records: HashSet<FileRecord>) {
-        // if self.handles_active() { return }
         self.remove.config.records.get_mut().extend(records);
         if self.remove.config.records.get().is_empty() {
             self.remove
@@ -261,10 +264,6 @@ impl Duplicates {
             );
         }
     }
-    // pub fn new_db(&mut self) {
-    //     self.deep.getting_extensions = false;
-    //     self.deep.extensions.set(Vec::new());
-    // }
 }
 
 pub trait NodeCommon {

@@ -62,7 +62,7 @@ impl Remove {
             ui.checkbox(&mut self.remove_files, text);
 
             if self.remove_files {
-                enum_combo_box(ui, &mut self.delete_action);
+                enum_combo_box(ui, &mut self.delete_action, "delete action");
                 if self.remove_files && self.delete_action == Delete::Permanent {
                     ui.label(
                         RichText::new("UNSAFE!")
