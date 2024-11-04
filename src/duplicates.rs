@@ -5,12 +5,14 @@ pub mod compare;
 pub mod deep;
 pub mod remove;
 pub mod tags;
+pub mod waveform;
 
 use basic::Basic;
 use compare::Compare;
 use deep::Deep;
 use remove::Remove;
 use tags::Tags;
+use waveform::Waveforms;
 
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 #[serde(default)]
@@ -18,6 +20,7 @@ pub struct Duplicates {
     basic: Basic,
     deep: Deep,
     tags: Tags,
+    waves: Waveforms,
     compare: Compare,
     remove: Remove,
 
@@ -33,11 +36,12 @@ impl Duplicates {
         self.tags.render_panel(ui);
     }
 
-    fn nodes(&mut self) -> [&mut dyn NodeCommon; 4] {
+    fn nodes(&mut self) -> [&mut dyn NodeCommon; 5] {
         [
             &mut self.basic as &mut dyn NodeCommon,
             &mut self.deep as &mut dyn NodeCommon,
             &mut self.tags as &mut dyn NodeCommon,
+            &mut self.waves as &mut dyn NodeCommon,
             &mut self.compare as &mut dyn NodeCommon,
         ]
     }
@@ -267,13 +271,22 @@ impl Duplicates {
 }
 
 pub trait NodeCommon {
-    fn abort(&mut self);
-    fn clear(&mut self);
-    fn render(&mut self, ui: &mut egui::Ui, db: &Database);
-    fn render_progress_bar(&mut self, ui: &mut egui::Ui);
+    fn config(&mut self) -> &mut Node;
 
+    fn receive(&mut self) -> Option<HashSet<FileRecord>> {
+        self.config().receive()
+    }
+    fn abort(&mut self) {
+        self.config().abort();
+    }
+    fn clear(&mut self) {
+        self.config().clear()
+    }
+    fn render_progress_bar(&mut self, ui: &mut egui::Ui) {
+        self.config().render(ui);
+    }
+    fn render(&mut self, ui: &mut egui::Ui, db: &Database);
     fn process(&mut self, db: &Database);
-    fn receive(&mut self) -> Option<HashSet<FileRecord>>;
 }
 
 pub struct Node {

@@ -10,38 +10,15 @@ pub struct Deep {
     pub enabled: bool,
     #[serde(skip)]
     pub config: Node,
-    // #[serde(skip)]
-    // pub extensions: AsyncTunnel<Vec<String>>,
-    // #[serde(skip)]
-    // pub getting_extensions: bool,
     pub ignore_extension: bool,
 }
 
 impl NodeCommon for Deep {
-    fn render_progress_bar(&mut self, ui: &mut egui::Ui) {
-        self.config.render(ui);
-    }
-    fn receive(&mut self) -> Option<HashSet<FileRecord>> {
-        self.config.receive()
-    }
-    fn abort(&mut self) {
-        self.config.abort();
-        // self.extensions.clear();
-    }
-
-    fn clear(&mut self) {
-        self.config.clear();
-        // self.extensions.clear();
-        // self.getting_extensions = false;
+    fn config(&mut self) -> &mut Node {
+        &mut self.config
     }
 
     fn render(&mut self, ui: &mut egui::Ui, db: &Database) {
-        // self.extensions.recv2();
-        // if let Some(ext) = self.extensions.recv() {
-        //     println!("received results");
-        //     self.extensions.set(ext);
-        // }
-
         ui.checkbox(&mut self.enabled, "Similar Filename Duplicates Search")
             .on_hover_text_at_pointer(
                 "Filenames ending in .#, .#.#.#, or .M will be examined as possible duplicates",

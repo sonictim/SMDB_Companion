@@ -25,19 +25,8 @@ impl Default for Tags {
 }
 
 impl NodeCommon for Tags {
-    fn render_progress_bar(&mut self, ui: &mut egui::Ui) {
-        self.config.render(ui);
-    }
-    fn receive(&mut self) -> Option<HashSet<FileRecord>> {
-        self.config.receive()
-    }
-
-    fn abort(&mut self) {
-        self.config.abort();
-    }
-
-    fn clear(&mut self) {
-        self.config.clear();
+    fn config(&mut self) -> &mut Node {
+        &mut self.config
     }
 
     fn render(&mut self, ui: &mut egui::Ui, _: &Database) {
