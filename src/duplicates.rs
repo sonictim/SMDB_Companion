@@ -15,23 +15,33 @@ use tags::Tags;
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 #[serde(default)]
 pub struct Duplicates {
-    pub basic: Basic,
+    basic: Basic,
     deep: Deep,
-    pub tags: Tags,
+    tags: Tags,
     compare: Compare,
     remove: Remove,
 
-    #[serde(skip)]
-    gather_dupes: bool,
-    // #[serde(skip)]
-    // go_search: bool,
-    // #[serde(skip)]
-    // remove.run: bool,
     #[serde(skip)]
     pub records_window: RecordsWindow,
 }
 
 impl Duplicates {
+    pub fn render_order_panel(&mut self, ui: &mut egui::Ui, db: Option<&Database>) {
+        self.basic.preservation_order.render(ui, db);
+    }
+    pub fn render_tags_panel(&mut self, ui: &mut egui::Ui) {
+        self.tags.render_panel(ui);
+    }
+
+    fn nodes(&mut self) -> Vec<&mut dyn NodeCommon> {
+        vec![
+            &mut self.basic as &mut dyn NodeCommon,
+            &mut self.deep as &mut dyn NodeCommon,
+            &mut self.tags as &mut dyn NodeCommon,
+            &mut self.compare as &mut dyn NodeCommon,
+        ]
+    }
+
     pub fn render(&mut self, ui: &mut egui::Ui, db: Option<&Database>, registration: Option<bool>) {
         let Some(db) = db else {
             ui.heading(RichText::new("No Open Database").weak());
@@ -50,13 +60,12 @@ impl Duplicates {
         self.basic.render_progress_bar(ui);
 
         self.deep.render(ui, db);
-        self.deep.config.render(ui);
+        self.deep.render_progress_bar(ui);
 
-        self.tags.render(ui);
+        self.tags.render(ui, db);
         self.tags.render_progress_bar(ui);
 
-        self.compare.render(ui);
-
+        self.compare.render(ui, db);
         self.compare.render_progress_bar(ui);
 
         ui.separator();
@@ -165,10 +174,9 @@ impl Duplicates {
             .status
             .set("Searching for Duplicates".into());
 
-        self.basic.process(db);
-        self.deep.process(db);
-        self.tags.gather(db);
-        self.compare.process(db);
+        for node in self.nodes() {
+            node.process(db);
+        }
     }
 
     pub fn reset_to_tjf_defaults(&mut self) {
@@ -177,24 +185,22 @@ impl Duplicates {
         self.deep.enabled = true;
         self.deep.ignore_extension = true;
         self.tags.enabled = true;
-        self.tags.list.set(tjf_tags());
+        self.tags.set_tjf();
         self.remove.dupes_db = false;
     }
 
     pub fn clear_status(&mut self) {
-        self.basic.config.clear();
-        self.deep.config.clear();
-        self.tags.config.clear();
-        self.compare.config.clear();
+        for node in self.nodes() {
+            node.clear();
+        }
         self.remove.config.clear();
     }
 
     pub fn abort_all(&mut self) {
+        for node in self.nodes() {
+            node.abort();
+        }
         self.remove.config.abort();
-        self.basic.config.abort();
-        self.deep.config.abort();
-        self.tags.config.abort();
-        self.compare.config.abort();
     }
 
     fn handles_active(&self) -> bool {
@@ -225,6 +231,7 @@ impl Duplicates {
         if let Some(records) = self.basic.config.receive() {
             self.update_main_status(records);
         }
+
         if let Some(records) = self.deep.config.receive() {
             self.update_main_status(records);
         }
@@ -254,6 +261,20 @@ impl Duplicates {
             );
         }
     }
+    // pub fn new_db(&mut self) {
+    //     self.deep.getting_extensions = false;
+    //     self.deep.extensions.set(Vec::new());
+    // }
+}
+
+pub trait NodeCommon {
+    fn abort(&mut self);
+    fn clear(&mut self);
+    fn render(&mut self, ui: &mut egui::Ui, db: &Database);
+    fn render_progress_bar(&mut self, ui: &mut egui::Ui);
+
+    fn process(&mut self, db: &Database);
+    fn receive(&mut self) -> Option<HashSet<FileRecord>>;
 }
 
 pub struct Node {
@@ -428,101 +449,6 @@ impl RecordsWindow {
         self.Display_Data = marked_records.join("\n");
         self.scroll_to_top = true;
         self.open = true;
-    }
-}
-
-#[derive(PartialEq, serde::Serialize, Deserialize, Clone, Copy, Default)]
-pub enum OrderOperator {
-    Largest,
-    Smallest,
-    #[default]
-    Contains,
-    DoesNotContain,
-    Is,
-    IsNot,
-    IsEmpty,
-    IsNotEmpty,
-}
-
-impl EnumComboBox for OrderOperator {
-    fn as_str(&self) -> &'static str {
-        match self {
-            OrderOperator::Largest => "Largest",
-            OrderOperator::Smallest => "Smallest",
-            OrderOperator::Is => "is",
-            OrderOperator::IsNot => "is NOT",
-            OrderOperator::Contains => "Contains",
-            OrderOperator::DoesNotContain => "Does NOT Contain",
-            OrderOperator::IsEmpty => "Is Empty",
-            OrderOperator::IsNotEmpty => "Is NOT Empty",
-        }
-    }
-
-    fn variants() -> &'static [OrderOperator] {
-        &[
-            OrderOperator::Largest,
-            OrderOperator::Smallest,
-            OrderOperator::Contains,
-            OrderOperator::DoesNotContain,
-            OrderOperator::Is,
-            OrderOperator::IsNot,
-            OrderOperator::IsEmpty,
-            OrderOperator::IsNotEmpty,
-        ]
-    }
-}
-
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
-pub struct PreservationLogic {
-    pub column: String,
-    pub operator: OrderOperator,
-    pub variable: String,
-}
-
-impl PreservationLogic {
-    pub fn get_sql(&self) -> String {
-        match self.operator {
-            OrderOperator::Largest => format! {"{} DESC", self.column.to_lowercase()},
-            OrderOperator::Smallest => format!("{} ASC", self.column.to_lowercase()),
-            OrderOperator::Is => format!(
-                "CASE WHEN {} IS '%{}%' THEN 0 ELSE 1 END ASC",
-                self.column, self.variable,
-            ),
-            OrderOperator::IsNot => format!(
-                "CASE WHEN {} IS '%{}%' THEN 1 ELSE 0 END ASC",
-                self.column, self.variable
-            ),
-            OrderOperator::Contains => format!(
-                "CASE WHEN {} LIKE '%{}%' THEN 0 ELSE 1 END ASC",
-                self.column, self.variable
-            ),
-            OrderOperator::DoesNotContain => format!(
-                "CASE WHEN {} LIKE '%{}%' THEN 1 ELSE 0 END ASC",
-                self.column, self.variable
-            ),
-            OrderOperator::IsEmpty => format!(
-                "CASE WHEN {} IS NOT NULL AND {} != '' THEN 1 ELSE 0 END ASC",
-                self.column, self.column
-            ),
-            OrderOperator::IsNotEmpty => format!(
-                "CASE WHEN {} IS NOT NULL AND {} != '' THEN 0 ELSE 1 END ASC",
-                self.column, self.column
-            ),
-        }
-    }
-    pub fn get_friendly(&self) -> String {
-        match self.operator {
-            OrderOperator::Largest => format! {"Largest {}", self.column},
-            OrderOperator::Smallest => format!("Smallest {} ", self.column),
-            OrderOperator::Is => format!("{} is '{}'", self.column, self.variable),
-            OrderOperator::IsNot => format!("{} is NOT '{}'", self.column, self.variable),
-            OrderOperator::Contains => format!("{} contains '{}'", self.column, self.variable),
-            OrderOperator::DoesNotContain => {
-                format!("{} does NOT contain '{}'", self.column, self.variable)
-            }
-            OrderOperator::IsEmpty => format!("{} is empty", self.column,),
-            OrderOperator::IsNotEmpty => format!("{} is NOT empty", self.column,),
-        }
     }
 }
 

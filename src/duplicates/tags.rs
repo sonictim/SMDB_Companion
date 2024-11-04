@@ -24,13 +24,23 @@ impl Default for Tags {
     }
 }
 
-impl Tags {
-
-    pub fn render_progress_bar(&mut self, ui: &mut egui::Ui) {
+impl NodeCommon for Tags {
+    fn render_progress_bar(&mut self, ui: &mut egui::Ui) {
         self.config.render(ui);
     }
+    fn receive(&mut self) -> Option<HashSet<FileRecord>> {
+        self.config.receive()
+    }
 
-    pub fn render(&mut self, ui: &mut egui::Ui) {
+    fn abort(&mut self) {
+        self.config.abort();
+    }
+
+    fn clear(&mut self) {
+        self.config.clear();
+    }
+
+    fn render(&mut self, ui: &mut egui::Ui, _: &Database) {
         let enabled = !self.list().is_empty();
         let text = enabled_text(
             "Search for Records with AudioSuite Tags in Filename",
@@ -44,7 +54,7 @@ impl Tags {
 
     }
 
-    pub fn gather(&mut self, db: &Database) {
+    fn process(&mut self, db: &Database) {
         if self.enabled {
             let progress_sender = self.config.progress.tx.clone();
             let status_sender = self.config.status.tx.clone();
@@ -57,6 +67,11 @@ impl Tags {
     }
 
 
+
+}
+
+
+impl Tags {
 
     pub async fn async_gather(
         pool: SqlitePool,
@@ -112,9 +127,7 @@ impl Tags {
                     return Err(err); // Return early if an error occurs
                 }
             }
-    
         }
-    
         println!("Found Tags");
         Ok(file_records)
     }
@@ -142,4 +155,114 @@ impl Tags {
     pub fn list(&self) -> &[String] {
         self.list.get()
     }
+
+    pub fn set_tjf(&mut self) {
+        self.list.set(tjf_tags());
+    }
 }
+
+fn default_tags() -> Vec<String> {
+    const DEFAULT_TAGS_VEC: [&str; 43] = [
+        "-1eqa_",
+        "-6030_",
+        "-7eqa_",
+        "-A2sA_",
+        "-A44m_",
+        "-A44s_",
+        "-Alt7S_",
+        "-ASMA_",
+        "-AVrP_",
+        "-AVrT_",
+        "-AVSt_",
+        "-DEC4_",
+        "-Delays_",
+        "-Dn_",
+        "-DUPL_",
+        "-DVerb_",
+        "-GAIN_",
+        "-M2DN_",
+        "-NORM_",
+        "-NYCT_",
+        "-PiSh_",
+        "-PnT2_",
+        "-PnTPro_",
+        "-ProQ2_",
+        "-PSh_",
+        "-RVRS_",
+        "-RX7Cnct_",
+        "-spce_",
+        "-TCEX_",
+        "-TiSh_",
+        "-TmShft_",
+        "-VariFi_",
+        "-VlhllVV_",
+        "-VSPD_",
+        "-VitmnMn_",
+        "-VtmnStr_",
+        "-X2mA_",
+        "-X2sA_",
+        "-XForm_",
+        "-Z2N5_",
+        "-Z2S5_",
+        "-Z4n2_",
+        "-ZXN5_",
+    ];
+
+    DEFAULT_TAGS_VEC.map(|s| s.to_string()).to_vec()
+}
+
+fn tjf_tags() -> Vec<String> {
+    const TJF_TAGS_VEC: [&str; 49] = [
+        "-1eqa_",
+        "-6030_",
+        "-7eqa_",
+        "-A2sA_",
+        "-A44m_",
+        "-A44s_",
+        "-Alt7S_",
+        "-ASMA_",
+        "-AVrP_",
+        "-AVrT_",
+        "-AVSt_",
+        "-DEC4_",
+        "-Delays_",
+        "-Dn_",
+        "-DUPL_",
+        "-DVerb_",
+        "-GAIN_",
+        "-M2DN_",
+        "-NORM_",
+        "-NYCT_",
+        "-PiSh_",
+        "-PnT2_",
+        "-PnTPro_",
+        "-ProQ2_",
+        "-PSh_",
+        "-Reverse_",
+        "-RVRS_",
+        "-RING_",
+        "-RX7Cnct_",
+        "-spce_",
+        "-TCEX_",
+        "-TiSh_",
+        "-TmShft_",
+        "-VariFi_",
+        "-VlhllVV_",
+        "-VSPD_",
+        "-VitmnMn_",
+        "-VtmnStr_",
+        "-X2mA_",
+        "-X2sA_",
+        "-XForm_",
+        "-Z2N5_",
+        "-Z2S5_",
+        "-Z4n2_",
+        "-ZXN5_",
+        ".new.",
+        ".aif.",
+        ".mp3.",
+        ".wav.",
+    ];
+    TJF_TAGS_VEC.map(|s| s.to_string()).to_vec()
+}
+

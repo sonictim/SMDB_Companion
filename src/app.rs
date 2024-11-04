@@ -21,42 +21,31 @@ pub enum Panel {
 pub struct App {
 
     #[serde(skip)]
-    db: Option<Database>,
-    #[serde(skip)]
-    db_io: AsyncTunnel<Database>,
-    #[serde(skip)]
-    extensions_io: AsyncTunnel<Vec<String>>,
-    #[serde(skip)]
-    latest_version: String,
-    #[serde(skip)]
-    latest_version_io: AsyncTunnel<String>,
-    #[serde(skip)]
-    update_available: bool,
-    #[serde(skip)]
-    update_window: Option<bool>,
-    
+    db: AsyncTunnel<Option<Database>>,
+    // #[serde(skip)]
+    // extensions_io: AsyncTunnel<Vec<String>>,
+
     #[serde(skip)]
     my_panel: Panel,
-    find_panel: FindPanel,
-    duplicates_panel: Duplicates, 
+    find_replace: FindPanel,
+    duplicates: Duplicates, 
     registration: Registration,
+    #[serde(skip)]
+    update: Update,
 }
 
 impl Default for App {
     fn default() -> Self {
         Self {
-            db: None,
-            db_io: AsyncTunnel::new(1),
-            extensions_io: AsyncTunnel::new(1),
-            latest_version_io: AsyncTunnel::new(1),
-            latest_version: String::new(),
-            update_available: false,
-            update_window: None,
-            
+            // db: None,
+            db: AsyncTunnel::new(1),
+            // extensions_io: AsyncTunnel::new(1),
+         
             my_panel: Panel::Duplicates,
-            find_panel: FindPanel::default(),
-            duplicates_panel: Duplicates::default(),
+            find_replace: FindPanel::default(),
+            duplicates: Duplicates::default(),
             registration: Registration::default(),
+            update: Update::default(),
         }
     }
 }
@@ -78,7 +67,7 @@ impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         if self.registration.valid.is_none() {
             self.registration.validate();
-            self.check_for_updates();
+            self.update.check();
         }
 
         self.receive_async_data();
@@ -117,16 +106,16 @@ impl eframe::App for App {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 match self.my_panel {
                     Panel::Find => {
-                        self.find_panel.render(ui, self.db.as_ref(), self.registration.valid);
+                        self.find_replace.render(ui, self.db.get().as_ref(), self.registration.valid);
                     }
                     Panel::Duplicates => {
-                        self.duplicates_panel.render(ui, self.db.as_ref(), self.registration.valid);
+                        self.duplicates.render(ui, self.db.get().as_ref(), self.registration.valid);
                     }
                     Panel::Order => {
-                        self.duplicates_panel.basic.preservation_order.render(ui, self.db.as_ref());
+                        self.duplicates.render_order_panel(ui, self.db.get().as_ref());
                     }
                     Panel::Tags => {
-                        self.duplicates_panel.tags.render_panel(ui);
+                        self.duplicates.render_tags_panel(ui);
                     }
                     Panel::KeyGen => {
                         self.registration.render(ui);
@@ -134,10 +123,10 @@ impl eframe::App for App {
                 }
                 empty_line(ui);
             });
-            self.duplicates_panel.records_window.render(ctx);
+            self.duplicates.records_window.render(ctx);
          
-            if self.update_window.is_some() {
-                update_window(ctx, &mut self.update_window, &self.latest_version, self.update_available);
+            if self.update.window.is_some() {
+                self.update.render(ctx);
             }  
         });
 
@@ -181,69 +170,60 @@ impl App {
         }
     
         fn reset_to_defaults(&mut self)  {
-            self.duplicates_panel = Duplicates::default();
-            self.find_panel = FindPanel::default();
+            self.duplicates = Duplicates::default();
+            self.find_replace = FindPanel::default();
         }
         fn reset_to_tjf_defaults(&mut self) {
             self.reset_to_defaults();
-            self.duplicates_panel.reset_to_tjf_defaults();
+            self.duplicates.reset_to_tjf_defaults();
         }
     
         fn receive_async_data(&mut self) {
-            if let Some(db) = self.db_io.recv() {
-                self.db = Some(db);
+
+            if let Some(db) = self.db.recv() {
+                self.db.set(db);
             }      
     
-            if let Some(db) = &mut self.db {
-                if let Some(records) = self.extensions_io.recv() {
-                    db.file_extensions = records;
-                }
-            }
+            // if let Some(db) = &mut self.db.get_mut() {
+            //     if let Some(records) = self.extensions_io.recv() {
+            //         db.file_extensions = records;
+            //     }
+            // }
             
-            if let Some(version) = self.latest_version_io.recv() {
-                self.latest_version = version;
-                if self.update_window.is_some() {self.update_window = Some(true);}
-                if self.latest_version == env!("CARGO_PKG_VERSION") 
+            if let Some(version) = self.update.latest_version.recv() {
+                self.update.latest_version.set(version);
+                if self.update.window.is_some() {self.update.window = Some(true);}
+                if self.update.latest_version.get() == env!("CARGO_PKG_VERSION") 
                 {
                     println!("No Update Needed");
-                    self.update_available = false;
+                    self.update.available = false;
                 }
                 else {
                     println!("Update Recommended");
-                    self.update_available = true;
+                    self.update.available = true;
                 }
             }
         }
     
     
     
-        pub fn check_for_updates(&mut self) {
-            let tx = self.latest_version_io.tx.clone();
-            tokio::spawn(async move {
-                println!("Inside Async Task - checking version");
-        
-                let results = fetch_latest_version().await;
-                if (tx.send(results.expect("Tokio Results Error HashSet")).await).is_err() {
-                    eprintln!("Failed to send db");
-                }
-            });
-        }
+
     fn file_menu(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         ui.menu_button(RichText::new("File").weak().size(18.0), |ui| {
             if ui.button("Open Database").clicked() {
                 ui.close_menu();
-                let tx = self.db_io.tx.clone();
+                let tx = self.db.tx.clone();
                 tokio::spawn(async move {
-                    let db = Database::open().await.unwrap();
+                    let db = Database::open().await;
                     let _ = tx.send(db).await;
                 });
 
             }
             if ui.button("Close Database").clicked() {
                 ui.close_menu();
-                self.duplicates_panel.clear_status();
-                self.duplicates_panel.abort_all();
-                self.db = None;
+                self.duplicates.clear_status();
+                self.duplicates.abort_all();
+                self.db.set(None);
             }
 
             ui.separator();
@@ -298,8 +278,8 @@ impl App {
             ui.separator();
             if ui.button("Check For Update").clicked() {
                 ui.close_menu();
-                self.update_window = Some(false);
-                self.check_for_updates();
+                self.update.window = Some(false);
+                self.update.check();
             }
             if ui.button("Open Download URL").clicked() {
                 ui.close_menu();
@@ -355,7 +335,7 @@ impl App {
     }
 
     fn render_db(&mut self, ui: &mut egui::Ui) {
-        if let Some(db) = &self.db {
+        if let Some(db) = &self.db.get() {
            
 
             ui.vertical_centered(|ui| {
@@ -370,21 +350,23 @@ impl App {
                     .clicked()
                 {
                     
-                    let tx = self.db_io.tx.clone();
+                    let tx = self.db.tx.clone();
                     tokio::spawn(async move {
-                        let db = Database::open().await.unwrap();
+                        let db = Database::open().await;
                         let _ = tx.send(db).await;
                     });
                 };
+                // self.duplicates.new_db();
                 ui.label(format!("{} records", &db.size));
             });
         } else {
            
             ui.vertical_centered(|ui| {
                 large_button(ui, "Open Database", || {
-                    let tx = self.db_io.tx.clone();
+                    // self.duplicates.new_db();
+                    let tx = self.db.tx.clone();
                     tokio::spawn(async move {
-                        let db = Database::open().await.unwrap();
+                        let db = Database::open().await;
                         let _ = tx.send(db).await;
                     });
                 });
@@ -428,7 +410,7 @@ impl App {
             .show(ctx, |ui| {
                 let version_text = format!("Version: {}    ", env!("CARGO_PKG_VERSION"));
                 ui.horizontal(|ui|{
-                    if self.update_available {
+                    if self.update.available {
                         ui.label(red_text("Update Available"));
                         if ui.selectable_label(false, "Download").clicked() {
                             open_download_url();
@@ -502,54 +484,6 @@ impl Registration {
     }
 }
 
-pub fn update_window(ctx: &egui::Context, open: &mut Option<bool>, version: &str, update: bool) {
-    let width = 200.0;
-    let height = 100.0;
-    let mut close_window = false;
-
-    if let Some(open) = open {
-        if update {
-            egui::Window::new(RichText::new("Update Available").strong())
-                .open(open) // Control whether the window is open
-                .resizable(false) // Make window non-resizable if you want it fixed
-                .min_width(width)
-                .min_height(height)
-                .max_width(width)
-                .max_height(height)
-                .show(ctx, |ui| {
-                    ui.vertical_centered(|ui| {
-                        ui.label(format!("Latest Version is {}", version));
-                        large_button(ui, "Download", || {
-                            open_download_url();
-                            close_window = true; // Set the flag to close the window
-                        });
-                    });
-                });
-        } else {
-            egui::Window::new(RichText::new("No Update Available").strong())
-                .open(open) // Control whether the window is open
-                .resizable(false) // Make window non-resizable if you want it fixed
-                .min_width(width)
-                .min_height(height)
-                .max_width(width)
-                .max_height(height)
-                .show(ctx, |ui| {
-                    ui.vertical_centered(|ui| {
-                        ui.label(format!("Version {} is the Current Version", version));
-                        // large_button(ui, "Download", || {
-                        //     open_download_url();
-                        //     close_window = true; // Set the flag to close the window
-                        // });
-                    });
-                });
-        }
-    }
-
-    if close_window {
-        *open = None; // Dereference to set the value outside of the closure
-    }
-}
-
 
 pub fn copy_to_clipboard(text: String) {
     let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
@@ -557,10 +491,87 @@ pub fn copy_to_clipboard(text: String) {
     ctx.set_contents(text).unwrap();
 }
 
-// pub fn remove_all_spaces(input: &str) -> String {
-//     input.chars().filter(|c| !c.is_whitespace()).collect()
-// }
 
+pub fn open_download_url() {
+    let url = r#"https://drive.google.com/open?id=1qdGqoUMqq_xCrbA6IxUTYliZUmd3Tn3i&usp=drive_fs"#;
+    let _ = webbrowser::open(url).is_ok();
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Default)]
+#[serde(default)]
+struct Update {
+    #[serde(skip)]
+    latest_version: AsyncTunnel<String>,
+    #[serde(skip)]
+    available: bool,
+    #[serde(skip)]
+    window: Option<bool>,
+
+}
+
+impl Update {
+    pub fn render(&mut self, ctx: &egui::Context) {
+        
+        let width = 200.0;
+        let height = 100.0;
+        let mut close_window = false;
+
+        if let Some(open) = &mut self.window {
+            if self.available {
+                egui::Window::new(RichText::new("Update Available").strong())
+                    .open(open) // Control whether the window is open
+                    .resizable(false) // Make window non-resizable if you want it fixed
+                    .min_width(width)
+                    .min_height(height)
+                    .max_width(width)
+                    .max_height(height)
+                    .show(ctx, |ui| {
+                        ui.vertical_centered(|ui| {
+                            ui.label(format!("Latest Version is {}", self.latest_version.get()));
+                            large_button(ui, "Download", || {
+                                open_download_url();
+                                close_window = true; // Set the flag to close the window
+                            });
+                        });
+                    });
+            } else {
+                egui::Window::new(RichText::new("No Update Available").strong())
+                    .open(open) // Control whether the window is open
+                    .resizable(false) // Make window non-resizable if you want it fixed
+                    .min_width(width)
+                    .min_height(height)
+                    .max_width(width)
+                    .max_height(height)
+                    .show(ctx, |ui| {
+                        ui.vertical_centered(|ui| {
+                            ui.label(format!("Version {} is the Current Version", self.latest_version.get()));
+                            // large_button(ui, "Download", || {
+                            //     open_download_url();
+                            //     close_window = true; // Set the flag to close the window
+                            // });
+                        });
+                    });
+            }
+        }
+
+        if close_window {
+            self.window = None; // Dereference to set the value outside of the closure
+        }
+    }
+
+    pub fn check(&mut self) {
+        let tx = self.latest_version.tx.clone();
+        tokio::spawn(async move {
+            println!("Inside Async Task - checking version");
+    
+            let results = fetch_latest_version().await;
+            if (tx.send(results.expect("Tokio Results Error HashSet")).await).is_err() {
+                eprintln!("Failed to send db");
+            }
+        });
+    }
+
+}
 pub async fn fetch_latest_version() -> Result<String, Box<dyn Error>> {
     let file_id = "1C8jyVjkMgeglYK-FnmTuoRqwf5Nd6PGG";
     let download_url = format!("https://drive.google.com/uc?export=download&id={}", file_id);
@@ -575,9 +586,3 @@ pub async fn fetch_latest_version() -> Result<String, Box<dyn Error>> {
         Err(format!("Failed to retrieve the file: {}", response.status()).into())
     }
 }
-
-pub fn open_download_url() {
-    let url = r#"https://drive.google.com/open?id=1qdGqoUMqq_xCrbA6IxUTYliZUmd3Tn3i&usp=drive_fs"#;
-    let _ = webbrowser::open(url).is_ok();
-}
-

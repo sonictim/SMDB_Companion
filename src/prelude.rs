@@ -89,9 +89,6 @@ impl<T: Default> AsyncTunnel<T> {
         self.data = data;
     }
 
-    pub fn waiting(&self) -> bool {
-        self.waiting
-    }
     pub async fn send(&mut self, item: T) -> Result<(), mpsc::error::SendError<T>> {
         self.waiting = true;
         self.tx.send(item).await
@@ -117,14 +114,19 @@ pub struct Database {
     pub name: String,
     pub size: usize,
     pub columns: Vec<String>,
-    pub file_extensions: Vec<String>,
+    pub extensions: Vec<String>,
 }
 
 impl Database {
+    pub async fn get_pool(&self) -> SqlitePool {
+        SqlitePool::connect(&self.path).await.unwrap()
+    }
+
     pub async fn init(db_path: &str) -> Self {
         let pool = SqlitePool::connect(db_path)
             .await
             .expect("Pool did not open");
+        let pool2 = pool.clone();
         let size = Database::get_size(&pool).await.expect("get db size");
         let columns = Database::get_columns(&pool).await.expect("get columns");
 
@@ -138,7 +140,7 @@ impl Database {
                 .to_string(),
             size,
             columns,
-            file_extensions: Vec::new(),
+            extensions: get_audio_file_types(&pool2).await.unwrap(),
             // io: AsyncTunnel::new(1),
         }
     }
@@ -191,14 +193,16 @@ impl Database {
         self.pool.clone()
     }
 
+    pub async fn fetch(&self, query: &str) -> Vec<SqliteRow> {
+        let pool = self.get_pool().await;
+        sqlx::query(query).fetch_all(&pool).await.unwrap()
+    }
+
     pub async fn fetch_filerecords(&self, query: &str) -> Result<HashSet<FileRecord>, sqlx::Error> {
         let mut file_records = HashSet::new();
-        if let Some(pool) = self.pool.as_ref() {
-            let rows = sqlx::query(query).fetch_all(pool).await?;
-
-            for row in rows {
-                file_records.insert(FileRecord::new(&row));
-            }
+        let rows = self.fetch(query).await;
+        for row in rows {
+            file_records.insert(FileRecord::new(&row));
         }
         Ok(file_records)
     }
@@ -353,289 +357,4 @@ pub async fn get_audio_file_types(pool: &SqlitePool) -> Result<Vec<String>, sqlx
         .collect();
 
     Ok(audio_file_types)
-}
-
-pub fn default_tags() -> Vec<String> {
-    const DEFAULT_TAGS_VEC: [&str; 43] = [
-        "-1eqa_",
-        "-6030_",
-        "-7eqa_",
-        "-A2sA_",
-        "-A44m_",
-        "-A44s_",
-        "-Alt7S_",
-        "-ASMA_",
-        "-AVrP_",
-        "-AVrT_",
-        "-AVSt_",
-        "-DEC4_",
-        "-Delays_",
-        "-Dn_",
-        "-DUPL_",
-        "-DVerb_",
-        "-GAIN_",
-        "-M2DN_",
-        "-NORM_",
-        "-NYCT_",
-        "-PiSh_",
-        "-PnT2_",
-        "-PnTPro_",
-        "-ProQ2_",
-        "-PSh_",
-        "-RVRS_",
-        "-RX7Cnct_",
-        "-spce_",
-        "-TCEX_",
-        "-TiSh_",
-        "-TmShft_",
-        "-VariFi_",
-        "-VlhllVV_",
-        "-VSPD_",
-        "-VitmnMn_",
-        "-VtmnStr_",
-        "-X2mA_",
-        "-X2sA_",
-        "-XForm_",
-        "-Z2N5_",
-        "-Z2S5_",
-        "-Z4n2_",
-        "-ZXN5_",
-    ];
-
-    DEFAULT_TAGS_VEC.map(|s| s.to_string()).to_vec()
-}
-
-pub fn tjf_tags() -> Vec<String> {
-    const TJF_TAGS_VEC: [&str; 49] = [
-        "-1eqa_",
-        "-6030_",
-        "-7eqa_",
-        "-A2sA_",
-        "-A44m_",
-        "-A44s_",
-        "-Alt7S_",
-        "-ASMA_",
-        "-AVrP_",
-        "-AVrT_",
-        "-AVSt_",
-        "-DEC4_",
-        "-Delays_",
-        "-Dn_",
-        "-DUPL_",
-        "-DVerb_",
-        "-GAIN_",
-        "-M2DN_",
-        "-NORM_",
-        "-NYCT_",
-        "-PiSh_",
-        "-PnT2_",
-        "-PnTPro_",
-        "-ProQ2_",
-        "-PSh_",
-        "-Reverse_",
-        "-RVRS_",
-        "-RING_",
-        "-RX7Cnct_",
-        "-spce_",
-        "-TCEX_",
-        "-TiSh_",
-        "-TmShft_",
-        "-VariFi_",
-        "-VlhllVV_",
-        "-VSPD_",
-        "-VitmnMn_",
-        "-VtmnStr_",
-        "-X2mA_",
-        "-X2sA_",
-        "-XForm_",
-        "-Z2N5_",
-        "-Z2S5_",
-        "-Z4n2_",
-        "-ZXN5_",
-        ".new.",
-        ".aif.",
-        ".mp3.",
-        ".wav.",
-    ];
-    TJF_TAGS_VEC.map(|s| s.to_string()).to_vec()
-}
-
-pub fn default_order() -> Vec<PreservationLogic> {
-    vec![
-        PreservationLogic {
-            column: String::from("Description"),
-            operator: OrderOperator::IsNotEmpty,
-            variable: String::new(),
-        },
-        PreservationLogic {
-            column: String::from("Pathname"),
-            operator: OrderOperator::DoesNotContain,
-            variable: String::from("Audio Files"),
-        },
-        PreservationLogic {
-            column: String::from("Pathname"),
-            operator: OrderOperator::Contains,
-            variable: String::from("LIBRARIES"),
-        },
-        PreservationLogic {
-            column: String::from("Pathname"),
-            operator: OrderOperator::Contains,
-            variable: String::from("LIBRARY"),
-        },
-        PreservationLogic {
-            column: String::from("Pathname"),
-            operator: OrderOperator::Contains,
-            variable: String::from("/LIBRARY"),
-        },
-        PreservationLogic {
-            column: String::from("Pathname"),
-            operator: OrderOperator::Contains,
-            variable: String::from("LIBRARY/"),
-        },
-        PreservationLogic {
-            column: String::from("Duration"),
-            operator: OrderOperator::Largest,
-            variable: String::new(),
-        },
-        PreservationLogic {
-            column: String::from("Channels"),
-            operator: OrderOperator::Largest,
-            variable: String::new(),
-        },
-        PreservationLogic {
-            column: String::from("SampleRate"),
-            operator: OrderOperator::Largest,
-            variable: String::new(),
-        },
-        PreservationLogic {
-            column: String::from("BitDepth"),
-            operator: OrderOperator::Largest,
-            variable: String::new(),
-        },
-        PreservationLogic {
-            column: String::from("BWDate"),
-            operator: OrderOperator::Smallest,
-            variable: String::new(),
-        },
-        PreservationLogic {
-            column: String::from("ScannedDate"),
-            operator: OrderOperator::Smallest,
-            variable: String::new(),
-        },
-    ]
-}
-
-pub fn tjf_order() -> Vec<PreservationLogic> {
-    vec![
-        PreservationLogic {
-            column: String::from("Pathname"),
-            operator: OrderOperator::Contains,
-            variable: String::from("TJF RECORDINGS"),
-        },
-        PreservationLogic {
-            column: String::from("Pathname"),
-            operator: OrderOperator::Contains,
-            variable: String::from("LIBRARIES"),
-        },
-        PreservationLogic {
-            column: String::from("Pathname"),
-            operator: OrderOperator::DoesNotContain,
-            variable: String::from("SHOWS/Tim Farrell"),
-        },
-        PreservationLogic {
-            column: String::from("Description"),
-            operator: OrderOperator::IsNotEmpty,
-            variable: String::new(),
-        },
-        PreservationLogic {
-            column: String::from("Pathname"),
-            operator: OrderOperator::DoesNotContain,
-            variable: String::from("Audio Files"),
-        },
-        PreservationLogic {
-            column: String::from("Pathname"),
-            operator: OrderOperator::Contains,
-            variable: String::from("RECORD"),
-        },
-        PreservationLogic {
-            column: String::from("Pathname"),
-            operator: OrderOperator::Contains,
-            variable: String::from("CREATED SFX"),
-        },
-        PreservationLogic {
-            column: String::from("Pathname"),
-            operator: OrderOperator::Contains,
-            variable: String::from("CREATED FX"),
-        },
-        PreservationLogic {
-            column: String::from("Pathname"),
-            operator: OrderOperator::Contains,
-            variable: String::from("LIBRARY"),
-        },
-        PreservationLogic {
-            column: String::from("Pathname"),
-            operator: OrderOperator::Contains,
-            variable: String::from("/LIBRARY"),
-        },
-        PreservationLogic {
-            column: String::from("Pathname"),
-            operator: OrderOperator::Contains,
-            variable: String::from("LIBRARY/"),
-        },
-        PreservationLogic {
-            column: String::from("Pathname"),
-            operator: OrderOperator::Contains,
-            variable: String::from("SIGNATURE"),
-        },
-        PreservationLogic {
-            column: String::from("Pathname"),
-            operator: OrderOperator::Contains,
-            variable: String::from("PULLS"),
-        },
-        PreservationLogic {
-            column: String::from("Pathname"),
-            operator: OrderOperator::DoesNotContain,
-            variable: String::from("EDIT"),
-        },
-        PreservationLogic {
-            column: String::from("Pathname"),
-            operator: OrderOperator::DoesNotContain,
-            variable: String::from("MIX"),
-        },
-        PreservationLogic {
-            column: String::from("Pathname"),
-            operator: OrderOperator::DoesNotContain,
-            variable: String::from("SESSION"),
-        },
-        PreservationLogic {
-            column: String::from("Duration"),
-            operator: OrderOperator::Largest,
-            variable: String::new(),
-        },
-        PreservationLogic {
-            column: String::from("Channels"),
-            operator: OrderOperator::Largest,
-            variable: String::new(),
-        },
-        PreservationLogic {
-            column: String::from("SampleRate"),
-            operator: OrderOperator::Largest,
-            variable: String::new(),
-        },
-        PreservationLogic {
-            column: String::from("BitDepth"),
-            operator: OrderOperator::Largest,
-            variable: String::new(),
-        },
-        PreservationLogic {
-            column: String::from("BWDate"),
-            operator: OrderOperator::Smallest,
-            variable: String::new(),
-        },
-        PreservationLogic {
-            column: String::from("ScannedDate"),
-            operator: OrderOperator::Smallest,
-            variable: String::new(),
-        },
-    ]
 }

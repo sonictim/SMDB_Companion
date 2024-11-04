@@ -10,19 +10,36 @@ pub struct Deep {
     pub enabled: bool,
     #[serde(skip)]
     pub config: Node,
-    extensions: AsyncTunnel<Vec<String>>,
+    // #[serde(skip)]
+    // pub extensions: AsyncTunnel<Vec<String>>,
+    // #[serde(skip)]
+    // pub getting_extensions: bool,
     pub ignore_extension: bool,
 }
 
-impl Deep {
-    pub fn abort(&mut self) {
+impl NodeCommon for Deep {
+    fn render_progress_bar(&mut self, ui: &mut egui::Ui) {
+        self.config.render(ui);
+    }
+    fn receive(&mut self) -> Option<HashSet<FileRecord>> {
+        self.config.receive()
+    }
+    fn abort(&mut self) {
         self.config.abort();
+        // self.extensions.clear();
     }
 
-    pub fn render(&mut self, ui: &mut egui::Ui, db: &Database) {
-        self.extensions.recv2();
-        // if let Some(ext) = self.extensions_io.recv() {
-        //     self.extensions = ext;
+    fn clear(&mut self) {
+        self.config.clear();
+        // self.extensions.clear();
+        // self.getting_extensions = false;
+    }
+
+    fn render(&mut self, ui: &mut egui::Ui, db: &Database) {
+        // self.extensions.recv2();
+        // if let Some(ext) = self.extensions.recv() {
+        //     println!("received results");
+        //     self.extensions.set(ext);
         // }
 
         ui.checkbox(&mut self.enabled, "Similar Filename Duplicates Search")
@@ -30,45 +47,38 @@ impl Deep {
                 "Filenames ending in .#, .#.#.#, or .M will be examined as possible duplicates",
             );
 
-        if self.extensions.get().is_empty() && !self.extensions.waiting() {
-            // self.extensions_io.waiting = true;
-
-            let Some(pool) = db.pool() else {
-                return;
-            };
-            let tx = self.extensions.tx.clone();
-
-            let _handle = tokio::spawn(async move {
-                let results = get_audio_file_types(&pool).await;
-
-                if let Ok(results) = results {
-                    let _ = tx.send(results).await;
-                }
-            });
-
-            ui.horizontal(|ui| {
-                ui.spinner();
-                ui.label("Gathering Filetypes from DB");
-                // self.clear_status();
-            });
-        } else {
-            ui.horizontal(|ui| {
-                ui.add_space(24.0);
-
-                if self.extensions.get().len() > 1 {
+        match db.extensions.len() {
+            0 => {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.label("Gathering Filetypes from DB");
+                    // self.clear_status();
+                });
+            }
+            1 => {
+                ui.horizontal(|ui| {
+                    ui.add_space(24.0);
+                    ui.label("All Records are of Filetype:");
+                    ui.label(&db.extensions[0]);
+                });
+            }
+            _ => {
+                ui.horizontal(|ui| {
+                    ui.add_space(24.0);
+                    let text = &db.extensions.join(", ");
+                    ui.label(format! {"Database contains: {text}"});
+                });
+                ui.horizontal(|ui| {
+                    ui.add_space(24.0);
                     let text = if self.ignore_extension {"Checked: 'example.wav' and 'example.flac' will be considered duplicate filenames"}
                     else {"Unchecked: 'example.wav' and 'example.flac' will be considered unique filenames"};
                     ui.checkbox(&mut self.ignore_extension, "Ignore Filetypes").on_hover_text_at_pointer(text);
-
-                } else {
-                    ui.label("All Records are of Filetype:");
-                    ui.label(&self.extensions.get()[0]);
-                }
             });
+            }
         }
     }
 
-    pub fn process(&mut self, db: &Database) {
+    fn process(&mut self, db: &Database) {
         if self.enabled {
             let progress_sender = self.config.progress.tx.clone();
             let status_sender = self.config.status.tx.clone();

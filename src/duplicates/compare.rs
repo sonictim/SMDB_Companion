@@ -12,14 +12,23 @@ pub struct Compare {
     compare_db: AsyncTunnel<Option<Database>>,
 
 }
-impl Compare {
-    pub fn enabled(&self) -> bool {
-        self.enabled
-    }
-    pub fn render_progress_bar(&mut self, ui: &mut egui::Ui) {
+
+impl NodeCommon for Compare {
+    fn render_progress_bar(&mut self, ui: &mut egui::Ui) {
         self.config.render(ui);
     }
-    pub fn render(&mut self, ui: &mut egui::Ui) {
+    fn receive(&mut self) -> Option<HashSet<FileRecord>> {
+        self.config.receive()
+    }
+
+    fn abort(&mut self) {
+        self.config.abort();
+    }
+
+    fn clear(&mut self) {
+        self.config.clear();
+    }
+     fn render(&mut self, ui: &mut egui::Ui, _: &Database) {
         self.compare_db.recv2();
         let cdb = self.compare_db.get();
 
@@ -54,7 +63,7 @@ impl Compare {
     }
 
 
-    pub fn process(&mut self, db: &Database) {
+     fn process(&mut self, db: &Database) {
         let cdb = self.compare_db.get();
         if self.enabled && cdb.is_some() {
             if let Some(cdb) = &cdb {
@@ -76,6 +85,11 @@ impl Compare {
         }
         
     }
+
+}
+
+
+impl Compare {
 
     pub async fn async_gather(
         db: &Database,
