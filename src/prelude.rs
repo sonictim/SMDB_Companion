@@ -114,7 +114,7 @@ pub struct Database {
     pub name: String,
     pub size: usize,
     pub columns: Vec<String>,
-    pub extensions: Vec<String>,
+    pub extensions: Arc<[String]>,
 }
 
 impl Database {
@@ -140,7 +140,7 @@ impl Database {
                 .to_string(),
             size,
             columns,
-            extensions: get_audio_file_types(&pool2).await.unwrap(),
+            extensions: get_audio_file_types(&pool2).await.unwrap().into(),
             // io: AsyncTunnel::new(1),
         }
     }
