@@ -17,6 +17,9 @@ impl NodeCommon for Waveforms {
     fn config(&mut self) -> &mut Node {
         &mut self.config
     }
+    fn enabled(&self) -> bool {
+        self.enabled
+    }
     fn render(&mut self, ui: &mut egui::Ui, _: &Database) {
         ui.checkbox(&mut self.enabled, "Search Audio Waveforms for duplicates")
             .on_hover_text_at_pointer("Will Analyze the Audio Content to search for duplicates");

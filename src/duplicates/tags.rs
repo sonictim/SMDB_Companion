@@ -10,6 +10,7 @@ pub struct Tags {
     pub list: SelectableList,
     #[serde(skip)]
     pub config: Node,
+    pub open_panel: bool,
 }
 
 impl Default for Tags {
@@ -18,6 +19,7 @@ impl Default for Tags {
             enabled: false,
             list: SelectableList::default(),
             config: Node::default(),
+            open_panel: false,
         };
         default.list.set(default_tags());
         default
@@ -27,6 +29,9 @@ impl Default for Tags {
 impl NodeCommon for Tags {
     fn config(&mut self) -> &mut Node {
         &mut self.config
+    }
+    fn enabled(&self) -> bool {
+        self.enabled
     }
 
     fn render(&mut self, ui: &mut egui::Ui, _: &Database) {
@@ -39,20 +44,23 @@ impl NodeCommon for Tags {
             .on_hover_text_at_pointer(
                 "Filenames with Common Protools AudioSuite Tags will be marked for removal",
             );
+        ui.horizontal(|ui|{
+            ui.add_space(24.0);
+            if ui.button("Edit List of Tags").clicked() { self.open_panel = true };
+        });    
 
 
     }
 
     fn process(&mut self, db: &Database) {
-        if self.enabled {
-            let progress_sender = self.config.progress.tx.clone();
-            let status_sender = self.config.status.tx.clone();
-            let pool = db.pool().unwrap();
-            let tags = self.list.get().to_vec();
-            self.config.wrap_async(
-                move || Self::async_gather(pool, progress_sender, status_sender, tags),
-            );
-        }
+        let progress_sender = self.config.progress.tx.clone();
+        let status_sender = self.config.status.tx.clone();
+        let pool = db.pool().unwrap();
+        let tags = self.list.get().to_vec();
+        self.config.wrap_async(
+            move || Self::async_gather(pool, progress_sender, status_sender, tags),
+        );
+
     }
 
 

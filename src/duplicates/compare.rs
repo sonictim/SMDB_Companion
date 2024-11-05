@@ -17,6 +17,9 @@ impl NodeCommon for Compare {
     fn config(&mut self) -> &mut Node {
         &mut self.config
     }
+    fn enabled(&self) -> bool {
+        self.enabled
+    }
      fn render(&mut self, ui: &mut egui::Ui, _: &Database) {
         self.compare_db.recv2();
         let cdb = self.compare_db.get();
@@ -54,7 +57,7 @@ impl NodeCommon for Compare {
 
      fn process(&mut self, db: &Database) {
         let cdb = self.compare_db.get();
-        if self.enabled && cdb.is_some() {
+        if cdb.is_some() {
             if let Some(cdb) = &cdb {
                 self.config.working = true;
                 self.config.status.set(format!("Comparing against {}", cdb.name).into());

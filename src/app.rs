@@ -71,6 +71,7 @@ impl eframe::App for App {
         }
 
         self.receive_async_data();
+        if self.duplicates.tags_panel() {self.my_panel = Panel::Tags}
 
         // For inspiration and more examples, go to https://emilk.github.io/egui
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {

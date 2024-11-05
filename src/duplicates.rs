@@ -29,6 +29,13 @@ pub struct Duplicates {
 }
 
 impl Duplicates {
+    pub fn tags_panel(&mut self) -> bool {
+        if self.tags.open_panel {
+            self.tags.open_panel = false;
+            return true;
+        }
+        false
+    }
     pub fn render_order_panel(&mut self, ui: &mut egui::Ui, db: Option<&Database>) {
         self.basic.preservation_order.render(ui, db);
     }
@@ -185,7 +192,9 @@ impl Duplicates {
             .set("Searching for Duplicates".into());
 
         for node in self.nodes() {
-            node.process(db);
+            if node.enabled() {
+                node.process(db);
+            }
         }
     }
 
@@ -219,6 +228,7 @@ impl Duplicates {
             || self.deep.config.handle.is_some()
             || self.tags.config.handle.is_some()
             || self.compare.config.handle.is_some()
+            || self.waves.config.handle.is_some()
     }
 
     fn search_eligible(&self) -> bool {
@@ -273,6 +283,7 @@ impl Duplicates {
 
 pub trait NodeCommon {
     fn config(&mut self) -> &mut Node;
+    fn enabled(&self) -> bool;
 
     fn receive(&mut self) -> Option<HashSet<FileRecord>> {
         self.config().receive()

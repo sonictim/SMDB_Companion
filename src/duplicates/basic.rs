@@ -34,6 +34,9 @@ impl NodeCommon for Basic {
     fn config(&mut self) -> &mut Node {
         &mut self.config
     }
+    fn enabled(&self) -> bool {
+        self.enabled
+    }
 
     fn render(&mut self, ui: &mut egui::Ui, db: &Database) {
         ui.checkbox(&mut self.enabled, "Basic Duplicate Search");
@@ -85,24 +88,22 @@ impl NodeCommon for Basic {
     }
 
     fn process(&mut self, db: &Database) {
-        if self.enabled {
-            let progress_sender = self.config.progress.tx.clone();
-            let status_sender = self.config.status.tx.clone();
-            let pool = db.pool().unwrap();
-            let order = self.preservation_order.extract_sql().clone();
-            let match_groups = self.match_criteria.get().to_vec();
-            let match_null = self.match_null;
-            self.config.wrap_async(move || {
-                Self::async_gather(
-                    pool,
-                    progress_sender,
-                    status_sender,
-                    order,
-                    match_groups,
-                    match_null,
-                )
-            })
-        }
+        let progress_sender = self.config.progress.tx.clone();
+        let status_sender = self.config.status.tx.clone();
+        let pool = db.pool().unwrap();
+        let order = self.preservation_order.extract_sql().clone();
+        let match_groups = self.match_criteria.get().to_vec();
+        let match_null = self.match_null;
+        self.config.wrap_async(move || {
+            Self::async_gather(
+                pool,
+                progress_sender,
+                status_sender,
+                order,
+                match_groups,
+                match_null,
+            )
+        })
     }
 }
 

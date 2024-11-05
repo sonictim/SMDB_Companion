@@ -16,6 +16,9 @@ impl NodeCommon for Deep {
     fn config(&mut self) -> &mut Node {
         &mut self.config
     }
+    fn enabled(&self) -> bool {
+        self.enabled
+    }
 
     fn render(&mut self, ui: &mut egui::Ui, db: &Database) {
         ui.checkbox(&mut self.enabled, "Similar Filename Duplicates Search")
@@ -55,15 +58,12 @@ impl NodeCommon for Deep {
     }
 
     fn process(&mut self, db: &Database) {
-        if self.enabled {
-            let progress_sender = self.config.progress.tx.clone();
-            let status_sender = self.config.status.tx.clone();
-            let pool = db.pool().unwrap();
-            let ignore = self.ignore_extension;
-            self.config.wrap_async(move || {
-                Self::async_gather(pool, progress_sender, status_sender, ignore)
-            })
-        }
+        let progress_sender = self.config.progress.tx.clone();
+        let status_sender = self.config.status.tx.clone();
+        let pool = db.pool().unwrap();
+        let ignore = self.ignore_extension;
+        self.config
+            .wrap_async(move || Self::async_gather(pool, progress_sender, status_sender, ignore))
     }
 }
 
