@@ -85,7 +85,7 @@ impl Deep {
         let _ = status_sender.send("Organizing Results".into()).await;
 
         let total = rows.len();
-        let mut count: usize = 0;
+        let mut counter: usize = 0;
 
         // Use a parallel iterator to process the rows
         let processed_records: Vec<(String, FileRecord)> = rows
@@ -105,10 +105,10 @@ impl Deep {
                 .or_default()
                 .push(file_record);
 
-            count += 1;
+            counter += 1;
 
-            if count % 100 == 0 {
-                let _ = progress_sender.send(Progress { count, total }).await;
+            if counter % 100 == 0 {
+                let _ = progress_sender.send(Progress { counter, total }).await;
             }
         }
 

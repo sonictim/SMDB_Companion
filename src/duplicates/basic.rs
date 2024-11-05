@@ -165,14 +165,14 @@ impl Basic {
         let _ = status_sender.send("Organizing Records".into()).await;
 
         let total = rows.len();
-        let mut count = 0;
+        let mut counter = 0;
 
         for row in rows {
             file_records.insert(FileRecord::new(&row));
-            count += 1;
+            counter += 1;
 
-            if count % 100 == 0 {
-                let _ = progress_sender.send(Progress { count, total }).await;
+            if counter % 100 == 0 {
+                let _ = progress_sender.send(Progress { counter, total }).await;
             }
         }
 

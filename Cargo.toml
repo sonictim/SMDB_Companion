@@ -58,6 +58,9 @@ clipboard = "0.5.0"
 dirs = "5.0.1"
 webbrowser = "1.0.2"
 reqwest = "0.12.8"
+claxon = "0.4.3"
+hound = "3.5.1"
+anyhow = "1.0.92"
 
 
 

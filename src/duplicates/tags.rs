@@ -78,7 +78,7 @@ impl Tags {
         // Process each tag concurrently with a controlled level of concurrency
         let results = stream::iter(tags.into_iter())
             .enumerate()
-            .map(|(count, tag)| {
+            .map(|(counter, tag)| {
                 
                 let pool = pool.clone();
                 let progress_sender = progress_sender.clone();
@@ -93,7 +93,7 @@ impl Tags {
                     let result = sqlx::query(&query).bind(&tag).fetch_all(&pool).await; // Return the result (Result<Vec<sqlx::sqlite::SqliteRow>, sqlx::Error>)
                     let _ = status_sender.send((format!["Searching for tag: {}", &tag]).into()).await;
                     let _ = progress_sender
-                        .send(Progress{count, total})
+                        .send(Progress{counter, total})
                         .await;
                     
                     result

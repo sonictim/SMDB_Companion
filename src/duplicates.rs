@@ -168,7 +168,7 @@ impl Duplicates {
         if self.remove.config.working {
             ui.add(
                 egui::ProgressBar::new(
-                    self.remove.config.progress.get().count as f32
+                    self.remove.config.progress.get().counter as f32
                         / self.remove.config.progress.get().total as f32,
                 )
                 .desired_height(4.0),
@@ -363,7 +363,7 @@ impl Node {
             if self.working {
                 ui.label(format!(
                     "Progress: {} / {}",
-                    self.progress.get().count,
+                    self.progress.get().counter,
                     self.progress.get().total
                 ));
             }
@@ -372,7 +372,7 @@ impl Node {
         if self.working {
             ui.add(
                 egui::ProgressBar::new(
-                    self.progress.get().count as f32 / self.progress.get().total as f32,
+                    self.progress.get().counter as f32 / self.progress.get().total as f32,
                 )
                 .desired_height(4.0),
             );
@@ -399,13 +399,13 @@ impl Node {
 
 #[derive(Default)]
 pub struct Progress {
-    pub count: usize,
+    pub counter: usize,
     pub total: usize,
 }
 
 impl Progress {
-    pub fn set(&mut self, count: usize, total: usize) {
-        self.count = count;
+    pub fn set(&mut self, counter: usize, total: usize) {
+        self.counter = counter;
         self.total = total;
     }
 }

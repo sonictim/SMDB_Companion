@@ -1,3 +1,4 @@
+pub use anyhow::Result;
 pub use eframe::egui::{self, RichText, Ui};
 pub use rayon::prelude::*;
 pub use serde::Deserialize;
@@ -7,7 +8,6 @@ pub use sqlx::{sqlite::SqlitePool, Row};
 
 pub use std::collections::{HashMap, HashSet};
 pub use std::path::Path;
-pub use std::result::Result;
 pub use std::sync::{Arc, Mutex};
 pub use tokio::sync::mpsc;
 
@@ -344,11 +344,11 @@ impl Database {
 
             // Update the current count and send progress
             current_count += chunk.len();
-            let count = std::cmp::min(current_count, total);
+            let counter = std::cmp::min(current_count, total);
 
-            let _ = progress_sender.send(Progress { count, total }).await;
+            let _ = progress_sender.send(Progress { counter, total }).await;
             let _ = status_sender
-                .send(format!("Processed {} / {}", count, total).into())
+                .send(format!("Processed {} / {}", counter, total).into())
                 .await;
         }
 

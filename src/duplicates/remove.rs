@@ -184,19 +184,19 @@ impl Remove {
             }
 
             current_count += chunk.len();
-            let count = std::cmp::min(current_count, total);
+            let counter = std::cmp::min(current_count, total);
 
             let _ = self
                 .config
                 .progress
                 .tx
-                .send(Progress { count, total })
+                .send(Progress { counter, total })
                 .await;
             let _ = self
                 .config
                 .status
                 .tx
-                .send(format!("Processed {} / {}", count, total).into())
+                .send(format!("Processed {} / {}", counter, total).into())
                 .await;
         }
 
