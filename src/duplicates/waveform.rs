@@ -75,6 +75,7 @@ async fn gather(
             *count += 1;
 
             // Send progress update
+            let _ = status.try_send(format!("{}", path.display()).into());
             let _ = progress.try_send(Progress {
                 counter: *count,
                 total,
@@ -113,7 +114,7 @@ async fn gather(
 }
 
 fn get_wavemap(record: &FileRecord) -> String {
-    hash_audio_content(&record.path).unwrap()
+    hash_audio_content(&record.path).unwrap_or("Hash Error".to_string())
 }
 fn hash_audio_content(file_path: &str) -> Result<String> {
     // Open the file and choose handling based on extension
@@ -123,7 +124,10 @@ fn hash_audio_content(file_path: &str) -> Result<String> {
     let audio_data = match extension.to_lowercase().as_str() {
         "flac" => read_flac_audio_data(&file)?,
         "wav" => read_wav_audio_data(&file)?,
-        _ => anyhow::bail!("Unsupported file format"),
+        _ => {
+            println!("{file_path} is not supported yet");
+            return Ok(format!("Unsupported file format: {extension}"));
+        }
     };
 
     // Generate SHA-256 hash of the raw audio data
@@ -158,7 +162,7 @@ fn read_wav_audio_data(file: &File) -> Result<Vec<u8>> {
     let mut audio_data = Vec::new();
 
     // Print information about the WAV file
-    println!("WAV file: {:?}", wav_reader.spec());
+    // println!("WAV file: {:?}", wav_reader.spec());
 
     // Read samples as i32
     for sample in wav_reader.into_samples::<i32>() {

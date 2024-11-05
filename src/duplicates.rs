@@ -370,14 +370,14 @@ impl Node {
             } else {
                 ui.add_space(24.0)
             }
-            ui.label(RichText::new(&**self.status.get()).strong());
             if self.working {
                 ui.label(format!(
-                    "Progress: {} / {}",
+                    "{} / {}",
                     self.progress.get().counter,
                     self.progress.get().total
                 ));
             }
+            ui.label(RichText::new(&**self.status.get()).strong());
         });
 
         if self.working {
