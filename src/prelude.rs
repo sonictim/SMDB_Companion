@@ -5,7 +5,7 @@ pub use serde::Deserialize;
 pub use sqlx::sqlite::SqliteRow;
 pub use sqlx::{sqlite::SqlitePool, Row};
 
-pub use std::collections::HashSet;
+pub use std::collections::{HashMap, HashSet};
 pub use std::path::Path;
 pub use std::result::Result;
 pub use std::sync::{Arc, Mutex};

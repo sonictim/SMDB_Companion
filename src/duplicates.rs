@@ -227,6 +227,7 @@ impl Duplicates {
             || self.deep.enabled
             || self.tags.enabled
             || self.compare.enabled
+            || self.waves.enabled
     }
 
     fn receive_async_data(&mut self) {

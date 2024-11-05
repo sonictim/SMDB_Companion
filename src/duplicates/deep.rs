@@ -2,7 +2,6 @@ use crate::prelude::*;
 
 use once_cell::sync::Lazy;
 pub use regex::Regex;
-use std::collections::HashMap;
 
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 #[serde(default)]
