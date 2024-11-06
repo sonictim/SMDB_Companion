@@ -269,10 +269,7 @@ impl OrderPanel {
 
             enum_combo_box(ui, &mut self.operator, "order column");
             match self.operator {
-                OrderOperator::Largest
-                | OrderOperator::Smallest
-                | OrderOperator::IsEmpty
-                | OrderOperator::IsNotEmpty => {}
+                O::Largest | O::Smallest | O::IsEmpty | O::IsNotEmpty => {}
                 _ => {
                     ui.text_edit_singleline(&mut self.input);
                 }
@@ -280,10 +277,7 @@ impl OrderPanel {
 
             if ui.button("Add Line").clicked {
                 match self.operator {
-                    OrderOperator::Largest
-                    | OrderOperator::Smallest
-                    | OrderOperator::IsEmpty
-                    | OrderOperator::IsNotEmpty => {
+                    O::Largest | O::Smallest | O::IsEmpty | O::IsNotEmpty => {
                         self.list.insert(
                             0,
                             PreservationLogic {
@@ -362,27 +356,27 @@ pub enum OrderOperator {
 impl EnumComboBox for OrderOperator {
     fn as_str(&self) -> &'static str {
         match self {
-            OrderOperator::Largest => "Largest",
-            OrderOperator::Smallest => "Smallest",
-            OrderOperator::Is => "is",
-            OrderOperator::IsNot => "is NOT",
-            OrderOperator::Contains => "Contains",
-            OrderOperator::DoesNotContain => "Does NOT Contain",
-            OrderOperator::IsEmpty => "Is Empty",
-            OrderOperator::IsNotEmpty => "Is NOT Empty",
+            O::Largest => "Largest",
+            O::Smallest => "Smallest",
+            O::Is => "is",
+            O::IsNot => "is NOT",
+            O::Contains => "Contains",
+            O::DoesNotContain => "Does NOT Contain",
+            O::IsEmpty => "Is Empty",
+            O::IsNotEmpty => "Is NOT Empty",
         }
     }
 
     fn variants() -> &'static [OrderOperator] {
         &[
-            OrderOperator::Largest,
-            OrderOperator::Smallest,
-            OrderOperator::Contains,
-            OrderOperator::DoesNotContain,
-            OrderOperator::Is,
-            OrderOperator::IsNot,
-            OrderOperator::IsEmpty,
-            OrderOperator::IsNotEmpty,
+            O::Largest,
+            O::Smallest,
+            O::Contains,
+            O::DoesNotContain,
+            O::Is,
+            O::IsNot,
+            O::IsEmpty,
+            O::IsNotEmpty,
         ]
     }
 }
@@ -397,29 +391,29 @@ pub struct PreservationLogic {
 impl PreservationLogic {
     fn get_sql(&self) -> String {
         match self.operator {
-            OrderOperator::Largest => format! {"{} DESC", self.column.to_lowercase()},
-            OrderOperator::Smallest => format!("{} ASC", self.column.to_lowercase()),
-            OrderOperator::Is => format!(
+            O::Largest => format! {"{} DESC", self.column.to_lowercase()},
+            O::Smallest => format!("{} ASC", self.column.to_lowercase()),
+            O::Is => format!(
                 "CASE WHEN {} IS '%{}%' THEN 0 ELSE 1 END ASC",
                 self.column, self.variable,
             ),
-            OrderOperator::IsNot => format!(
+            O::IsNot => format!(
                 "CASE WHEN {} IS '%{}%' THEN 1 ELSE 0 END ASC",
                 self.column, self.variable
             ),
-            OrderOperator::Contains => format!(
+            O::Contains => format!(
                 "CASE WHEN {} LIKE '%{}%' THEN 0 ELSE 1 END ASC",
                 self.column, self.variable
             ),
-            OrderOperator::DoesNotContain => format!(
+            O::DoesNotContain => format!(
                 "CASE WHEN {} LIKE '%{}%' THEN 1 ELSE 0 END ASC",
                 self.column, self.variable
             ),
-            OrderOperator::IsEmpty => format!(
+            O::IsEmpty => format!(
                 "CASE WHEN {} IS NOT NULL AND {} != '' THEN 1 ELSE 0 END ASC",
                 self.column, self.column
             ),
-            OrderOperator::IsNotEmpty => format!(
+            O::IsNotEmpty => format!(
                 "CASE WHEN {} IS NOT NULL AND {} != '' THEN 0 ELSE 1 END ASC",
                 self.column, self.column
             ),
@@ -427,16 +421,16 @@ impl PreservationLogic {
     }
     fn get_friendly(&self) -> String {
         match self.operator {
-            OrderOperator::Largest => format! {"Largest {}", self.column},
-            OrderOperator::Smallest => format!("Smallest {} ", self.column),
-            OrderOperator::Is => format!("{} is '{}'", self.column, self.variable),
-            OrderOperator::IsNot => format!("{} is NOT '{}'", self.column, self.variable),
-            OrderOperator::Contains => format!("{} contains '{}'", self.column, self.variable),
-            OrderOperator::DoesNotContain => {
+            O::Largest => format! {"Largest {}", self.column},
+            O::Smallest => format!("Smallest {} ", self.column),
+            O::Is => format!("{} is '{}'", self.column, self.variable),
+            O::IsNot => format!("{} is NOT '{}'", self.column, self.variable),
+            O::Contains => format!("{} contains '{}'", self.column, self.variable),
+            O::DoesNotContain => {
                 format!("{} does NOT contain '{}'", self.column, self.variable)
             }
-            OrderOperator::IsEmpty => format!("{} is empty", self.column,),
-            OrderOperator::IsNotEmpty => format!("{} is NOT empty", self.column,),
+            O::IsEmpty => format!("{} is empty", self.column,),
+            O::IsNotEmpty => format!("{} is NOT empty", self.column,),
         }
     }
 }
@@ -445,62 +439,62 @@ fn default_order() -> Vec<PreservationLogic> {
     vec![
         PreservationLogic {
             column: String::from("Description"),
-            operator: OrderOperator::IsNotEmpty,
+            operator: O::IsNotEmpty,
             variable: String::new(),
         },
         PreservationLogic {
             column: String::from("Pathname"),
-            operator: OrderOperator::DoesNotContain,
+            operator: O::DoesNotContain,
             variable: String::from("Audio Files"),
         },
         PreservationLogic {
             column: String::from("Pathname"),
-            operator: OrderOperator::Contains,
+            operator: O::Contains,
             variable: String::from("LIBRARIES"),
         },
         PreservationLogic {
             column: String::from("Pathname"),
-            operator: OrderOperator::Contains,
+            operator: O::Contains,
             variable: String::from("LIBRARY"),
         },
         PreservationLogic {
             column: String::from("Pathname"),
-            operator: OrderOperator::Contains,
+            operator: O::Contains,
             variable: String::from("/LIBRARY"),
         },
         PreservationLogic {
             column: String::from("Pathname"),
-            operator: OrderOperator::Contains,
+            operator: O::Contains,
             variable: String::from("LIBRARY/"),
         },
         PreservationLogic {
             column: String::from("Duration"),
-            operator: OrderOperator::Largest,
+            operator: O::Largest,
             variable: String::new(),
         },
         PreservationLogic {
             column: String::from("Channels"),
-            operator: OrderOperator::Largest,
+            operator: O::Largest,
             variable: String::new(),
         },
         PreservationLogic {
             column: String::from("SampleRate"),
-            operator: OrderOperator::Largest,
+            operator: O::Largest,
             variable: String::new(),
         },
         PreservationLogic {
             column: String::from("BitDepth"),
-            operator: OrderOperator::Largest,
+            operator: O::Largest,
             variable: String::new(),
         },
         PreservationLogic {
             column: String::from("BWDate"),
-            operator: OrderOperator::Smallest,
+            operator: O::Smallest,
             variable: String::new(),
         },
         PreservationLogic {
             column: String::from("ScannedDate"),
-            operator: OrderOperator::Smallest,
+            operator: O::Smallest,
             variable: String::new(),
         },
     ]
@@ -510,112 +504,112 @@ fn tjf_order() -> Vec<PreservationLogic> {
     vec![
         PreservationLogic {
             column: String::from("Pathname"),
-            operator: OrderOperator::Contains,
+            operator: O::Contains,
             variable: String::from("TJF RECORDINGS"),
         },
         PreservationLogic {
             column: String::from("Pathname"),
-            operator: OrderOperator::Contains,
+            operator: O::Contains,
             variable: String::from("LIBRARIES"),
         },
         PreservationLogic {
             column: String::from("Pathname"),
-            operator: OrderOperator::DoesNotContain,
+            operator: O::DoesNotContain,
             variable: String::from("SHOWS/Tim Farrell"),
         },
         PreservationLogic {
             column: String::from("Description"),
-            operator: OrderOperator::IsNotEmpty,
+            operator: O::IsNotEmpty,
             variable: String::new(),
         },
         PreservationLogic {
             column: String::from("Pathname"),
-            operator: OrderOperator::DoesNotContain,
+            operator: O::DoesNotContain,
             variable: String::from("Audio Files"),
         },
         PreservationLogic {
             column: String::from("Pathname"),
-            operator: OrderOperator::Contains,
+            operator: O::Contains,
             variable: String::from("RECORD"),
         },
         PreservationLogic {
             column: String::from("Pathname"),
-            operator: OrderOperator::Contains,
+            operator: O::Contains,
             variable: String::from("CREATED SFX"),
         },
         PreservationLogic {
             column: String::from("Pathname"),
-            operator: OrderOperator::Contains,
+            operator: O::Contains,
             variable: String::from("CREATED FX"),
         },
         PreservationLogic {
             column: String::from("Pathname"),
-            operator: OrderOperator::Contains,
+            operator: O::Contains,
             variable: String::from("LIBRARY"),
         },
         PreservationLogic {
             column: String::from("Pathname"),
-            operator: OrderOperator::Contains,
+            operator: O::Contains,
             variable: String::from("/LIBRARY"),
         },
         PreservationLogic {
             column: String::from("Pathname"),
-            operator: OrderOperator::Contains,
+            operator: O::Contains,
             variable: String::from("LIBRARY/"),
         },
         PreservationLogic {
             column: String::from("Pathname"),
-            operator: OrderOperator::Contains,
+            operator: O::Contains,
             variable: String::from("SIGNATURE"),
         },
         PreservationLogic {
             column: String::from("Pathname"),
-            operator: OrderOperator::Contains,
+            operator: O::Contains,
             variable: String::from("PULLS"),
         },
         PreservationLogic {
             column: String::from("Pathname"),
-            operator: OrderOperator::DoesNotContain,
+            operator: O::DoesNotContain,
             variable: String::from("EDIT"),
         },
         PreservationLogic {
             column: String::from("Pathname"),
-            operator: OrderOperator::DoesNotContain,
+            operator: O::DoesNotContain,
             variable: String::from("MIX"),
         },
         PreservationLogic {
             column: String::from("Pathname"),
-            operator: OrderOperator::DoesNotContain,
+            operator: O::DoesNotContain,
             variable: String::from("SESSION"),
         },
         PreservationLogic {
             column: String::from("Duration"),
-            operator: OrderOperator::Largest,
+            operator: O::Largest,
             variable: String::new(),
         },
         PreservationLogic {
             column: String::from("Channels"),
-            operator: OrderOperator::Largest,
+            operator: O::Largest,
             variable: String::new(),
         },
         PreservationLogic {
             column: String::from("SampleRate"),
-            operator: OrderOperator::Largest,
+            operator: O::Largest,
             variable: String::new(),
         },
         PreservationLogic {
             column: String::from("BitDepth"),
-            operator: OrderOperator::Largest,
+            operator: O::Largest,
             variable: String::new(),
         },
         PreservationLogic {
             column: String::from("BWDate"),
-            operator: OrderOperator::Smallest,
+            operator: O::Smallest,
             variable: String::new(),
         },
         PreservationLogic {
             column: String::from("ScannedDate"),
-            operator: OrderOperator::Smallest,
+            operator: O::Smallest,
             variable: String::new(),
         },
     ]

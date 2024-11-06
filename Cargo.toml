@@ -61,6 +61,7 @@ reqwest = "0.12.8"
 claxon = "0.4.3"
 hound = "3.5.1"
 anyhow = "1.0.92"
+minimp3 = "0.5.1"
 
 
 
