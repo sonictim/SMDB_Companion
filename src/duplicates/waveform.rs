@@ -64,12 +64,6 @@ async fn gather(
             let wavemaps = wavemaps.clone();
             let counter = counter.clone(); // Clone the counter Arc
 
-            // Lock the mutex to access wavemaps
-            {
-                let mut wavemaps = wavemaps.lock().unwrap();
-                wavemaps.entry(wavemap).or_default().push(record.clone());
-            }
-
             // Lock the mutex to update the counter
             let mut count = counter.lock().unwrap();
             *count += 1;
@@ -80,6 +74,11 @@ async fn gather(
                 counter: *count,
                 total,
             });
+            // Lock the mutex to access wavemaps
+            {
+                let mut wavemaps = wavemaps.lock().unwrap();
+                wavemaps.entry(wavemap).or_default().push(record.clone());
+            }
         }
     });
 
