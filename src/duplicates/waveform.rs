@@ -161,6 +161,52 @@ fn hash_audio_content(file_path: &str, ignore_filetypes: bool) -> Result<String>
     Ok(hex::encode(hash))
 }
 
+fn get_ffmpeg_path() -> String {
+    // Get the path to the ffmpeg binary depending on platform (Linux/macOS/Windows)
+    let current_dir = env::current_dir().expect("Failed to get current dir");
+    let ffmpeg_path = current_dir.join("assets").join("ffmpeg").join("ffmpeg");
+
+    ffmpeg_path.to_string_lossy().to_string()
+}
+
+fn convert_to_raw_pcm(input_path: &str) -> Result<Vec<u8>> {
+    let ffmpeg_binary_path = get_ffmpeg_path();
+    let ffmpeg_command = Command::new(ffmpeg_binary_path)
+        .arg("-i")
+        .arg(input_path)
+        // Standardize to 16kHz mono - reduces data while preserving essential content
+        .arg("-ar")
+        .arg("16000")
+        .arg("-ac")
+        .arg("1")
+        // // Apply audio filters to normalize the content
+        // .arg("-af")
+        // .arg("lowpass=f=7000,volume=volume=1.0:precision=double,dcshift=shift=0")
+        // // This filter chain:
+        // // 1. Applies a lowpass filter to remove high frequencies that differ between sample rates
+        // // 2. Normalizes volume to ensure consistent levels
+        // // 3. Removes DC offset which can vary between encodings
+        .arg("-f")
+        .arg("f32le")
+        .arg("-vn")
+        .arg("-map_metadata")
+        .arg("-1")
+        .arg("-")
+        .stderr(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .context("Failed to start FFmpeg")?;
+
+    let mut ffmpeg_process = ffmpeg_command
+        .stdout
+        .ok_or_else(|| anyhow::anyhow!("Failed to open FFmpeg stdout"))?;
+
+    let mut pcm_data = Vec::new();
+    ffmpeg_process.read_to_end(&mut pcm_data)?;
+
+    Ok(pcm_data)
+}
+
 fn read_flac_audio_data(file: &File) -> Result<Vec<u8>> {
     let mut reader = BufReader::new(file);
     let mut flac_reader = FlacReader::new(&mut reader)?;
@@ -218,48 +264,4 @@ fn read_mp3_audio_data(file: &File) -> Result<Vec<u8>> {
         }
     }
     Ok(audio_data)
-}
-
-fn get_ffmpeg_path() -> String {
-    // Get the path to the ffmpeg binary depending on platform (Linux/macOS/Windows)
-    let current_dir = env::current_dir().expect("Failed to get current dir");
-    let ffmpeg_path = current_dir.join("assets").join("ffmpeg").join("ffmpeg");
-
-    ffmpeg_path.to_string_lossy().to_string()
-}
-
-fn convert_to_raw_pcm(input_path: &str) -> Result<Vec<u8>> {
-    let ffmpeg_binary_path = get_ffmpeg_path();
-    let ffmpeg_command = Command::new(ffmpeg_binary_path)
-        .arg("-i")
-        .arg(input_path) // Input file path
-        .arg("-f")
-        .arg("s16le") // 16-bit little-endian PCM format
-        .arg("-ac")
-        .arg("1") // Number of channels (you can adjust this)
-        .arg("-ar")
-        .arg("44100") // 44.1kHz sample rate (adjustable)
-        .arg("-") // Output to stdout (not a file)
-        .stderr(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .context("Failed to start FFmpeg")?;
-
-    let mut ffmpeg_process = ffmpeg_command
-        .stdout
-        .ok_or_else(|| anyhow::anyhow!("Failed to open FFmpeg stdout"))?;
-
-    // Read the raw PCM data from FFmpeg output
-    let mut pcm_data = Vec::new();
-    ffmpeg_process.read_to_end(&mut pcm_data)?;
-
-    // // Check for errors in FFmpeg execution by reading stderr
-    // let stderr = ffmpeg_process.stderr.unwrap();
-    // let mut error_message = String::new();
-    // stderr.read_to_string(&mut error_message)?;
-    // if !error_message.is_empty() {
-    //     return Err(anyhow::anyhow!("FFmpeg error: {}", error_message).into());
-    // }
-
-    Ok(pcm_data) // Returns raw PCM data in memory
 }
