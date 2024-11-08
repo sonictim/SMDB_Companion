@@ -11,6 +11,7 @@ pub mod waveform;
 use basic::Basic;
 use compare::Compare;
 use deep::Deep;
+pub use order::OrderPanel;
 use remove::Remove;
 use tags::Tags;
 use waveform::Waveforms;
@@ -24,6 +25,7 @@ pub struct Duplicates {
     waves: Waveforms,
     compare: Compare,
     remove: Remove,
+    order: Arc<RwLock<OrderPanel>>,
 
     #[serde(skip)]
     pub records_window: RecordsWindow,
@@ -38,7 +40,8 @@ impl Duplicates {
         false
     }
     pub fn render_order_panel(&mut self, ui: &mut egui::Ui, db: Option<&Database>) {
-        self.basic.preservation_order.render(ui, db);
+        let mut order = self.order.write().unwrap(); // Lock the RwLock for mutable access
+        order.render(ui, db);
     }
     pub fn render_tags_panel(&mut self, ui: &mut egui::Ui) {
         self.tags.render_panel(ui);
@@ -192,10 +195,11 @@ impl Duplicates {
             .status
             .set("Searching for Duplicates".into());
 
-        let columns = self.basic.get_required_metadata_columns();
+        let columns = self.get_required_metadata_columns();
+        let order = self.order.clone();
         for node in &mut self.nodes() {
             if node.enabled() {
-                node.process(db, &columns);
+                node.process(db, &columns, order.clone());
             }
         }
     }
@@ -208,6 +212,7 @@ impl Duplicates {
         self.tags.enabled = true;
         self.tags.set_tjf();
         self.remove.dupes_db = false;
+        self.order.write().unwrap().tjf_default();
     }
 
     pub fn clear_status(&mut self) {
@@ -281,6 +286,17 @@ impl Duplicates {
             );
         }
     }
+    pub fn get_required_metadata_columns(&self) -> HashSet<String> {
+        let mut set = HashSet::new();
+        // set.insert("rowid".to_string());
+        // set.insert("Filename".to_string());
+        // set.insert("Pathname".to_string());
+        for item in self.basic.match_criteria.get() {
+            set.insert(item.clone());
+        }
+        set.extend(self.order.read().unwrap().get_columns());
+        set
+    }
 }
 
 pub trait NodeCommon {
@@ -300,7 +316,7 @@ pub trait NodeCommon {
         self.config().render(ui);
     }
     fn render(&mut self, ui: &mut egui::Ui, db: &Database);
-    fn process(&mut self, db: &Database, columns: &HashSet<String>);
+    fn process(&mut self, db: &Database, columns: &HashSet<String>, order: Arc<RwLock<OrderPanel>>);
 }
 
 pub struct Node {

@@ -9,21 +9,7 @@ pub struct Basic {
     pub config: Node,
     pub match_criteria: SelectableList,
     match_null: bool,
-    pub preservation_order: OrderPanel,
-}
-
-impl Basic {
-    pub fn get_required_metadata_columns(&self) -> HashSet<String> {
-        let mut set = HashSet::new();
-        // set.insert("rowid".to_string());
-        // set.insert("Filename".to_string());
-        // set.insert("Pathname".to_string());
-        for item in self.match_criteria.get() {
-            set.insert(item.clone());
-        }
-        set.extend(self.preservation_order.get_columns());
-        set
-    }
+    // pub preservation_order: OrderPanel,
 }
 
 impl Default for Basic {
@@ -33,14 +19,14 @@ impl Default for Basic {
             config: Node::default(),
             match_criteria: SelectableList::default(),
             match_null: false,
-            preservation_order: OrderPanel::default(),
+            // preservation_order: OrderPanel::default(),
         };
         default.match_criteria.set(vec![
             "Channels".to_owned(),
             "Duration".to_owned(),
             "Filename".to_owned(),
         ]);
-        default.preservation_order.list = default_order();
+        // default.preservation_order.list = default_order();
         default
     }
 }
@@ -102,11 +88,11 @@ impl NodeCommon for Basic {
         }
     }
 
-    fn process(&mut self, db: &Database, _: &HashSet<String>) {
+    fn process(&mut self, db: &Database, _: &HashSet<String>, order: Arc<RwLock<OrderPanel>>) {
         let progress_sender = self.config.progress.tx.clone();
         let status_sender = self.config.status.tx.clone();
         let pool = db.pool().unwrap();
-        let order = self.preservation_order.extract_sql().clone();
+        let order = order.read().unwrap().extract_sql().clone();
         let match_groups = self.match_criteria.get().to_vec();
         let match_null = self.match_null;
         self.config.wrap_async(move || {
@@ -127,7 +113,7 @@ impl Basic {
         *self = Self::default();
 
         self.match_criteria.set(vec!["Filename".to_owned()]);
-        self.preservation_order.list = tjf_order();
+        // self.preservation_order.list = tjf_order();
     }
 
     pub async fn async_gather(

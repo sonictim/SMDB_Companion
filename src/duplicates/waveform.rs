@@ -13,6 +13,7 @@ use std::io::Read;
 use std::io::Write;
 use std::process::Command;
 use std::process::Stdio;
+use std::sync::RwLock;
 
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 #[serde(default)]
@@ -38,13 +39,15 @@ impl NodeCommon for Waveforms {
             ui.checkbox(&mut self.ignore_filetype, "Ignore Filetypes (much slower)");
         });
     }
-    fn process(&mut self, db: &Database, _: &HashSet<String>) {
+    fn process(&mut self, db: &Database, _: &HashSet<String>, order: Arc<RwLock<OrderPanel>>) {
         let db = db.clone();
         let progress_sender = self.config.progress.tx.clone();
         let status_sender = self.config.status.tx.clone();
         let ignore = self.ignore_filetype;
+        let order = order.clone();
+
         self.config
-            .wrap_async(move || gather(db, progress_sender, status_sender, ignore))
+            .wrap_async(move || gather(db, progress_sender, status_sender, ignore, order))
     }
 }
 async fn gather(
@@ -52,6 +55,7 @@ async fn gather(
     progress: mpsc::Sender<Progress>,
     status: mpsc::Sender<Arc<str>>,
     ignore_filetypes: bool,
+    order: Arc<RwLock<OrderPanel>>,
 ) -> Result<HashSet<FileRecord>, sqlx::Error> {
     println!("Searching for Duplicate Waveforms");
 
@@ -115,15 +119,22 @@ async fn gather(
     let mut file = File::create(log_file_path).unwrap();
 
     // Count duplicates
-    let wavemaps = wavemaps.lock().unwrap(); // Lock the mutex to read wavemaps
-    for (key, mut records) in wavemaps.iter() {
+    let mut wavemaps = wavemaps.lock().unwrap(); // Lock the mutex to read wavemaps
+    let order = order.read().unwrap();
+    for (key, records) in &mut wavemaps.iter_mut() {
         if records.len() > 1 {
             let _ = writeln!(file, "Key: {key}");
-            for r in records {
+
+            // Now we can safely mutate `records`
+            status.send("Begin Sort".into());
+            order.sort_vec(records);
+            status.send("End Sort".into());
+
+            // Use a reference to `records` instead of taking ownership
+            for r in &*records {
+                // Borrow records immutably
                 let _ = writeln!(file, "{}", r.path);
             }
-            let panel = OrderPanel::default();
-            OrderPanel::sort_vec(&panel, &mut records);
 
             // Skip the first record and add the rest to results
             results.extend(records.iter().skip(1).cloned());

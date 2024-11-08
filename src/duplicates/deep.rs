@@ -58,7 +58,7 @@ impl NodeCommon for Deep {
         }
     }
 
-    fn process(&mut self, db: &Database, columns: &HashSet<String>) {
+    fn process(&mut self, db: &Database, columns: &HashSet<String>, _: Arc<RwLock<OrderPanel>>) {
         let progress_sender = self.config.progress.tx.clone();
         let status_sender = self.config.status.tx.clone();
         let pool = db.pool().unwrap();

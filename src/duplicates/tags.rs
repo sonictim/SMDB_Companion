@@ -52,7 +52,7 @@ impl NodeCommon for Tags {
 
     }
 
-    fn process(&mut self, db: &Database, _: &HashSet<String>) {
+    fn process(&mut self, db: &Database, _: &HashSet<String>, _: Arc<RwLock<OrderPanel>>) {
         let progress_sender = self.config.progress.tx.clone();
         let status_sender = self.config.status.tx.clone();
         let pool = db.pool().unwrap();

@@ -1,6 +1,6 @@
 [package]
 name = "SMDB_Companion"
-version = "0.2.7"
+version = "0.2.8"
 authors = ["Tim Farrell <soundguru@gmail.com>"]
 edition = "2021"
 include = ["LICENSE-APACHE", "LICENSE-MIT", "**/*.rs", "Cargo.toml"]

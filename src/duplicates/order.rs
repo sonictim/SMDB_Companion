@@ -12,7 +12,7 @@ pub fn hashset_to_query_string(set: &HashSet<String>) -> String {
     result
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Default)]
+#[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)]
 pub struct OrderPanel {
     pub list: Vec<PreservationLogic>,
@@ -24,7 +24,27 @@ pub struct OrderPanel {
     pub input: String,
 }
 
+impl Default for OrderPanel {
+    fn default() -> Self {
+        Self {
+            list: default_order(),
+            sel_line: Option::default(),
+            column: String::default(),
+            operator: OrderOperator::default(),
+            input: String::default(),
+            // ..Default::default()
+        }
+    }
+}
+
 impl OrderPanel {
+    pub fn tjf_default(&mut self) {
+        *self = Self::default();
+
+        // self.match_criteria.set(vec!["Filename".to_owned()]);
+        self.list = tjf_order();
+    }
+
     pub fn sort_vec(&self, vec: &mut Vec<FileRecord>) {
         for l in self.list.iter().rev() {
             l.sort(vec);

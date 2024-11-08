@@ -9,7 +9,7 @@ pub use sqlx::{sqlite::SqlitePool, Row};
 pub use std::collections::{HashMap, HashSet};
 use std::fs::File;
 pub use std::path::Path;
-pub use std::sync::{Arc, Mutex};
+pub use std::sync::{Arc, Mutex, RwLock};
 pub use tokio::sync::mpsc;
 
 pub use dirs::home_dir;

@@ -55,7 +55,7 @@ impl NodeCommon for Compare {
     }
 
 
-     fn process(&mut self, db: &Database, _: &HashSet<String>) {
+     fn process(&mut self, db: &Database, _: &HashSet<String>, _: Arc<RwLock<OrderPanel>>) {
         let cdb = self.compare_db.get();
         if cdb.is_some() {
             if let Some(cdb) = &cdb {
