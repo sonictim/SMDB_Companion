@@ -22,8 +22,6 @@ pub struct App {
 
     #[serde(skip)]
     db: AsyncTunnel<Option<Database>>,
-    // #[serde(skip)]
-    // extensions_io: AsyncTunnel<Vec<String>>,
 
     #[serde(skip)]
     my_panel: Panel,
