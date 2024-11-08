@@ -126,9 +126,7 @@ async fn gather(
             let _ = writeln!(file, "Key: {key}");
 
             // Now we can safely mutate `records`
-            status.send("Begin Sort".into());
             order.sort_vec(records);
-            status.send("End Sort".into());
 
             // Use a reference to `records` instead of taking ownership
             for r in &*records {
