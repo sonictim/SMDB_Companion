@@ -1,5 +1,6 @@
 use crate::prelude::*;
 
+use basic::hashset_to_query_string;
 use once_cell::sync::Lazy;
 pub use regex::Regex;
 
@@ -57,13 +58,15 @@ impl NodeCommon for Deep {
         }
     }
 
-    fn process(&mut self, db: &Database) {
+    fn process(&mut self, db: &Database, columns: &HashSet<String>) {
         let progress_sender = self.config.progress.tx.clone();
         let status_sender = self.config.status.tx.clone();
         let pool = db.pool().unwrap();
         let ignore = self.ignore_extension;
-        self.config
-            .wrap_async(move || Self::async_gather(pool, progress_sender, status_sender, ignore))
+        let columns = columns.clone();
+        self.config.wrap_async(move || {
+            Self::async_gather(pool, progress_sender, status_sender, ignore, columns)
+        })
     }
 }
 
@@ -73,13 +76,19 @@ impl Deep {
         progress_sender: mpsc::Sender<Progress>,
         status_sender: mpsc::Sender<Arc<str>>,
         ignore_extension: bool,
+        columns: HashSet<String>,
     ) -> Result<HashSet<FileRecord>, sqlx::Error> {
         let mut file_groups: HashMap<String, Vec<FileRecord>> = HashMap::new();
         let _ = status_sender
             .send("Gathering Duplicates with Similar Filenames".into())
             .await;
 
-        let query = &format!("SELECT rowid, filename, duration, filepath FROM {}", TABLE);
+        let query = &format!(
+            "SELECT {} FROM {}",
+            hashset_to_query_string(&columns),
+            TABLE
+        );
+        // let query = &format!("SELECT rowid, Filename, duration, filepath FROM {}", TABLE);
 
         let rows = sqlx::query(query).fetch_all(&pool).await?;
         let _ = status_sender.send("Organizing Results".into()).await;
@@ -91,7 +100,9 @@ impl Deep {
         let processed_records: Vec<(String, FileRecord)> = rows
             .par_iter() // Use a parallel iterator
             .map(|row| {
-                let file_record = FileRecord::new(row);
+                let mut file_record = FileRecord::new(row);
+                file_record.update_metadata(row, &columns);
+                println! {"{:?}", file_record};
                 let base_filename = get_root_filename(&file_record.filename, ignore_extension)
                     .unwrap_or_else(|| file_record.filename.to_string());
                 (base_filename, file_record)

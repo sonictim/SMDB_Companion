@@ -7,6 +7,7 @@ pub use sqlx::sqlite::SqliteRow;
 pub use sqlx::{sqlite::SqlitePool, Row};
 
 pub use std::collections::{HashMap, HashSet};
+use std::fs::File;
 pub use std::path::Path;
 pub use std::sync::{Arc, Mutex};
 pub use tokio::sync::mpsc;
@@ -23,12 +24,19 @@ pub use crate::find_replace::FindPanel;
 pub const TABLE: &str = "justinmetadata";
 pub use crate::duplicates::basic::OrderOperator as O;
 
-#[derive(Hash, Eq, PartialEq, Clone, Debug)]
+#[derive(Eq, PartialEq, Clone, Debug)]
 pub struct FileRecord {
     pub id: usize,
     pub filename: Arc<str>,
     pub duration: Arc<str>,
     pub path: Arc<str>,
+    pub data: HashMap<String, String>,
+}
+
+impl Hash for FileRecord {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
 }
 
 impl FileRecord {
@@ -42,6 +50,14 @@ impl FileRecord {
             filename: filename.into(),
             duration: duration.into(),
             path: path.into(),
+            data: HashMap::new(),
+        }
+    }
+    pub fn update_metadata(&mut self, row: &SqliteRow, columns: &HashSet<String>) {
+        for c in columns {
+            let data = row.try_get(c.as_str());
+            println!("{:?}", data);
+            self.data.insert(c.clone(), data.unwrap_or("").to_string());
         }
     }
 }

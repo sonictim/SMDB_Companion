@@ -191,9 +191,10 @@ impl Duplicates {
             .status
             .set("Searching for Duplicates".into());
 
-        for node in self.nodes() {
+        let columns = self.basic.get_required_metadata_columns();
+        for node in &mut self.nodes() {
             if node.enabled() {
-                node.process(db);
+                node.process(db, &columns);
             }
         }
     }
@@ -298,7 +299,7 @@ pub trait NodeCommon {
         self.config().render(ui);
     }
     fn render(&mut self, ui: &mut egui::Ui, db: &Database);
-    fn process(&mut self, db: &Database);
+    fn process(&mut self, db: &Database, columns: &HashSet<String>);
 }
 
 pub struct Node {

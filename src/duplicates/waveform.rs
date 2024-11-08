@@ -1,5 +1,6 @@
 use crate::prelude::*;
 use anyhow::Context;
+use basic::OrderPanel;
 use claxon::FlacReader;
 use hound::WavReader;
 use minimp3::{Decoder, Frame};
@@ -37,7 +38,7 @@ impl NodeCommon for Waveforms {
             ui.checkbox(&mut self.ignore_filetype, "Ignore Filetypes (much slower)");
         });
     }
-    fn process(&mut self, db: &Database) {
+    fn process(&mut self, db: &Database, _: &HashSet<String>) {
         let db = db.clone();
         let progress_sender = self.config.progress.tx.clone();
         let status_sender = self.config.status.tx.clone();
@@ -115,12 +116,15 @@ async fn gather(
 
     // Count duplicates
     let wavemaps = wavemaps.lock().unwrap(); // Lock the mutex to read wavemaps
-    for (key, records) in wavemaps.iter() {
+    for (key, mut records) in wavemaps.iter() {
         if records.len() > 1 {
             let _ = writeln!(file, "Key: {key}");
             for r in records {
                 let _ = writeln!(file, "{}", r.path);
             }
+            let panel = OrderPanel::default();
+            OrderPanel::sort_vec(&panel, &mut records);
+
             // Skip the first record and add the rest to results
             results.extend(records.iter().skip(1).cloned());
 
