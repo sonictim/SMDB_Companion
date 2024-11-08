@@ -3,6 +3,7 @@ use crate::prelude::*;
 pub mod basic;
 pub mod compare;
 pub mod deep;
+pub mod order;
 pub mod remove;
 pub mod tags;
 pub mod waveform;

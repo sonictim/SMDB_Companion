@@ -22,7 +22,7 @@ pub use crate::duplicates::*;
 pub use crate::find_replace::FindPanel;
 
 pub const TABLE: &str = "justinmetadata";
-pub use crate::duplicates::basic::OrderOperator as O;
+pub use crate::duplicates::order::OrderOperator as O;
 
 #[derive(Eq, PartialEq, Clone, Debug)]
 pub struct FileRecord {

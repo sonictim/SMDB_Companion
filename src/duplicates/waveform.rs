@@ -1,9 +1,9 @@
 use crate::prelude::*;
 use anyhow::Context;
-use basic::OrderPanel;
 use claxon::FlacReader;
 use hound::WavReader;
 use minimp3::{Decoder, Frame};
+use order::OrderPanel;
 
 use sha2::{Digest, Sha256};
 use std::env;
