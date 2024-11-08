@@ -12,3 +12,5 @@ target_wasm
 # https://github.com/lycheeverse/lychee
 .lycheecache
 .DS_Store
+
+wveform_log.txt
