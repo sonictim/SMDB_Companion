@@ -218,7 +218,7 @@ pub struct OrderPanel {
 }
 
 impl OrderPanel {
-    pub fn sort_vec(&self, mut vec: &mut Vec<FileRecord>) {
+    pub fn sort_vec(&self, vec: &mut Vec<FileRecord>) {
         for l in self.list.iter().rev() {
             l.sort(vec);
         }
@@ -507,7 +507,7 @@ pub struct PreservationLogic {
 }
 
 impl PreservationLogic {
-    fn sort(&self, mut vec: &mut Vec<FileRecord>) {
+    fn sort(&self, vec: &mut Vec<FileRecord>) {
         match self.operator {
             O::Largest => {
                 vec.sort_by(|a, b| {
