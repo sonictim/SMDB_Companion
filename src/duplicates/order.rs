@@ -2,16 +2,6 @@ use crate::prelude::*;
 use chrono::{Duration, NaiveDateTime};
 use std::cmp::Ordering;
 
-pub fn hashset_to_query_string(set: &HashSet<String>) -> String {
-    let result: Vec<String> = set
-        .iter()
-        .map(|s| format!("CAST({s} AS TEXT) AS {s}"))
-        .collect();
-    let result = format!("rowid, filename, duration, pathname, {}", result.join(", "));
-    println!("{result}");
-    result
-}
-
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)]
 pub struct OrderPanel {
@@ -45,7 +35,7 @@ impl OrderPanel {
         self.list = tjf_order();
     }
 
-    pub fn sort_vec(&self, vec: &mut Vec<FileRecord>) {
+    pub fn sort_vec(&self, vec: &mut [FileRecord]) {
         for l in self.list.iter().rev() {
             l.sort(vec);
         }
@@ -331,7 +321,7 @@ pub struct PreservationLogic {
 }
 
 impl PreservationLogic {
-    fn sort(&self, vec: &mut Vec<FileRecord>) {
+    fn sort(&self, vec: &mut [FileRecord]) {
         match self.operator {
             O::Largest => {
                 vec.sort_by(|a, b| {

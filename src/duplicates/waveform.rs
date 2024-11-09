@@ -39,15 +39,21 @@ impl NodeCommon for Waveforms {
             ui.checkbox(&mut self.ignore_filetype, "Ignore Filetypes (much slower)");
         });
     }
-    fn process(&mut self, db: &Database, _: &HashSet<String>, order: Arc<RwLock<OrderPanel>>) {
+    fn process(
+        &mut self,
+        db: &Database,
+        metadata: &HashSet<String>,
+        order: Arc<RwLock<OrderPanel>>,
+    ) {
         let db = db.clone();
         let progress_sender = self.config.progress.tx.clone();
         let status_sender = self.config.status.tx.clone();
         let ignore = self.ignore_filetype;
         let order = order.clone();
+        let metadata = metadata.clone();
 
         self.config
-            .wrap_async(move || gather(db, progress_sender, status_sender, ignore, order))
+            .wrap_async(move || gather(db, progress_sender, status_sender, ignore, metadata, order))
     }
 }
 async fn gather(
@@ -55,6 +61,7 @@ async fn gather(
     progress: mpsc::Sender<Progress>,
     status: mpsc::Sender<Arc<str>>,
     ignore_filetypes: bool,
+    metadata: HashSet<String>,
     order: Arc<RwLock<OrderPanel>>,
 ) -> Result<HashSet<FileRecord>, sqlx::Error> {
     println!("Searching for Duplicate Waveforms");
@@ -66,8 +73,20 @@ async fn gather(
 
     let _ = status.send("Gathering all File Records".into()).await;
 
-    // Fetch records from the database asynchronously
-    let records = db.fetch_all_filerecords().await.unwrap();
+    let query = &format!(
+        "SELECT {} FROM {}",
+        hashset_to_query_string(&metadata),
+        TABLE
+    );
+    let rows = db.fetch(query).await;
+    let mut records = HashSet::new();
+
+    for row in rows {
+        let mut file_record = FileRecord::new(&row);
+        file_record.update_metadata(&row, &metadata);
+        records.insert(file_record);
+    }
+
     let total = records.len();
     let _ = status
         .send(format!("Found {total} FileRecords").into())
@@ -75,7 +94,7 @@ async fn gather(
 
     // Use rayon to process records in parallel
     records.par_iter().for_each(|record| {
-        let path = Path::new(&*record.path);
+        let path = Path::new(record.data.get("FilePath").unwrap());
 
         if path.exists() {
             if let Ok(wavemap) = hash_audio_content(&record.path, ignore_filetypes) {
@@ -131,7 +150,11 @@ async fn gather(
             // Use a reference to `records` instead of taking ownership
             for r in &*records {
                 // Borrow records immutably
-                let _ = writeln!(file, "{}", r.path);
+                let _ = writeln!(
+                    file,
+                    "{}",
+                    r.data.get("FilePath").unwrap_or(&"".to_string())
+                );
             }
 
             // Skip the first record and add the rest to results

@@ -56,7 +56,7 @@ impl FileRecord {
     pub fn update_metadata(&mut self, row: &SqliteRow, columns: &HashSet<String>) {
         for c in columns {
             let data = row.try_get(c.as_str());
-            println!("{:?}", data);
+            // println!("{:?}", data);
             self.data.insert(c.clone(), data.unwrap_or("").to_string());
         }
     }
@@ -135,6 +135,19 @@ impl<T: Default> AsyncTunnel<T> {
     }
 }
 
+pub fn hashset_to_query_string(set: &HashSet<String>) -> String {
+    let result: Vec<String> = set
+        .iter()
+        .map(|s| format!("CAST({s} AS TEXT) AS {s}"))
+        .collect();
+    let result = format!(
+        "rowid, filename, duration, pathname, filepath, {}",
+        result.join(", ")
+    );
+    println!("{result}");
+    result
+}
+
 #[derive(Clone, Default)]
 pub struct Database {
     pub path: String,
@@ -142,7 +155,6 @@ pub struct Database {
     pub name: String,
     pub size: usize,
     pub columns: Vec<String>,
-    // pub extensions: Arc<[String]>,
     pub extensions: AsyncTunnel<Vec<String>>,
 }
 

@@ -1,7 +1,6 @@
 use crate::prelude::*;
 
 use once_cell::sync::Lazy;
-use order::hashset_to_query_string;
 pub use regex::Regex;
 
 #[derive(serde::Deserialize, serde::Serialize, Default)]

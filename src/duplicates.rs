@@ -288,9 +288,10 @@ impl Duplicates {
     }
     pub fn get_required_metadata_columns(&self) -> HashSet<String> {
         let mut set = HashSet::new();
-        // set.insert("rowid".to_string());
-        // set.insert("Filename".to_string());
-        // set.insert("Pathname".to_string());
+        set.insert("rowid".to_string());
+        set.insert("Filename".to_string());
+        set.insert("Pathname".to_string());
+        set.insert("FilePath".to_string());
         for item in self.basic.match_criteria.get() {
             set.insert(item.clone());
         }
@@ -408,6 +409,7 @@ impl Node {
         }
         empty_line(ui);
     }
+
     pub fn wrap_async<F, T>(&mut self, action: F)
     where
         F: FnOnce() -> T + Send + 'static,
