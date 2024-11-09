@@ -140,10 +140,7 @@ pub fn hashset_to_query_string(set: &HashSet<String>) -> String {
         .iter()
         .map(|s| format!("CAST({s} AS TEXT) AS {s}"))
         .collect();
-    let result = format!(
-        "rowid, filename, duration, pathname, filepath, {}",
-        result.join(", ")
-    );
+    let result = format!("rowid, filename, duration, filepath, {}", result.join(", "));
     println!("{result}");
     result
 }

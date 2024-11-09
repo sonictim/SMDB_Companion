@@ -94,17 +94,17 @@ async fn gather(
 
     // Use rayon to process records in parallel
     records.par_iter().for_each(|record| {
-        let path = Path::new(record.data.get("FilePath").unwrap());
+        let counter = counter.clone(); // Clone the counter Arc
+        let mut count = counter.lock().unwrap();
+        *count += 1;
 
+        let path = Path::new(record.data.get("FilePath").unwrap());
         if path.exists() {
-            if let Ok(wavemap) = hash_audio_content(&record.path, ignore_filetypes) {
+            if let Ok(wavemap) = hash_audio_content(path.to_str().unwrap(), ignore_filetypes) {
                 // Clone the Arc to use in the closure
                 let wavemaps = wavemaps.clone();
-                let counter = counter.clone(); // Clone the counter Arc
 
                 // Lock the mutex to update the counter
-                let mut count = counter.lock().unwrap();
-                *count += 1;
 
                 // Send progress update
                 let _ = status.try_send(format!("{}", path.display()).into());

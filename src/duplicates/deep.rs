@@ -57,14 +57,20 @@ impl NodeCommon for Deep {
         }
     }
 
-    fn process(&mut self, db: &Database, columns: &HashSet<String>, _: Arc<RwLock<OrderPanel>>) {
+    fn process(
+        &mut self,
+        db: &Database,
+        columns: &HashSet<String>,
+        order: Arc<RwLock<OrderPanel>>,
+    ) {
         let progress_sender = self.config.progress.tx.clone();
         let status_sender = self.config.status.tx.clone();
         let pool = db.pool().unwrap();
         let ignore = self.ignore_extension;
         let columns = columns.clone();
+        let order = order.clone();
         self.config.wrap_async(move || {
-            Self::async_gather(pool, progress_sender, status_sender, ignore, columns)
+            Self::async_gather(pool, progress_sender, status_sender, ignore, columns, order)
         })
     }
 }
@@ -76,6 +82,7 @@ impl Deep {
         status_sender: mpsc::Sender<Arc<str>>,
         ignore_extension: bool,
         columns: HashSet<String>,
+        order: Arc<RwLock<OrderPanel>>,
     ) -> Result<HashSet<FileRecord>, sqlx::Error> {
         let mut file_groups: HashMap<String, Vec<FileRecord>> = HashMap::new();
         let _ = status_sender
@@ -101,7 +108,7 @@ impl Deep {
             .map(|row| {
                 let mut file_record = FileRecord::new(row);
                 file_record.update_metadata(row, &columns);
-                println! {"{:?}", file_record};
+                // println! {"{:?}", file_record};
                 let base_filename = get_root_filename(&file_record.filename, ignore_extension)
                     .unwrap_or_else(|| file_record.filename.to_string());
                 (base_filename, file_record)
@@ -125,11 +132,11 @@ impl Deep {
         let _ = status_sender.send("Finishing up".into()).await;
 
         let mut file_records = HashSet::new();
-        for (root, records) in file_groups {
+        for (root, mut records) in file_groups {
             if records.len() <= 1 {
                 continue;
             }
-
+            println!("Unsorted: {:?}", records);
             let root_found = records.iter().any(|record| {
                 if ignore_extension {
                     let name = Path::new(&*record.filename)
@@ -142,6 +149,7 @@ impl Deep {
                 *record.filename == root
             });
             if root_found {
+                println!("Root Found");
                 file_records.extend(records.into_iter().filter(|record| {
                     if ignore_extension {
                         let name = Path::new(&*record.filename)
@@ -153,6 +161,10 @@ impl Deep {
                     *record.filename != root
                 }));
             } else {
+                let order = order.read().unwrap();
+
+                order.sort_vec(&mut records);
+                println!("Sorted: {:?}", records);
                 file_records.extend(records.into_iter().skip(1));
             }
         }
