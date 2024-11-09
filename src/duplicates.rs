@@ -66,24 +66,26 @@ impl Duplicates {
         self.receive_async_data();
         ui.columns(2, |column| {
             column[0].heading(RichText::new("Search for Duplicate Records").strong());
-            for node in self.nodes() {
-                node.render(&mut column[0], db);
-                node.render_progress_bar(&mut column[0]);
-            }
+            // for node in self.nodes() {
+            //     node.render(&mut column[0], db);
+            //     node.render_progress_bar(&mut column[0]);
+            // }
+            self.basic.render(&mut column[0], db);
             self.remove.render_options(&mut column[1]);
-
-            // self.basic.render(&mut column[0], db);
         });
-        // self.basic.render_progress_bar(ui);
+        self.basic.render_progress_bar(ui);
 
-        // self.deep.render(ui, db);
-        // self.deep.render_progress_bar(ui);
+        self.deep.render(ui, db);
+        self.deep.render_progress_bar(ui);
 
-        // self.tags.render(ui, db);
-        // self.tags.render_progress_bar(ui);
+        self.tags.render(ui, db);
+        self.tags.render_progress_bar(ui);
 
-        // self.compare.render(ui, db);
-        // self.compare.render_progress_bar(ui);
+        self.waves.render(ui, db);
+        self.waves.render_progress_bar(ui);
+
+        self.compare.render(ui, db);
+        self.compare.render_progress_bar(ui);
 
         ui.separator();
         empty_line(ui);

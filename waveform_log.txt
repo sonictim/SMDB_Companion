@@ -1,46 +1,46 @@
 Key: c2cb043cfcfdefe36fe2554ceaf41e05ff84a7353977736d9e552c6e4b9e898c
 /Users/tfarrell/Desktop/DELETABLE/1 copy/_BULLET SPLATTY 100605.M.wav
 /Users/tfarrell/Desktop/DELETABLE/2/testy.wav
-/Users/tfarrell/Desktop/DELETABLE/3/_BULLET SPLATTY 100605.M.wav
 /Users/tfarrell/Desktop/DELETABLE/1/_BULLET SPLATTY 100605.M.wav
-Key: c2d94bb385f146b7152a2ddefaf6c2ba89d41238aa23f812edcaa4ee32fe772b
-/Users/tfarrell/Desktop/DELETABLE/1/_ScienceFictionElectricalZapBuzzHumCheezyHeatVisionOn_SCI-FI_-85.878 MOD.M.wav
-/Users/tfarrell/Desktop/DELETABLE/3/_ScienceFictionElectricalZapBuzzHumCheezyHeatVisionOn_SCI-FI_-85.878 MOD.M.wav
-/Users/tfarrell/Desktop/DELETABLE/1 copy/_ScienceFictionElectricalZapBuzzHumCheezyHeatVisionOn_SCI-FI_-85.878 MOD.M.wav
-/Users/tfarrell/Desktop/DELETABLE/2/_ScienceFictionElectricalZapBuzzHumCheezyHeatVisionOn_SCI-FI_-85.878 MOD.M.wav
-Key: 43fca587a996a8da68c15206a9fc41e194852aab6896b3d4c557a1763f044452
-/Users/tfarrell/Desktop/FILETYPES/GUNAuto_Mk18V7Int01_TF_TJFR 3.wav
-/Users/tfarrell/Desktop/FILETYPES/GUNAuto_Mk18V7Int01_TF_TJFR 2.wav
-/Users/tfarrell/Desktop/FILETYPES/GUNAuto_Mk18V7Int01_TF_TJFR 4.wav
-Key: 0b3a981d141d53853e155b2eab3796f977524038ef7c31da0fc94380bbb42dbc
-/Users/tfarrell/Desktop/FILETYPES/Race Car_013-2-1-1.wav
-/Users/tfarrell/Desktop/FILETYPES/SAME SAME BUT DIFFERENT/Race Car_013-2-1.flac
-Key: 942ad2a0f2e17262e31348e438694cee8dc541c1a5c4817d69f0a167c5e3bbc2
-/Users/tfarrell/Desktop/FILETYPES/Race Car_013.aif
-/Users/tfarrell/Desktop/FILETYPES/Race Car_013.wav
-/Users/tfarrell/Desktop/FILETYPES/Race Car_013.flac
+/Users/tfarrell/Desktop/DELETABLE/3/_BULLET SPLATTY 100605.M.wav
 Key: cbdfb2bb28607bc756a9834a2461fa97313a1f920e3ddf2f5871b7aca32be0a2
-/Users/tfarrell/Desktop/FILETYPES/GUNAuto_Mk18V7Int01_TF_TJFR.wav
-/Users/tfarrell/Desktop/FILETYPES/GUNAuto_Mk18V7Int01_TF_TJFR.aif
 /Users/tfarrell/Desktop/FILETYPES/GUNAuto_Mk18V7Int01_TF_TJFR.flac
+/Users/tfarrell/Desktop/FILETYPES/GUNAuto_Mk18V7Int01_TF_TJFR.aif
+/Users/tfarrell/Desktop/FILETYPES/GUNAuto_Mk18V7Int01_TF_TJFR.wav
+Key: 4ed6d8c040421adbe9c2ba55943c44827430787d67f841f0649609a1dc21494f
+/Users/tfarrell/Desktop/FILETYPES/SHELLS on WOOD INT-5.flac
+/Users/tfarrell/Desktop/FILETYPES/SHELLS on WOOD INT-1.flac
+/Users/tfarrell/Desktop/FILETYPES/SHELLS on WOOD INT.flac
+Key: 6e202ba24b847b5cb1862e66c470cf14efa63c72ee118d12e6de6e0e14e4849d
+/Users/tfarrell/Desktop/DELETABLE/1 copy/testy.wav
+/Users/tfarrell/Desktop/DELETABLE/3/_1979FordEconolineVan_173.M.wav
+/Users/tfarrell/Desktop/DELETABLE/1/testy.wav
+/Users/tfarrell/Desktop/DELETABLE/2/_1979FordEconolineVan_173.M.wav
 Key: 1a73178ae93832bfd6065ece929750e6619384ccf3c2e2b68a02239c0dfc4bac
 /Users/tfarrell/Desktop/TEMP3/SI-6033_29_01.flac
 /Users/tfarrell/Desktop/TEMP3/TEMP.flac
-Key: 4ed6d8c040421adbe9c2ba55943c44827430787d67f841f0649609a1dc21494f
-/Users/tfarrell/Desktop/FILETYPES/SHELLS on WOOD INT-1.flac
-/Users/tfarrell/Desktop/FILETYPES/SHELLS on WOOD INT-5.flac
-/Users/tfarrell/Desktop/FILETYPES/SHELLS on WOOD INT.flac
+Key: 0b3a981d141d53853e155b2eab3796f977524038ef7c31da0fc94380bbb42dbc
+/Users/tfarrell/Desktop/FILETYPES/SAME SAME BUT DIFFERENT/Race Car_013-2-1.flac
+/Users/tfarrell/Desktop/FILETYPES/Race Car_013-2-1-1.wav
+Key: 942ad2a0f2e17262e31348e438694cee8dc541c1a5c4817d69f0a167c5e3bbc2
+/Users/tfarrell/Desktop/FILETYPES/Race Car_013.aif
+/Users/tfarrell/Desktop/FILETYPES/Race Car_013.flac
+/Users/tfarrell/Desktop/FILETYPES/Race Car_013.wav
+Key: c2d94bb385f146b7152a2ddefaf6c2ba89d41238aa23f812edcaa4ee32fe772b
+/Users/tfarrell/Desktop/DELETABLE/1 copy/_ScienceFictionElectricalZapBuzzHumCheezyHeatVisionOn_SCI-FI_-85.878 MOD.M.wav
+/Users/tfarrell/Desktop/DELETABLE/3/_ScienceFictionElectricalZapBuzzHumCheezyHeatVisionOn_SCI-FI_-85.878 MOD.M.wav
+/Users/tfarrell/Desktop/DELETABLE/2/_ScienceFictionElectricalZapBuzzHumCheezyHeatVisionOn_SCI-FI_-85.878 MOD.M.wav
+/Users/tfarrell/Desktop/DELETABLE/1/_ScienceFictionElectricalZapBuzzHumCheezyHeatVisionOn_SCI-FI_-85.878 MOD.M.wav
+Key: 43fca587a996a8da68c15206a9fc41e194852aab6896b3d4c557a1763f044452
+/Users/tfarrell/Desktop/FILETYPES/GUNAuto_Mk18V7Int01_TF_TJFR 3.wav
+/Users/tfarrell/Desktop/FILETYPES/GUNAuto_Mk18V7Int01_TF_TJFR 4.wav
+/Users/tfarrell/Desktop/FILETYPES/GUNAuto_Mk18V7Int01_TF_TJFR 2.wav
 Key: 8f6ec67d3ab69845b5ffd6666a1c75f4f455d61b7c1722fff6ee72dddcb20885
-/Users/tfarrell/Desktop/DELETABLE/1 copy/_MinivanGravelBy01C_CF770.M.2.wav
-/Users/tfarrell/Desktop/DELETABLE/1 copy/_MinivanGravelBy01C_CF770.M.1.wav
 /Users/tfarrell/Desktop/DELETABLE/1 copy/_MinivanGravelBy01C_CF770.M.wav
-/Users/tfarrell/Desktop/DELETABLE/2/_MinivanGravelBy01C_CF770.M.wav
+/Users/tfarrell/Desktop/DELETABLE/1 copy/_MinivanGravelBy01C_CF770.M.1.wav
 /Users/tfarrell/Desktop/DELETABLE/3/_MinivanGravelBy01C_CF770.M.wav
-/Users/tfarrell/Desktop/DELETABLE/1/_MinivanGravelBy01C_CF770.M.1.wav
+/Users/tfarrell/Desktop/DELETABLE/2/_MinivanGravelBy01C_CF770.M.wav
 /Users/tfarrell/Desktop/DELETABLE/1/_MinivanGravelBy01C_CF770.M.wav
+/Users/tfarrell/Desktop/DELETABLE/1 copy/_MinivanGravelBy01C_CF770.M.2.wav
+/Users/tfarrell/Desktop/DELETABLE/1/_MinivanGravelBy01C_CF770.M.1.wav
 /Users/tfarrell/Desktop/DELETABLE/1/_MinivanGravelBy01C_CF770.M.2.wav
-Key: 6e202ba24b847b5cb1862e66c470cf14efa63c72ee118d12e6de6e0e14e4849d
-/Users/tfarrell/Desktop/DELETABLE/3/_1979FordEconolineVan_173.M.wav
-/Users/tfarrell/Desktop/DELETABLE/2/_1979FordEconolineVan_173.M.wav
-/Users/tfarrell/Desktop/DELETABLE/1 copy/testy.wav
-/Users/tfarrell/Desktop/DELETABLE/1/testy.wav
