@@ -7,7 +7,6 @@ pub use sqlx::sqlite::SqliteRow;
 pub use sqlx::{sqlite::SqlitePool, Row};
 
 pub use std::collections::{HashMap, HashSet};
-use std::fs::File;
 pub use std::path::Path;
 pub use std::sync::{Arc, Mutex, RwLock};
 pub use tokio::sync::mpsc;
@@ -56,7 +55,6 @@ impl FileRecord {
     pub fn update_metadata(&mut self, row: &SqliteRow, columns: &HashSet<String>) {
         for c in columns {
             let data = row.try_get(c.as_str());
-            // println!("{:?}", data);
             self.data.insert(c.clone(), data.unwrap_or("").to_string());
         }
     }

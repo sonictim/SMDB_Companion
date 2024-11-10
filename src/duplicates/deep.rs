@@ -21,7 +21,7 @@ impl NodeCommon for Deep {
     }
 
     fn render(&mut self, ui: &mut egui::Ui, db: &Database) {
-        ui.checkbox(&mut self.enabled, "Similar Filename Duplicates Search")
+        ui.checkbox(&mut self.enabled, "Similar Filename Duplicate Search")
             .on_hover_text_at_pointer(
                 "Filenames ending in .#, .#.#.#, or .M will be examined as possible duplicates",
             );
@@ -136,7 +136,7 @@ impl Deep {
             if records.len() <= 1 {
                 continue;
             }
-            println!("Unsorted: {:?}", records);
+            // println!("Unsorted: {:?}", records);
             let root_found = records.iter().any(|record| {
                 if ignore_extension {
                     let name = Path::new(&*record.filename)
@@ -149,7 +149,7 @@ impl Deep {
                 *record.filename == root
             });
             if root_found {
-                println!("Root Found");
+                // println!("Root Found");
                 file_records.extend(records.into_iter().filter(|record| {
                     if ignore_extension {
                         let name = Path::new(&*record.filename)
@@ -164,7 +164,7 @@ impl Deep {
                 let order = order.read().unwrap();
 
                 order.sort_vec(&mut records);
-                println!("Sorted: {:?}", records);
+                // println!("Sorted: {:?}", records);
                 file_records.extend(records.into_iter().skip(1));
             }
         }

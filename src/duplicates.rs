@@ -51,8 +51,8 @@ impl Duplicates {
         [
             &mut self.basic as &mut dyn NodeCommon,
             &mut self.deep as &mut dyn NodeCommon,
-            &mut self.tags as &mut dyn NodeCommon,
             &mut self.waves as &mut dyn NodeCommon,
+            &mut self.tags as &mut dyn NodeCommon,
             &mut self.compare as &mut dyn NodeCommon,
         ]
     }

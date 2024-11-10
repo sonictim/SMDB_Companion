@@ -40,7 +40,10 @@ impl NodeCommon for Basic {
     }
 
     fn render(&mut self, ui: &mut egui::Ui, db: &Database) {
-        ui.checkbox(&mut self.enabled, "Basic Duplicate Search");
+        ui.checkbox(&mut self.enabled, "Basic Duplicate Search")
+            .on_hover_text_at_pointer(
+                "Records must match all match criteria to be considered duplicates",
+            );
         ui.horizontal(|ui| {
             ui.add_space(24.0);
             ui.label("Duplicate Match Criteria: ");
