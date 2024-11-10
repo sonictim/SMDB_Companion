@@ -4,6 +4,17 @@
 mod app;
 pub use app::App;
 mod assets;
-mod config;
-// mod dupe_panel;
-mod processing;
+mod find_replace;
+pub use assets::*;
+
+mod duplicates;
+pub use duplicates::*;
+
+mod prelude;
+pub use crate::prelude::*;
+
+pub use eframe::egui::{self, RichText, Ui};
+pub use sqlx::sqlite::SqlitePool;
+pub use std::collections::HashSet;
+pub use std::sync::Arc;
+pub use tokio::sync::mpsc;

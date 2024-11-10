@@ -1,5 +1,4 @@
-// use crate::processing::open_download_url;
-use eframe::egui::{self, RichText, Ui};
+use crate::prelude::*;
 
 // A reusable button component that takes a function (callback) to run when clicked
 pub fn button<F>(ui: &mut Ui, label: &str, action: F)
@@ -82,22 +81,22 @@ pub fn empty_line(ui: &mut Ui) {
 
 // pub struct ComboBox {
 //     selected: String,
-//     list: Vec<String>,
+//     // list: Vec<String>,
 // }
 
 // impl ComboBox {
-//     fn render(&mut self, ui: &mut egui::Ui, label: &str) {
+//     fn render(&mut self, ui: &mut egui::Ui, label: &str, list: &[String]) {
 //         egui::ComboBox::from_id_salt(label)
 //             .selected_text(&self.selected)
 //             .show_ui(ui, |ui| {
-//                 for item in &self.list {
+//                 for item in list {
 //                     ui.selectable_value(&mut self.selected, item.clone(), item);
 //                 }
 //             });
 //     }
 // }
 
-pub fn combo_box(ui: &mut Ui, label: &str, selected: &mut String, list: &Vec<String>) {
+pub fn combo_box(ui: &mut Ui, label: &str, selected: &mut String, list: &[String]) {
     egui::ComboBox::from_id_salt(label)
         .selected_text(selected.clone())
         .show_ui(ui, |ui| {
@@ -114,11 +113,11 @@ pub trait EnumComboBox {
         Self: Sized;
 }
 
-pub fn enum_combo_box<T>(ui: &mut egui::Ui, selected_variant: &mut T)
+pub fn enum_combo_box<T>(ui: &mut egui::Ui, selected_variant: &mut T, label: &str)
 where
     T: EnumComboBox + PartialEq + Copy + 'static, // Ensure T implements EnumComboBox, PartialEq, Copy, and is 'static
 {
-    egui::ComboBox::from_id_salt("variants")
+    egui::ComboBox::from_id_salt(label)
         .selected_text(selected_variant.as_str())
         .show_ui(ui, |ui| {
             for variant in T::variants() {
@@ -129,15 +128,23 @@ where
 
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 #[serde(default)]
-pub struct SelectableGrid {
+pub struct SelectableList {
     #[serde(skip)]
     pub add: String,
     #[serde(skip)]
-    pub selected: Vec<usize>,
-    pub list: Vec<String>, // Use &str for the list
+    selected: Vec<usize>,
+    list: Vec<String>, // Use &str for the list
 }
 
-impl SelectableGrid {
+impl SelectableList {
+    pub fn set(&mut self, list: Vec<String>) {
+        self.list = list;
+    }
+
+    pub fn get(&self) -> &[String] {
+        &self.list
+    }
+
     pub fn render(&mut self, ui: &mut egui::Ui, columns: usize, label: &str, border: bool) {
         if border {
             self.render_with_border(ui, columns, label);
@@ -190,6 +197,27 @@ impl SelectableGrid {
                 }
             });
     }
+
+    pub fn add_combo_box(&mut self, ui: &mut egui::Ui, box_list: &[String]) {
+        let filtered_list: Vec<String> = box_list
+            .iter()
+            .filter(|item| !&self.list.contains(*item))
+            .cloned()
+            .collect();
+        // .retain();
+        combo_box(ui, "match criteria", &mut self.add, &filtered_list);
+        self.add();
+    }
+
+    pub fn add_text_input(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            if ui.button("Add Tag:").clicked() {
+                self.add();
+            }
+            ui.text_edit_singleline(&mut self.add);
+        });
+    }
+
     pub fn add(&mut self) {
         if self.add.is_empty() {
             return;
@@ -211,136 +239,3 @@ impl SelectableGrid {
         self.selected.clear();
     }
 }
-
-// pub fn update_window(ctx: &egui::Context, open: &mut bool, version: &str, update: bool) {
-//     let width = 200.0;
-//     let height = 100.0;
-//     let mut close_window = false;
-
-//     if update {
-//         egui::Window::new("Update Available")
-//             .open(open) // Control whether the window is open
-//             .resizable(false) // Make window non-resizable if you want it fixed
-//             .min_width(width)
-//             .min_height(height)
-//             .max_width(width)
-//             .max_height(height)
-//             .show(ctx, |ui| {
-//                 ui.vertical_centered(|ui| {
-//                     ui.label(format!("Latest Version is {}", version));
-//                     large_button(ui, "Download", || {
-//                         open_download_url();
-//                         close_window = true; // Set the flag to close the window
-//                     });
-//                 });
-//             });
-//     } else {
-//         egui::Window::new("No Update Available")
-//             .open(open) // Control whether the window is open
-//             .resizable(false) // Make window non-resizable if you want it fixed
-//             .min_width(width)
-//             .min_height(height)
-//             .max_width(width)
-//             .max_height(height)
-//             .show(ctx, |ui| {
-//                 ui.vertical_centered(|ui| {
-//                     ui.label(format!("Version {} is the Current Version", version));
-//                     // large_button(ui, "Download", || {
-//                     //     open_download_url();
-//                     //     close_window = true; // Set the flag to close the window
-//                     // });
-//                 });
-//             });
-//     }
-
-//     if close_window {
-//         *open = false; // Dereference to set the value outside of the closure
-//     }
-// }
-
-pub fn records_window(
-    ctx: &egui::Context,
-    records: &str,
-    open: &mut bool,
-    scroll_to_top: &mut bool,
-) {
-    let available_size = ctx.available_rect(); // Get the full available width and height
-    let width = available_size.width() - 20.0;
-    let height = available_size.height();
-    egui::Window::new("Records Marked as Duplicates")
-        .open(open) // Control whether the window is open
-        .resizable(false) // Make window non-resizable if you want it fixed
-        .min_width(width)
-        .min_height(height)
-        .max_width(width)
-        .max_height(height)
-        .show(ctx, |ui| {
-            // ui.label("To Be Implemented\n Testing line break");
-
-            if *scroll_to_top {
-                egui::ScrollArea::vertical()
-                    .max_height(height)
-                    .max_width(width)
-                    .scroll_offset(egui::vec2(0.0, 0.0))
-                    .show(ui, |ui| {
-                        ui.label(RichText::new(records).size(14.0));
-                    });
-                *scroll_to_top = false;
-            } else {
-                egui::ScrollArea::vertical()
-                    .max_height(height)
-                    .max_width(width)
-                    .show(ui, |ui| {
-                        ui.label(RichText::new(records).size(14.0));
-                    });
-            }
-        });
-}
-
-// pub fn order_help(ui: &mut Ui) {
-//     ui.heading("Column in order of Priority and whether it should be DESCending or ASCending.");
-//     ui.label(
-//         "These are SQL arguments and Google/ChatGPT can help you figure out how to compose them",
-//     );
-//     ui.horizontal(|_| {});
-//     ui.heading("Examples:");
-//     ui.heading("CASE WHEN pathname LIKE '%Audio Files%' THEN 1 ELSE 0 END ASC");
-//     ui.label("Records with 'Audio Files' in the path will be removed over something that does not have it");
-//     ui.horizontal(|_| {});
-//     ui.heading("CASE WHEN pathname LIKE '%LIBRARY%' THEN 0 ELSE 1 END ASC");
-//     ui.label(
-//         "Records with 'LIBRARY' (not case sensitive) in the path will be kept over records without",
-//     );
-//     ui.horizontal(|_| {});
-//     ui.heading("Rules at the top of the list are prioritized over those below");
-//     ui.separator();
-// }
-
-//SMALL TAG EDITOR
-
-// ui.horizontal(|ui| {
-//     ui.add_space(24.0);
-//     if ui.button("Add Tag:").clicked {
-//         app.tags.sort_by_key(|s| s.to_lowercase());
-//         if app.new_tag.len() > 0 {
-//             app.tags.push(app.new_tag.clone());
-//             app.new_tag = "".to_string();
-//     }}
-//     ui.text_edit_singleline(&mut app.new_tag);
-// });
-//     ui.horizontal(|ui| {
-//         ui.add_space(24.0);
-//         if let Some(tag_ref) = &mut app.tags.option {
-//             if ui.button("Remove Tag").clicked {
-//                 app.tags.retain(|s| s != tag_ref);
-//                 tag_ref.clear();
-//             }
-//             egui::ComboBox::from_label("")
-//             .selected_text(format!("{}", tag_ref))
-//             .show_ui(ui, |ui| {
-//                 for tag in &app.tags {
-//                     ui.selectable_value(tag_ref, tag.to_string(), format!("{tag}"));
-//                 }
-//             });
-//         }
-//     });

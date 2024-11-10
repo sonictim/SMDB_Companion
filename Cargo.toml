@@ -1,6 +1,6 @@
 [package]
 name = "SMDB_Companion"
-version = "0.2.6"
+version = "0.2.8"
 authors = ["Tim Farrell <soundguru@gmail.com>"]
 edition = "2021"
 include = ["LICENSE-APACHE", "LICENSE-MIT", "**/*.rs", "Cargo.toml"]
@@ -58,6 +58,12 @@ clipboard = "0.5.0"
 dirs = "5.0.1"
 webbrowser = "1.0.2"
 reqwest = "0.12.8"
+claxon = "0.4.3"
+hound = "3.5.1"
+anyhow = "1.0.92"
+minimp3 = "0.5.1"
+chrono = "0.4.38"
+
 
 
 # native:

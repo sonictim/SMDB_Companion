@@ -13,4 +13,5 @@ target_wasm
 .lycheecache
 .DS_Store
 
-wveform_log.txt
+
+waveform_log.txt
