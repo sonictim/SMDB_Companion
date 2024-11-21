@@ -1,20 +1,33 @@
 #![warn(clippy::all, rust_2018_idioms)]
 #![allow(non_snake_case)]
 
-mod app;
+pub mod app;
 pub use app::App;
-mod assets;
-mod find_replace;
-pub use assets::*;
 
-mod duplicates;
-pub use duplicates::*;
+pub mod assets;
+pub mod find_replace;
+// pub use assets::*;
 
-mod prelude;
-pub use crate::prelude::*;
+pub mod duplicates;
+// pub use duplicates::*;
 
-pub use eframe::egui::{self, RichText, Ui};
-pub use sqlx::sqlite::SqlitePool;
-pub use std::collections::HashSet;
-pub use std::sync::Arc;
-pub use tokio::sync::mpsc;
+pub mod prelude;
+// pub use crate::prelude::*;
+
+pub trait AppWindow: Default + eframe::App {
+    fn window_title() -> &'static str;
+    fn arg_name() -> String {
+        format!(
+            "--{}-window",
+            Self::window_title().to_lowercase().replace(" ", "-")
+        )
+    }
+    fn window_options() -> eframe::NativeOptions {
+        eframe::NativeOptions {
+            viewport: egui::ViewportBuilder::default()
+                .with_inner_size([750.0, 750.0])
+                .with_min_inner_size([620.0, 620.0]),
+            ..Default::default()
+        }
+    }
+}

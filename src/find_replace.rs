@@ -1,4 +1,22 @@
 use crate::prelude::*;
+#[derive(Default)]
+pub struct FindWindow {
+    panel: FindPanel,
+}
+
+impl AppWindow for FindWindow {
+    fn window_title() -> &'static str {
+        "Find and Replace"
+    }
+}
+
+impl eframe::App for FindWindow {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        egui::CentralPanel::default().show(ctx, |ui| {
+            self.panel.render(ui, db, registration);
+        });
+    }
+}
 
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 #[serde(default)]

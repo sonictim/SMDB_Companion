@@ -1,4 +1,4 @@
-pub use anyhow::Result;
+pub use anyhow::{Context, Result};
 pub use eframe::egui::{self, RichText, Ui};
 pub use rayon::prelude::*;
 pub use serde::Deserialize;
@@ -6,10 +6,13 @@ pub use serde::Deserialize;
 pub use sqlx::sqlite::SqliteRow;
 pub use sqlx::{sqlite::SqlitePool, Row};
 
+pub use tokio::sync::mpsc;
+
 pub use std::collections::{HashMap, HashSet};
 pub use std::path::Path;
+pub use std::process::Command;
+pub use std::sync::atomic::{AtomicBool, Ordering};
 pub use std::sync::{Arc, Mutex, RwLock};
-pub use tokio::sync::mpsc;
 
 pub use dirs::home_dir;
 pub use rfd::FileDialog;
@@ -19,9 +22,16 @@ pub use std::hash::Hash;
 pub use crate::assets::*;
 pub use crate::duplicates::*;
 pub use crate::find_replace::FindPanel;
+pub use crate::AppWindow;
 
 pub const TABLE: &str = "justinmetadata";
 pub use crate::duplicates::order::OrderOperator as O;
+
+// pub use eframe::egui::{self, RichText, Ui};
+// pub use sqlx::sqlite::SqlitePool;
+// pub use std::collections::HashSet;
+// pub use std::sync::Arc;
+// pub use tokio::sync::mpsc;
 
 #[derive(Eq, PartialEq, Clone, Debug)]
 pub struct FileRecord {
