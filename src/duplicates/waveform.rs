@@ -32,7 +32,7 @@ impl NodeCommon for Waveforms {
         self.enabled
     }
     fn render(&mut self, ui: &mut egui::Ui, _: &Database) {
-        ui.checkbox(&mut self.enabled, "Audio Content Duplicate Search")
+        ui.checkbox(&mut self.enabled, "Audio Content Duplicate Search (slow)")
             .on_hover_text_at_pointer("Will match identical audio content with different filenames.\nRecommend running other searches first and this one on an already thinned database");
         // ui.label("This search is slower than the others");
         ui.horizontal(|ui| {

@@ -189,7 +189,6 @@ impl Duplicates {
 
     pub fn gather(&mut self, db: &Database) {
         self.abort_all();
-        self.clear_all();
         self.remove.config.records.clear();
         self.remove
             .config
@@ -228,13 +227,6 @@ impl Duplicates {
             node.abort();
         }
         self.remove.config.abort();
-    }
-
-    pub fn clear_all(&mut self) {
-        for node in self.nodes() {
-            node.clear();
-        }
-        self.remove.config.clear();
     }
 
     fn handles_active(&self) -> bool {
@@ -332,6 +324,7 @@ pub struct Node {
     pub working: bool,
     pub records: AsyncTunnel<HashSet<FileRecord>>,
     pub status: AsyncTunnel<Arc<str>>,
+    // pub status2: Arc<Mutex<String>>,
     pub progress: AsyncTunnel<Progress>,
     pub handle: Option<tokio::task::JoinHandle<()>>,
 }
@@ -342,6 +335,7 @@ impl Default for Node {
             records: AsyncTunnel::new(1),
             working: false,
             status: AsyncTunnel::new(1),
+            // status2: Default::default(),
             progress: AsyncTunnel::new(32),
             handle: None,
         }
@@ -357,6 +351,8 @@ impl Node {
         if let Some(handle) = &self.handle {
             handle.abort();
         }
+        self.working = false;
+        self.handle = None;
         // self.clear();
     }
 
@@ -415,6 +411,9 @@ impl Node {
                 .desired_height(4.0),
             );
         }
+        // if let Ok(status2) = self.status2.try_lock() {
+        //     ui.label(format!("Status2: {}", status2));
+        // }
         empty_line(ui);
     }
 
