@@ -2,8 +2,9 @@ use crate::prelude::*;
 
 use clipboard::{ClipboardContext, ClipboardProvider};
 use reqwest::Client;
+// use reqwest::blocking::Client;
 use sha2::{Digest, Sha256};
-use std::error::Error;
+// use std::error::Error;
 
 #[derive(PartialEq, serde::Serialize, Deserialize, Clone, Copy)]
 pub enum Panel {
@@ -281,9 +282,9 @@ impl App {
                 self.update.window = Some(false);
                 self.update.check();
             }
-            if ui.button("Open Download URL").clicked() {
+            if ui.button("Open Website").clicked() {
                 ui.close_menu();
-                open_download_url();
+                open_website_url();
             }
             ui.separator();
             if ui.button("Quit").clicked() {
@@ -493,7 +494,11 @@ pub fn copy_to_clipboard(text: String) {
 
 
 pub fn open_download_url() {
-    let url = r#"https://drive.google.com/open?id=1qdGqoUMqq_xCrbA6IxUTYliZUmd3Tn3i&usp=drive_fs"#;
+    let url = r#"https://smdbc.com/download.php?token=please-can-i-have-it"#;
+    let _ = webbrowser::open(url).is_ok();
+}
+pub fn open_website_url() {
+    let url = r#"https://smdbc.com/"#;
     let _ = webbrowser::open(url).is_ok();
 }
 
@@ -572,17 +577,42 @@ impl Update {
     }
 
 }
-pub async fn fetch_latest_version() -> Result<String, Box<dyn Error>> {
-    let file_id = "1C8jyVjkMgeglYK-FnmTuoRqwf5Nd6PGG";
-    let download_url = format!("https://drive.google.com/uc?export=download&id={}", file_id);
+pub async fn fetch_latest_version() -> Result<String> {
+    let url = "https://smdbc.com/latest.php";
+    let token = "how-cool-am-i";
+
+    // Send GET request with token
     let client = Client::new();
+    let response = client
+        .get(url)
+        .query(&[("token", token)]) // Add token as query parameter
+        .send().await?;
 
-    let response = client.get(&download_url).send().await?;
 
-    if response.status().is_success() {
-        let content = response.text().await?;
-        Ok(content.trim().to_string())
-    } else {
-        Err(format!("Failed to retrieve the file: {}", response.status()).into())
-    }
+    Ok(response.text().await?.trim().to_string())
+
+    // if response.status().is_success() {
+    //     let latest_version = response.text().await?.trim().to_string();
+    //     return Ok(latest_version);
+    // } else {
+    //     eprintln!(
+    //         "Failed to fetch the latest version. Status: {}",
+    //         response.status()
+    //     );
+    // }
+
 }
+// pub async fn fetch_latest_version() -> Result<String, Box<dyn Error>> {
+//     let file_id = "1C8jyVjkMgeglYK-FnmTuoRqwf5Nd6PGG";
+//     let download_url = format!("https://drive.google.com/uc?export=download&id={}", file_id);
+//     let client = Client::new();
+
+//     let response = client.get(&download_url).send().await?;
+
+//     if response.status().is_success() {
+//         let content = response.text().await?;
+//         Ok(content.trim().to_string())
+//     } else {
+//         Err(format!("Failed to retrieve the file: {}", response.status()).into())
+//     }
+// }
