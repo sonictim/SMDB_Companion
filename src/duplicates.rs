@@ -189,6 +189,7 @@ impl Duplicates {
 
     pub fn gather(&mut self, db: &Database) {
         self.abort_all();
+        self.clear_all();
         self.remove.config.records.clear();
         self.remove
             .config
@@ -227,6 +228,13 @@ impl Duplicates {
             node.abort();
         }
         self.remove.config.abort();
+    }
+
+    pub fn clear_all(&mut self) {
+        for node in self.nodes() {
+            node.clear();
+        }
+        self.remove.config.clear();
     }
 
     fn handles_active(&self) -> bool {
@@ -349,7 +357,7 @@ impl Node {
         if let Some(handle) = &self.handle {
             handle.abort();
         }
-        self.clear();
+        // self.clear();
     }
 
     pub fn receive_hashset(&mut self) -> Option<HashSet<FileRecord>> {
