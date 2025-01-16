@@ -48,7 +48,7 @@ impl FindPanel {
             self.column = String::from("Library");
             self.search_replace_path = true;
         }
-        ui.heading(RichText::new("Find and Replace").strong());
+        ui.heading(RichText::new("Find and Replace Metadata").strong());
 
         empty_line(ui);
         self.render_case_sensitive_option(ui);

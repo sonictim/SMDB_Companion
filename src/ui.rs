@@ -73,6 +73,9 @@ pub fn light_red_text(text: &str) -> RichText {
         .color(egui::Color32::from_rgb(255, 100, 100))
         .strong()
 }
+pub fn menu_text(text: &str) -> RichText {
+    RichText::new(text).size(18.0)
+}
 
 pub fn enabled_text(text: &str, enabled: &bool) -> RichText {
     if *enabled {

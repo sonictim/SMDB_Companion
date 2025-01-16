@@ -50,11 +50,6 @@ impl Default for App {
 }
 
 
-impl App {
-
-}
-
-
 
 impl eframe::App for App {
     /// Called by the frame work to save state before shutdown.
@@ -77,15 +72,18 @@ impl eframe::App for App {
             egui::menu::bar(ui, |ui| {
 
                self.file_menu(ui, ctx);
+               self.pref_menu(ui);
+               self.view_menu(ui);
+               self.help_menu(ui);
 
-               ui.label(RichText::new("|").weak().size(18.0));
+            //    ui.label(RichText::new("|").weak().size(18.0));
 
-                self.panel_tab_bar(ui);
+                // self.panel_tab_bar(ui);
 
                 if ui.available_width() > 20.0 {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
                         egui::widgets::global_theme_preference_switch(ui);
-                        ui.label(RichText::new("|").weak().size(18.0));
+                        // ui.label(RichText::new("|").weak().size(18.0));
                     });
                 }
 
@@ -216,7 +214,7 @@ impl App {
     
 
     fn file_menu(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
-        ui.menu_button(RichText::new("File").weak().size(18.0), |ui| {
+        ui.menu_button(menu_text("File"), |ui| {
             if ui.button("Open Database").clicked() {
                 ui.close_menu();
                 let tx = self.db.tx.clone();
@@ -234,29 +232,18 @@ impl App {
             }
 
             ui.separator();
-            if ui.button("Restore Defaults").clicked() {
-                ui.close_menu();
-                // self.clear_status();
-                self.reset_to_defaults();
-            }
-            if ui.input(|i| i.modifiers.alt) && ui.button("TJF Defaults").clicked() {
-                ui.close_menu();
-                // self.clear_status();
-                self.reset_to_tjf_defaults();
-            }
-            egui::widgets::global_theme_preference_buttons(ui);
+
             if !self.registration.valid.expect("some") {
-                ui.separator();
                 
            
                 ui.menu_button("Register", |ui| {
-                    large_button2(ui, "Purchase License", open_purchase_url);
+                    // large_button2(ui, "Purchase License", open_purchase_url);
 
-                    // if ui.button(RichText::new("Purchase License").strong()).clicked() {
-                    //     open_purchase_url();
-                    // }
-                    ui.label(RichText::new("Registration Info:").strong());
-
+                    // // if ui.button(RichText::new("Purchase License").strong()).clicked() {
+                    // //     open_purchase_url();
+                    // // }
+                    // ui.label(RichText::new("Registration Info").strong());
+                    empty_line(ui);
                     ui.horizontal(|ui| {
                         ui.label("Name: ");
                         ui.text_edit_singleline(&mut self.registration.name);
@@ -272,14 +259,15 @@ impl App {
 
                     large_button(ui, "Register", ||self.registration.validate());
                 });
+                ui.separator();
             }
             if ui.input(|i| i.modifiers.alt) && self.registration.valid == Some(true)  {
 
-                ui.separator();
                 if ui.button(RichText::new("Unregister")).clicked() {
                     self.registration.clear();
                     ui.close_menu();
                 }
+                ui.separator();
             }
             #[cfg(debug_assertions)]
             {
@@ -288,8 +276,63 @@ impl App {
                     ui.close_menu();
                     self.my_panel = Panel::KeyGen;
                 }
+                ui.separator();
+            }
+            
+            if ui.button("Quit").clicked() {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+        });
+        
+    }
+
+    fn pref_menu(&mut self, ui: &mut egui::Ui,) {
+        ui.menu_button(menu_text("Preferences"), |ui| {
+            if ui.button("Filename Preservation Priority").clicked() {
+                ui.close_menu();
+                self.my_panel = Panel::Order;
+            }
+            if ui.button("Audiosuite Tags Editor").clicked() {
+                ui.close_menu();
+                self.my_panel = Panel::Tags;
+            }
+            
+            ui.separator();
+            if ui.button("Restore Defaults").clicked() {
+                ui.close_menu();
+                // self.clear_status();
+                self.reset_to_defaults();
+            }
+            if ui.input(|i| i.modifiers.alt) && ui.button("TJF Defaults").clicked() {
+                ui.close_menu();
+                // self.clear_status();
+                self.reset_to_tjf_defaults();
             }
             ui.separator();
+            egui::widgets::global_theme_preference_buttons(ui);
+            
+            
+        });
+
+    }
+    fn view_menu(&mut self, ui: &mut egui::Ui,) {
+        ui.menu_button(menu_text("Action"), |ui| {
+            if ui.button("Search for Duplicates").clicked() {
+                ui.close_menu();
+                self.my_panel = Panel::Duplicates;
+            }
+            if ui.button("Find and Replace").clicked() {
+                ui.close_menu();
+                self.my_panel = Panel::Find;
+            }
+            
+            
+        });
+
+    }
+
+    fn help_menu(&mut self, ui: &mut egui::Ui,) {
+        ui.menu_button(menu_text("Help"), |ui| {
             if ui.button("Check For Update").clicked() {
                 ui.close_menu();
                 self.update.window = Some(false);
@@ -299,13 +342,12 @@ impl App {
                 ui.close_menu();
                 open_website_url();
             }
-            ui.separator();
-            if ui.button("Quit").clicked() {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-            }
+            
+            
         });
-        
+
     }
+
 
     fn panel_tab_bar(&mut self, ui: &mut egui::Ui) {
         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
@@ -401,9 +443,14 @@ impl App {
                     }
                 }
                 ui.horizontal(|ui| {
+
+                    
                     if ui.label(label).clicked() && ui.input(|i| i.key_down(egui::Key::Tab))
-                        && ui.input(|i| i.key_down(egui::Key::R)) && ui.input(|i| i.key_down(egui::Key::Space)) {
-                        self.my_panel = Panel::KeyGen;
+                    && ui.input(|i| i.key_down(egui::Key::R)) && ui.input(|i| i.key_down(egui::Key::Space)) {
+                            #[cfg(debug_assertions)] {
+                                
+                                self.my_panel = Panel::KeyGen;
+                            }
                     };
                     if let Some(valid) = self.registration.valid {
                         if !valid && ui.selectable_label(false, "Purchase License").clicked() {

@@ -51,8 +51,8 @@ impl Duplicates {
         [
             &mut self.basic as &mut dyn NodeCommon,
             &mut self.deep as &mut dyn NodeCommon,
-            &mut self.waves as &mut dyn NodeCommon,
             &mut self.tags as &mut dyn NodeCommon,
+            &mut self.waves as &mut dyn NodeCommon,
             &mut self.compare as &mut dyn NodeCommon,
         ]
     }
@@ -317,6 +317,7 @@ pub trait NodeCommon {
         self.config().render(ui);
     }
     fn render(&mut self, ui: &mut egui::Ui, db: &Database);
+
     fn process(&mut self, db: &Database, columns: &HashSet<String>, order: Arc<RwLock<OrderPanel>>);
 }
 
