@@ -1,6 +1,6 @@
 [package]
 name = "SMDB_Companion"
-version = "0.2.9"
+version = "0.3.0"
 authors = ["Tim Farrell <soundguru@gmail.com>"]
 edition = "2021"
 include = ["LICENSE-APACHE", "LICENSE-MIT", "**/*.rs", "Cargo.toml"]
@@ -63,6 +63,7 @@ hound = "3.5.1"
 anyhow = "1.0.92"
 minimp3 = "0.5.1"
 chrono = "0.4.38"
+semver = "1.0.24"
 
 
 

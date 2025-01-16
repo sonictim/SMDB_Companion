@@ -32,6 +32,25 @@ where
         action();
     }
 }
+pub fn large_button2<F>(ui: &mut Ui, label: &str, action: F)
+where
+    F: FnOnce(),
+{
+    if ui
+        .add_sized(
+            [200.0, 50.0],
+            egui::Button::new(
+                RichText::new(label)
+                    .size(24.0)
+                    .strong()
+                    .color(egui::Color32::from_rgb(255, 100, 100)),
+            ), // .fill(egui::Color32::from_rgb(35, 35, 35)),
+        )
+        .clicked()
+    {
+        action();
+    }
+}
 // pub fn large_rt_button<F>(ui: &mut Ui, label: egui::RichText, action: F)
 // where
 //     F: FnOnce(),

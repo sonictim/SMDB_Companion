@@ -10,8 +10,8 @@ export MACOSX_DEPLOYMENT_TARGET=12.0
 echo Building and Bundling Version: $VERSION
 
 # Add the necessary targets
-#rustup target add aarch64-apple-darwin x86_64-apple-darwin
-#cargo install cargo-bundle
+rustup target add aarch64-apple-darwin x86_64-apple-darwin
+cargo install cargo-bundle
 
 # Build for both architectures
 cargo bundle --release --target aarch64-apple-darwin

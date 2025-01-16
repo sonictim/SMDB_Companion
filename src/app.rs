@@ -188,15 +188,21 @@ impl App {
                 db.extensions.recv2();
             }
             
+            use semver::Version;
+
             if let Some(version) = self.update.latest_version.recv() {
-                self.update.latest_version.set(version);
-                if self.update.window.is_some() {self.update.window = Some(true);}
-                if self.update.latest_version.get() == env!("CARGO_PKG_VERSION") 
-                {
+                self.update.latest_version.set(version.clone());
+                if self.update.window.is_some() {
+                    self.update.window = Some(true);
+                }
+
+                let current_version = Version::parse(env!("CARGO_PKG_VERSION")).expect("Invalid current version");
+                let latest_version = Version::parse(&version).expect("Invalid latest version");
+
+                if latest_version <= current_version {
                     println!("No Update Needed");
                     self.update.available = false;
-                }
-                else {
+                } else {
                     println!("Update Recommended");
                     self.update.available = true;
                 }
@@ -244,6 +250,13 @@ impl App {
                 
            
                 ui.menu_button("Register", |ui| {
+                    large_button2(ui, "Purchase License", open_purchase_url);
+
+                    // if ui.button(RichText::new("Purchase License").strong()).clicked() {
+                    //     open_purchase_url();
+                    // }
+                    ui.label(RichText::new("Registration Info:").strong());
+
                     ui.horizontal(|ui| {
                         ui.label("Name: ");
                         ui.text_edit_singleline(&mut self.registration.name);
@@ -380,7 +393,7 @@ impl App {
         egui::Area::new(id)
             .anchor(egui::Align2::LEFT_BOTTOM, egui::vec2(0.0, 0.0)) // Pin to bottom
             .show(ctx, |ui| {
-                let mut label = red_text("*****UNREGISTERED");
+                let mut label = red_text("*****UNREGISTERED*****");
                 if let Some(valid) = self.registration.valid {
                     if valid {
                         let text = format!("Registered to: {}", &self.registration.name);
@@ -388,15 +401,15 @@ impl App {
                     }
                 }
                 ui.horizontal(|ui| {
-                    if ui.label(label).clicked()
-                        // && ui.input(|i| i.modifiers.command)
-                        // && ui.input(|i| i.modifiers.shift)
-                        && ui.input(|i| i.key_down(egui::Key::Tab))
-                        && ui.input(|i| i.key_down(egui::Key::R))
-                        && ui.input(|i| i.key_down(egui::Key::Space))
-                    {
+                    if ui.label(label).clicked() && ui.input(|i| i.key_down(egui::Key::Tab))
+                        && ui.input(|i| i.key_down(egui::Key::R)) && ui.input(|i| i.key_down(egui::Key::Space)) {
                         self.my_panel = Panel::KeyGen;
                     };
+                    if let Some(valid) = self.registration.valid {
+                        if !valid && ui.selectable_label(false, "Purchase License").clicked() {
+                            open_purchase_url();
+                        }
+                    }
                 });
             });
 
@@ -501,6 +514,10 @@ pub fn open_website_url() {
     let url = r#"https://smdbc.com/"#;
     let _ = webbrowser::open(url).is_ok();
 }
+pub fn open_purchase_url() {
+    let url = r#"https://buy.stripe.com/9AQcPw4D0dFycSYaEE"#;
+    let _ = webbrowser::open(url).is_ok();
+}
 
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 #[serde(default)]
@@ -577,6 +594,7 @@ impl Update {
     }
 
 }
+
 pub async fn fetch_latest_version() -> Result<String> {
     let url = "https://smdbc.com/latest.php";
     let token = "how-cool-am-i";
