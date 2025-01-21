@@ -12,7 +12,8 @@ GDRIVE_VERSION_FILE="/Users/tfarrell/Library/CloudStorage/GoogleDrive-tim@farrel
 WEB_VERSION_FILE="/Users/tfarrell/Documents/Website/smdbc.com/private/latest_ver"
 NOTARIZE_USERNAME="farrelltim@me.com"
 # Consider using keychain or environment variable for password
-NOTARIZE_PASSWORD=$(security find-generic-password -a "farrelltim@me.com" -s "AC_PASSWORD" -w)
+#NOTARIZE_PASSWORD=$(security find-generic-password -a "farrelltim@me.com" -s "AC_PASSWORD" -w)
+NOTARIZE_PASSWORD="Let'sNotorizeThisBitch!"
 
 # Ensure clean state
 clean_up() {

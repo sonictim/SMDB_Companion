@@ -43,8 +43,17 @@ impl Remove {
         ui.checkbox(&mut self.safe, text);
         if !&self.safe {
             ui.horizontal(|ui| {
+                ui.add_space(24.0);
                 ui.label(red_text("UNSAFE!"));
-                ui.label(RichText::new("Will remove records from current database").strong());
+                ui.label(RichText::new("This removes records from current database").strong());
+            });
+
+            ui.horizontal(|ui| {
+                ui.add_space(24.0);
+                ui.label(
+                    RichText::new("This is NOT undoable. Make sure database is backed up.")
+                        .strong(),
+                );
             });
         }
         ui.checkbox(
@@ -63,16 +72,23 @@ impl Remove {
 
             if self.remove_files {
                 enum_combo_box(ui, &mut self.delete_action, "delete action");
-                if self.remove_files && self.delete_action == Delete::Permanent {
-                    ui.label(
-                        RichText::new("UNSAFE!")
-                            .color(egui::Color32::from_rgb(255, 0, 0))
-                            .strong(),
-                    );
-                    ui.label(RichText::new("This is NOT undoable").strong());
-                }
             }
         });
+        if self.remove_files && self.delete_action == Delete::Permanent {
+            ui.horizontal_wrapped(|ui| {
+                ui.add_space(24.0);
+                ui.label(
+                    RichText::new("UNSAFE!")
+                        .color(egui::Color32::from_rgb(255, 0, 0))
+                        .strong(),
+                );
+                ui.label(RichText::new("This is NOT undoable.").strong());
+            });
+            ui.horizontal(|ui| {
+                ui.add_space(24.0);
+                ui.label(RichText::new("Deleted files will be gone forever!").strong());
+            });
+        }
     }
 
     pub fn process(&mut self, db: &Database, registration: Option<bool>) {
