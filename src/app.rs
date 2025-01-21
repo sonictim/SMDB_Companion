@@ -1,6 +1,7 @@
 use crate::prelude::*;
 
 use clipboard::{ClipboardContext, ClipboardProvider};
+use futures::io::empty;
 use reqwest::Client;
 // use reqwest::blocking::Client;
 use sha2::{Digest, Sha256};
@@ -232,9 +233,14 @@ impl App {
             }
 
             ui.separator();
-
             if !self.registration.valid.expect("some") {
-                
+                empty_line(ui);
+                if ui.button("Purchase License").clicked() {
+                    ui.close_menu();
+                    open_purchase_url();
+                }
+                empty_line(ui);
+                ui.separator();
            
                 ui.menu_button("Register", |ui| {
                     // large_button2(ui, "Purchase License", open_purchase_url);

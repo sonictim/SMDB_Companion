@@ -80,7 +80,8 @@ impl Remove {
             self.config.records.clear();
             self.config
                 .status
-                .set("Unregistered!\nPlease Register to Remove Duplicates".into());
+                .set("Unregistered!\nPlease Register to Remove Duplicates\nIf you need to purchase a license, there is a link below".into());
+
             return;
         }
 

@@ -162,7 +162,7 @@ impl FindPanel {
 
         if registration == Some(false) {
             ui.label(
-                RichText::new("\nUNREGISTERED!\nPlease Register to Continue with Replacement")
+                RichText::new("\nUNREGISTERED!\nPlease Register to Continue with Replacement\nIf you need to purchase a license, there is a link below")
                     .strong(),
             );
             return;
