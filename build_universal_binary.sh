@@ -8,12 +8,13 @@ BINARY_NAME="SMDB_Companion"
 VERSION=$(awk '/\[package\]/ {flag=1} flag && /^version =/ {print $3; exit}' Cargo.toml | tr -d '"')
 APP_PATH="target/universal/release/$BINARY_NAME.app"
 ZIP_NAME="$BINARY_NAME.v$VERSION.zip"
+DMG_NAME="$BINARY_NAME.v$VERSION.dmg"
 GDRIVE_VERSION_FILE="/Users/tfarrell/Library/CloudStorage/GoogleDrive-tim@farrellsound.com/Shared drives/PUBLIC/$BINARY_NAME/latest_ver"
 WEB_VERSION_FILE="/Users/tfarrell/Documents/Website/smdbc.com/private/latest_ver"
-NOTARIZE_USERNAME="farrelltim@me.com"
-# Consider using keychain or environment variable for password
-#NOTARIZE_PASSWORD=$(security find-generic-password -a "farrelltim@me.com" -s "AC_PASSWORD" -w)
-NOTARIZE_PASSWORD="Let'sNotorizeThisBitch!"
+CODESIGN_CERTIFICATE_ID="395E75EA710B388E31E444376729920A274BB6CB"
+NOTARIZE_USERNAME="soundguru@gmail.com"
+NOTARIZE_PASSWORD="ndtq-xhsn-wxyl-lzji"
+NOTARIZE_TEAMID="22D9VBGAWF"
 
 # Ensure clean state
 clean_up() {
@@ -55,7 +56,7 @@ file "$APP_PATH/Contents/MacOS/$BINARY_NAME"
 
 # Code signing
 echo "Code signing application..."
-codesign --sign "Developer ID Application: Tim Farrell (22D9VBGAWF)" \
+codesign --sign $CODESIGN_CERTIFICATE_ID \
     --deep --force --options runtime \
     --entitlements "entitlements.plist" \
     "$APP_PATH"
@@ -71,24 +72,26 @@ ORIGINAL_DIR=$(pwd)
 
 # Create temporary directory for notarization
 TEMP_DIR=$(mktemp -d)
-cd "$TEMP_DIR"
-
 # Create the zip file
 echo "Creating zip file for notarization..."
-ditto -c -k --keepParent "$APP_PATH" "$ZIP_NAME"
+ditto -c -k --keepParent "$APP_PATH" "$TEMP_DIR/$ZIP_NAME"
+
+cd "$TEMP_DIR"
+
 
 # Get bundle identifier
-BUNDLE_IDENTIFIER=$(defaults read "$APP_PATH/Contents/Info.plist" CFBundleIdentifier)
+# BUNDLE_IDENTIFIER=$(defaults read "$APP_PATH/Contents/Info.plist" CFBundleIdentifier)
+BUNDLE_IDENTIFIER="com.SMDB_Companion"
 echo "Bundle identifier: $BUNDLE_IDENTIFIER"
 
 # Submit for notarization
 echo "Submitting for notarization..."
 NOTARIZE_RESPONSE=$(xcrun notarytool submit "$ZIP_NAME" \
     --wait \
-    --progress \
+    # --progress \
     --apple-id "$NOTARIZE_USERNAME" \
     --password "$NOTARIZE_PASSWORD" \
-    --team-id "22D9VBGAWF")
+    --team-id "22D9VBGAWF" | tee /dev/tty)
 
 # Check notarization status
 if ! echo "$NOTARIZE_RESPONSE" | grep -q "status: Accepted"; then

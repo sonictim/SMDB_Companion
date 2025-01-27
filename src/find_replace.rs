@@ -31,6 +31,7 @@ impl FindPanel {
 
         let Some(db) = db else {
             ui.heading(RichText::new("No Open Database").weak());
+            welcome_message(ui);
             return;
         };
 

@@ -60,10 +60,12 @@ impl Duplicates {
     pub fn render(&mut self, ui: &mut egui::Ui, db: Option<&Database>, registration: Option<bool>) {
         let Some(db) = db else {
             ui.heading(RichText::new("No Open Database").weak());
+            welcome_message(ui);
             return;
         };
         if db.size == 0 {
             ui.heading("No Records in Database");
+            welcome_message(ui);
             return;
         }
 

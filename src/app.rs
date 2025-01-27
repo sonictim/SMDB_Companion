@@ -327,7 +327,7 @@ impl App {
                 ui.close_menu();
                 self.my_panel = Panel::Duplicates;
             }
-            if ui.button("Find and Replace").clicked() {
+            if ui.button("Metadata Find and Replace").clicked() {
                 ui.close_menu();
                 self.my_panel = Panel::Find;
             }
@@ -344,9 +344,13 @@ impl App {
                 self.update.window = Some(false);
                 self.update.check();
             }
-            if ui.button("Open Website").clicked() {
+            if ui.button("Recover License").clicked() {
                 ui.close_menu();
-                open_website_url();
+                open_recover_license_url();
+            }
+            if ui.button("Open Manual").clicked() {
+                ui.close_menu();
+                open_manual_url();
             }
             
             
@@ -563,8 +567,12 @@ pub fn open_download_url() {
     let url = r#"https://smdbc.com/download.php?token=please-can-i-have-it"#;
     let _ = webbrowser::open(url).is_ok();
 }
-pub fn open_website_url() {
-    let url = r#"https://smdbc.com/"#;
+pub fn open_recover_license_url() {
+    let url = r#"https://smdbc.com/recover-key.php"#;
+    let _ = webbrowser::open(url).is_ok();
+}
+pub fn open_manual_url() {
+    let url = r#"https://smdbc.com/manual.php"#;
     let _ = webbrowser::open(url).is_ok();
 }
 pub fn open_purchase_url() {

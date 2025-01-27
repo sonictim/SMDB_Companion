@@ -1,5 +1,32 @@
 use crate::prelude::*;
 
+pub fn welcome_message(ui: &mut Ui) {
+    empty_line(ui);
+    empty_line(ui);
+    empty_line(ui);
+    ui.vertical_centered(|ui| {
+        ui.heading(
+            RichText::new("Welcome to SMDB COMPANION")
+                .strong()
+                .size(36.0),
+        );
+    });
+    empty_line(ui);
+    ui.vertical_centered(|ui| {
+        ui.label(RichText::new("Please,").size(18.0));
+        ui.label(light_red_text("BACKUP your SOUNDMINER DATABASES and MEDIA FILES").size(18.0));
+        ui.label(RichText::new("before using this program.").size(18.0));
+    });
+    empty_line(ui);
+    empty_line(ui);
+    empty_line(ui);
+    ui.vertical_centered(|ui| {
+        ui.label(
+            RichText::new("To get started, click on the 'Open Database' button above").size(18.0),
+        );
+    });
+}
+
 // A reusable button component that takes a function (callback) to run when clicked
 pub fn button<F>(ui: &mut Ui, label: &str, action: F)
 where
