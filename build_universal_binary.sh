@@ -6,15 +6,17 @@ set -e  # Exit on any error
 # Set the binary name
 BINARY_NAME="SMDB_Companion"
 VERSION=$(awk '/\[package\]/ {flag=1} flag && /^version =/ {print $3; exit}' Cargo.toml | tr -d '"')
+SOURCE_BINARY_PATH="/Users/tfarrell/Documents/CODE/SMDB_Companion/target/universal/release"
 APP_PATH="target/universal/release/$BINARY_NAME.app"
 ZIP_NAME="$BINARY_NAME.v$VERSION.zip"
 DMG_NAME="$BINARY_NAME.v$VERSION.dmg"
+DMG_PATH="/Users/tfarrell/Documents/Website/smdbc.com/private/$DMG_NAME"
 GDRIVE_VERSION_FILE="/Users/tfarrell/Library/CloudStorage/GoogleDrive-tim@farrellsound.com/Shared drives/PUBLIC/$BINARY_NAME/latest_ver"
 WEB_VERSION_FILE="/Users/tfarrell/Documents/Website/smdbc.com/private/latest_ver"
-CODESIGN_CERTIFICATE_ID="395E75EA710B388E31E444376729920A274BB6CB"
+CODESIGN_CERTIFICATE_ID="C8DA3674F1466B4F2D8EB196D23DCE9B5A44F1D9"
 NOTARIZE_USERNAME="soundguru@gmail.com"
 NOTARIZE_PASSWORD="ndtq-xhsn-wxyl-lzji"
-NOTARIZE_TEAMID="22D9VBGAWF"
+NOTARIZE_TEAM_ID="22D9VBGAWF"
 
 # Ensure clean state
 clean_up() {
@@ -37,11 +39,26 @@ rustup target add aarch64-apple-darwin x86_64-apple-darwin
 # Build for both architectures
 echo "Building for ARM64..."
 cargo bundle --release --target aarch64-apple-darwin || { echo "ARM64 build failed"; exit 1; }
+echo "Code signing for ARM64..."
+codesign --sign $CODESIGN_CERTIFICATE_ID \
+    --deep --force --options runtime \
+    --entitlements "entitlements.plist" \
+    "target/aarch64-apple-darwin/release/bundle/osx/$BINARY_NAME.app"
+echo "Verifying code signature..."
+codesign --verify --deep --strict --verbose=2 "target/aarch64-apple-darwin/release/bundle/osx/$BINARY_NAME.app"
+
 echo "Building for x86_64..."
 cargo bundle --release --target x86_64-apple-darwin || { echo "x86_64 build failed"; exit 1; }
+echo "Code signing for x86_64..."
+codesign --sign $CODESIGN_CERTIFICATE_ID \
+    --deep --force --options runtime \
+    --entitlements "entitlements.plist" \
+    "target/x86_64-apple-darwin/release/bundle/osx/$BINARY_NAME.app"
+echo "Verifying code signature..."
+codesign --verify --deep --strict --verbose=2 "target/x86_64-apple-darwin/release/bundle/osx/$BINARY_NAME.app"
 
 # Build a directory for universal builds
-mkdir -p target/universal/release
+# mkdir -p target/universal/release
 cp -R target/x86_64-apple-darwin/release/bundle/osx/$BINARY_NAME.app target/universal/release/
 
 # Create the universal binary
@@ -65,6 +82,27 @@ codesign --sign $CODESIGN_CERTIFICATE_ID \
 echo "Verifying code signature..."
 codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 
+# # Create DMG
+# echo "Creating DMG..."
+# hdiutil create -volname "$BINARY_NAME" -srcfolder "$SOURCE_BINARY_PATH" -ov -format UDZO "$DMG_PATH"
+
+
+# # Prompt the user
+# echo "Continue to notarization? (y/n)"
+# read -p "Enter your choice: " choice
+
+# # Convert to lowercase to handle both uppercase and lowercase input
+# choice=$(echo "$choice" | tr '[:upper:]' '[:lower:]')
+
+# # Check if the user answered 'y' or 'yes'
+# if [[ "$choice" == "y" || "$choice" == "yes" ]]; then
+#     echo "Continuing..."
+#     # Put the rest of your script here that should execute if the user chooses 'yes'
+# else
+#     echo "Exiting..."
+#     exit 0  # Exit the script
+# fi
+
 
 
 # Before creating temp directory
@@ -86,12 +124,20 @@ echo "Bundle identifier: $BUNDLE_IDENTIFIER"
 
 # Submit for notarization
 echo "Submitting for notarization..."
-NOTARIZE_RESPONSE=$(xcrun notarytool submit "$ZIP_NAME" \
-    --wait \
-    # --progress \
-    --apple-id "$NOTARIZE_USERNAME" \
-    --password "$NOTARIZE_PASSWORD" \
-    --team-id "22D9VBGAWF" | tee /dev/tty)
+NOTARIZE_RESPONSE=$(xcrun notarytool submit "$ZIP_NAME" --wait --apple-id "$NOTARIZE_USERNAME" --password "$NOTARIZE_PASSWORD" --team-id "$NOTARIZE_TEAM_ID" | tee /dev/tty)
+
+# Send a text message using osascript
+RECIPIENT="2133615559"  # Replace with phone number or iMessage contact name
+MESSAGE="Notariation of SMDB_Companion v$VERSION has completed. Status: $NOTARIZE_RESPONSE"
+
+osascript <<EOF
+tell application "Messages"
+    set targetService to 1st service whose service type = iMessage
+    set targetBuddy to buddy "$RECIPIENT" of targetService
+    send "$MESSAGE" to targetBuddy
+end tell
+EOF
+
 
 # Check notarization status
 if ! echo "$NOTARIZE_RESPONSE" | grep -q "status: Accepted"; then
@@ -112,16 +158,22 @@ if ! xcrun stapler validate "$APP_PATH"; then
     exit 1
 fi
 
-# Create final distribution zip
-ditto -c -k --keepParent "$APP_PATH" "$ZIP_NAME"
 
-# Copy to destination paths
-echo "Copying to distribution locations..."
-for DIR in "/Users/tfarrell/Documents/Website/smdbc.com/private" \
-          "/Users/tfarrell/Library/CloudStorage/GoogleDrive-tim@farrellsound.com/Shared drives/PUBLIC/$BINARY_NAME"; do
-    rm -f "$DIR/$BINARY_NAME"*
-    cp "$ZIP_NAME" "$DIR/$ZIP_NAME"
-done
+# Create DMG
+echo "Creating Website DMG..."
+hdiutil create -volname "$BINARY_NAME" -srcfolder "$SOURCE_BINARY_PATH" -ov -format UDZO "$DMG_PATH"
+hdiutil internet-enable -yes "$DMG_PATH"
+
+# # Create final distribution zip
+# ditto -c -k --keepParent "$APP_PATH" "$ZIP_NAME"
+
+# # Copy to destination paths
+# echo "Copying to distribution locations..."
+# for DIR in "/Users/tfarrell/Documents/Website/smdbc.com/private" \
+#           "/Users/tfarrell/Library/CloudStorage/GoogleDrive-tim@farrellsound.com/Shared drives/PUBLIC/$BINARY_NAME"; do
+#     rm -f "$DIR/$BINARY_NAME"*
+#     cp "$ZIP_NAME" "$DIR/$ZIP_NAME"
+# done
 
 # Update version files
 echo "$VERSION" | tee "$GDRIVE_VERSION_FILE" "$WEB_VERSION_FILE"
