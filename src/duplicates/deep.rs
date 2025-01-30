@@ -26,6 +26,13 @@ impl NodeCommon for Deep {
                 "Filenames ending in .#, .#.#.#, or .M will be examined as possible duplicates",
             );
 
+        ui.horizontal(|ui| {
+            ui.add_space(24.0);
+            ui.label(
+                "Multi Mono Stems ending in .1 .2 will be flagged as duplicates. Use Caution.",
+            );
+        });
+
         match db.extensions.get().len() {
             0 => {
                 ui.horizontal(|ui| {

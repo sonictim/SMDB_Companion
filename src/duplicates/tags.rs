@@ -37,7 +37,7 @@ impl NodeCommon for Tags {
     fn render(&mut self, ui: &mut egui::Ui, _: &Database) {
         let enabled = !self.list().is_empty();
         let text = enabled_text(
-            "Search for Records with AudioSuite Tags in Filename",
+            "Search for Records with AudioSuite (or any other) Tags in Filename",
             &enabled,
         );
         ui.checkbox(&mut self.enabled, text)
@@ -133,7 +133,7 @@ impl Tags {
     pub fn render_panel(&mut self, ui: &mut egui::Ui) {
         ui.heading(RichText::new("Tag Editor").strong());
         ui.label("Protools Audiosuite Tags use the following format:  -example_");
-        ui.label("You can enter any string of text and if it is a match, the file will be marked for removal");
+        ui.label("You can enter any string of text as a tag and if it is a match, the file will be marked for removal");
         empty_line(ui);
         ui.separator();
         egui::ScrollArea::vertical().show(ui, |ui| {

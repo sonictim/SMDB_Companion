@@ -250,11 +250,17 @@ impl App {
                     // // }
                     // ui.label(RichText::new("Registration Info").strong());
                     empty_line(ui);
+                    ui.horizontal(|ui|{
+                        ui.add_space(80.0);
+                        ui.label(RichText::new("Registration Info is CASE SENSITIVE").strong());
+                    });
                     ui.horizontal(|ui| {
+                        ui.add_space(30.0);
                         ui.label("Name: ");
                         ui.text_edit_singleline(&mut self.registration.name);
                     });
                     ui.horizontal(|ui| {
+                        ui.add_space(34.0);
                         ui.label("Email: ");
                         ui.text_edit_singleline(&mut self.registration.email);
                     });
@@ -507,6 +513,7 @@ pub struct Registration {
 
 impl Registration {
     pub fn render(&mut self, ui: &mut egui::Ui) {
+        ui.label(RichText::new("Registration Info is CASE SENSITIVE").strong());
         ui.horizontal(|ui| {
             ui.label("Name: ");
             ui.text_edit_singleline(&mut self.name);

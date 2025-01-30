@@ -7,13 +7,14 @@ set -e  # Exit on any error
 BINARY_NAME="SMDB_Companion"
 VERSION=$(awk '/\[package\]/ {flag=1} flag && /^version =/ {print $3; exit}' Cargo.toml | tr -d '"')
 SOURCE_BINARY_PATH="/Users/tfarrell/Documents/CODE/SMDB_Companion/target/universal/release"
-APP_PATH="target/universal/release/$BINARY_NAME.app"
+WEBSITE_PATH="/Users/tfarrell/Documents/Website/smdbc.com/private"
+APP_PATH="$SOURCE_BINARY_PATH/$BINARY_NAME.app"
 ZIP_NAME="$BINARY_NAME.v$VERSION.zip"
 DMG_NAME="$BINARY_NAME.v$VERSION.dmg"
-DMG_PATH="/Users/tfarrell/Documents/Website/smdbc.com/private/$DMG_NAME"
+DMG_PATH="$WEBSITE_PATH/$DMG_NAME"
 GDRIVE_VERSION_FILE="/Users/tfarrell/Library/CloudStorage/GoogleDrive-tim@farrellsound.com/Shared drives/PUBLIC/$BINARY_NAME/latest_ver"
-WEB_VERSION_FILE="/Users/tfarrell/Documents/Website/smdbc.com/private/latest_ver"
-CODESIGN_CERTIFICATE_ID="C8DA3674F1466B4F2D8EB196D23DCE9B5A44F1D9"
+WEB_VERSION_FILE="$WEBSITE_PATH/latest_ver"
+CODESIGN_CERTIFICATE_ID="CD96C81E43F0FFA026939DC37BF69875A96FEF81"
 NOTARIZE_USERNAME="soundguru@gmail.com"
 NOTARIZE_PASSWORD="ndtq-xhsn-wxyl-lzji"
 NOTARIZE_TEAM_ID="22D9VBGAWF"
@@ -127,16 +128,16 @@ echo "Submitting for notarization..."
 NOTARIZE_RESPONSE=$(xcrun notarytool submit "$ZIP_NAME" --wait --apple-id "$NOTARIZE_USERNAME" --password "$NOTARIZE_PASSWORD" --team-id "$NOTARIZE_TEAM_ID" | tee /dev/tty)
 
 # Send a text message using osascript
-RECIPIENT="2133615559"  # Replace with phone number or iMessage contact name
-MESSAGE="Notariation of SMDB_Companion v$VERSION has completed. Status: $NOTARIZE_RESPONSE"
+# RECIPIENT="2133615559"  # Replace with phone number or iMessage contact name
+# MESSAGE="Notariation of SMDB_Companion v$VERSION has completed. Status: $NOTARIZE_RESPONSE"
 
-osascript <<EOF
-tell application "Messages"
-    set targetService to 1st service whose service type = iMessage
-    set targetBuddy to buddy "$RECIPIENT" of targetService
-    send "$MESSAGE" to targetBuddy
-end tell
-EOF
+# osascript <<EOF
+# tell application "Messages"
+#     set targetService to 1st service whose service type = iMessage
+#     set targetBuddy to buddy "$RECIPIENT" of targetService
+#     send "$MESSAGE" to targetBuddy
+# end tell
+# EOF
 
 
 # Check notarization status
@@ -147,6 +148,7 @@ if ! echo "$NOTARIZE_RESPONSE" | grep -q "status: Accepted"; then
 fi
 
 echo "Notarization successful!"
+# cd "$ORIGINAL_DIR"
 
 # Staple the notarization ticket
 echo "Stapling notarization ticket..."
@@ -159,12 +161,7 @@ if ! xcrun stapler validate "$APP_PATH"; then
 fi
 
 
-# Create DMG
-echo "Creating Website DMG..."
-hdiutil create -volname "$BINARY_NAME" -srcfolder "$SOURCE_BINARY_PATH" -ov -format UDZO "$DMG_PATH"
-hdiutil internet-enable -yes "$DMG_PATH"
-
-# # Create final distribution zip
+# Create final distribution zip
 # ditto -c -k --keepParent "$APP_PATH" "$ZIP_NAME"
 
 # # Copy to destination paths
@@ -174,6 +171,12 @@ hdiutil internet-enable -yes "$DMG_PATH"
 #     rm -f "$DIR/$BINARY_NAME"*
 #     cp "$ZIP_NAME" "$DIR/$ZIP_NAME"
 # done
+
+# Create DMG
+echo "Creating Website DMG..."
+rm $WEBSITE_PATH/$BINARY_NAME*
+cp /Users/tfarrell/Documents/CODE/SMDB_Companion/assets/DMG\ Source/DS_Store $SOURCE_BINARY_PATH/.DS_Store
+hdiutil create -volname "SMDB Companion" -srcfolder $SOURCE_BINARY_PATH -ov -format UDBZ -o $DMG_PATH
 
 # Update version files
 echo "$VERSION" | tee "$GDRIVE_VERSION_FILE" "$WEB_VERSION_FILE"

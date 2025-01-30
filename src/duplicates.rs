@@ -3,6 +3,7 @@ use crate::prelude::*;
 pub mod basic;
 pub mod compare;
 pub mod deep;
+pub mod duration;
 pub mod order;
 pub mod remove;
 pub mod tags;
@@ -11,6 +12,7 @@ pub mod waveform;
 use basic::Basic;
 use compare::Compare;
 use deep::Deep;
+use duration::Duration;
 pub use order::OrderPanel;
 use remove::Remove;
 use tags::Tags;
@@ -22,6 +24,7 @@ pub struct Duplicates {
     basic: Basic,
     deep: Deep,
     tags: Tags,
+    duration: Duration,
     waves: Waveforms,
     compare: Compare,
     remove: Remove,
@@ -47,11 +50,12 @@ impl Duplicates {
         self.tags.render_panel(ui);
     }
 
-    fn nodes(&mut self) -> [&mut dyn NodeCommon; 5] {
+    fn nodes(&mut self) -> [&mut dyn NodeCommon; 6] {
         [
             &mut self.basic as &mut dyn NodeCommon,
             &mut self.deep as &mut dyn NodeCommon,
             &mut self.tags as &mut dyn NodeCommon,
+            &mut self.duration as &mut dyn NodeCommon,
             &mut self.waves as &mut dyn NodeCommon,
             &mut self.compare as &mut dyn NodeCommon,
         ]
@@ -238,6 +242,7 @@ impl Duplicates {
             || self.tags.config.handle.is_some()
             || self.compare.config.handle.is_some()
             || self.waves.config.handle.is_some()
+            || self.duration.config.handle.is_some()
     }
 
     fn search_eligible(&self) -> bool {
@@ -247,6 +252,7 @@ impl Duplicates {
             || self.tags.enabled
             || self.compare.enabled
             || self.waves.enabled
+            || self.duration.enabled
     }
 
     fn receive_async_data(&mut self) {
@@ -356,7 +362,7 @@ impl Node {
         }
         self.working = false;
         self.handle = None;
-        // self.clear();
+        self.clear();
     }
 
     pub fn receive_hashset(&mut self) -> Option<HashSet<FileRecord>> {

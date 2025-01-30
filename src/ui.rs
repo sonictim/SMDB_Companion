@@ -25,6 +25,19 @@ pub fn welcome_message(ui: &mut Ui) {
             RichText::new("To get started, click on the 'Open Database' button above").size(18.0),
         );
     });
+    empty_line(ui);
+    empty_line(ui);
+    ui.vertical_centered(|ui| {
+        ui.label(
+            RichText::new("If this is your first time running SMDB Companion, the default settings are a great place to get started, but to get the best results, please investigate:").size(16.0),
+        );
+        ui.label(
+            RichText::new("Preferences -> Filename Preservation Priority").strong().size(16.0),
+        );
+        ui.label(
+            RichText::new("It might take a few tries and adjustments, but this will really allow you to customize the app to provide you with the best results for your library.").size(16.0),
+        );
+    });
 }
 
 // A reusable button component that takes a function (callback) to run when clicked
