@@ -176,9 +176,11 @@ fi
 echo "Creating Website DMG..."
 rm $WEBSITE_PATH/$BINARY_NAME*
 cp /Users/tfarrell/Documents/CODE/SMDB_Companion/assets/DMG\ Source/DS_Store $SOURCE_BINARY_PATH/.DS_Store
+hdiutil attach /Users/tfarrell/Documents/CODE/SMDB_Companion/assets/DMG\ Source/SMDBC.dmg
 hdiutil create -volname "SMDB Companion" -srcfolder $SOURCE_BINARY_PATH -ov -format UDBZ -o $DMG_PATH
 
 # Update version files
 echo "$VERSION" | tee "$GDRIVE_VERSION_FILE" "$WEB_VERSION_FILE"
 
+hdiutil detach /Volumes/SMDB\ Companion/ 
 echo "Build and notarization process completed successfully!"

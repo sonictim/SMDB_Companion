@@ -46,9 +46,11 @@ impl NodeCommon for Basic {
             );
         ui.horizontal(|ui| {
             ui.add_space(24.0);
-            ui.label(
-                "Duplicate Match Criteria: (all must be the same to be considered a duplicate) ",
-            );
+            ui.label("Duplicate Match Criteria:");
+        });
+        ui.horizontal(|ui| {
+            ui.add_space(24.0);
+            ui.label("(all must be matches to be considered a duplicate)");
         });
         if self.match_criteria.get().is_empty() {
             self.enabled = false;

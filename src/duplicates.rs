@@ -7,6 +7,7 @@ pub mod duration;
 pub mod order;
 pub mod remove;
 pub mod tags;
+pub mod valid_path;
 pub mod waveform;
 
 use basic::Basic;
@@ -16,6 +17,7 @@ use duration::Duration;
 pub use order::OrderPanel;
 use remove::Remove;
 use tags::Tags;
+use valid_path::PathValid;
 use waveform::Waveforms;
 
 #[derive(serde::Deserialize, serde::Serialize, Default)]
@@ -25,6 +27,7 @@ pub struct Duplicates {
     deep: Deep,
     tags: Tags,
     duration: Duration,
+    valid_path: PathValid,
     waves: Waveforms,
     compare: Compare,
     remove: Remove,
@@ -50,12 +53,13 @@ impl Duplicates {
         self.tags.render_panel(ui);
     }
 
-    fn nodes(&mut self) -> [&mut dyn NodeCommon; 6] {
+    fn nodes(&mut self) -> [&mut dyn NodeCommon; 7] {
         [
             &mut self.basic as &mut dyn NodeCommon,
             &mut self.deep as &mut dyn NodeCommon,
             &mut self.tags as &mut dyn NodeCommon,
             &mut self.duration as &mut dyn NodeCommon,
+            &mut self.valid_path as &mut dyn NodeCommon,
             &mut self.waves as &mut dyn NodeCommon,
             &mut self.compare as &mut dyn NodeCommon,
         ]
@@ -80,7 +84,12 @@ impl Duplicates {
                 node.render(&mut column[0], db);
                 node.render_progress_bar(&mut column[0]);
             }
-            self.remove.render_options(&mut column[1]);
+
+            if column[0].input(|i| i.modifiers.alt)
+                || !self.handles_active() && !self.remove.config.records.get().is_empty()
+            {
+                self.remove.render_options(&mut column[1]);
+            }
 
             // self.basic.render(&mut column[0], db);
         });
@@ -243,6 +252,7 @@ impl Duplicates {
             || self.compare.config.handle.is_some()
             || self.waves.config.handle.is_some()
             || self.duration.config.handle.is_some()
+            || self.valid_path.config.handle.is_some()
     }
 
     fn search_eligible(&self) -> bool {
@@ -253,6 +263,7 @@ impl Duplicates {
             || self.compare.enabled
             || self.waves.enabled
             || self.duration.enabled
+            || self.valid_path.enabled
     }
 
     fn receive_async_data(&mut self) {

@@ -60,6 +60,15 @@ impl eframe::App for App {
 
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+
+        let mut style = (*ctx.style()).clone();
+        if !style.visuals.dark_mode {
+            style.visuals.widgets.active.fg_stroke.color = egui::Color32::from_rgb(0, 0, 0);
+            style.visuals.widgets.hovered.fg_stroke.color = egui::Color32::from_rgb(0, 0, 0);
+        }
+        ctx.set_style(style);
+
+
         if self.registration.valid.is_none() {
             self.registration.validate();
             self.update.check();
@@ -151,6 +160,9 @@ impl App {
             //     active: true,
                 
             // }
+            // let mut visuals = egui::Visuals::default();
+            
+            
             // let visuals = egui::Visuals {
             //     widgets.active: false,
             //     dark_mode: false,
