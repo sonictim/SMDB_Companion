@@ -119,11 +119,14 @@ impl OrderPanel {
                 ui.separator();
                 self.bottom_toolbar(ui);
                 empty_line(ui);
-                if let Some(db) = db {
-                    self.top_toolbar(ui, &db.columns);
-                } else {
-                    ui.label(light_red_text("Open DB to enable ADD NEW LINE"));
-                }
+                ui.vertical(|ui| {
+                    if let Some(db) = db {
+                        ui.heading(RichText::new("Add new Logic Line:").strong());
+                        self.top_toolbar(ui, &db.columns);
+                    } else {
+                        ui.label(light_red_text("Open DB to enable ADD NEW LINE"));
+                    }
+                });
                 // self.presets_toolbar(ui);
             },
         );
@@ -141,7 +144,7 @@ impl OrderPanel {
                 }
             }
 
-            if ui.button("Add Line").clicked {
+            if ui.button(RichText::new("Add Line").size(18.0)).clicked {
                 match self.operator {
                     O::Largest | O::Smallest | O::IsEmpty | O::IsNotEmpty => {
                         self.list.insert(
@@ -174,7 +177,10 @@ impl OrderPanel {
 
     pub fn bottom_toolbar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            if ui.button("Move Selected Up").clicked() {
+            if ui
+                .button(RichText::new("Move Selected Up").size(16.0))
+                .clicked()
+            {
                 if let Some(index) = self.sel_line {
                     if index > 0 {
                         self.sel_line = Some(index - 1);
@@ -183,7 +189,10 @@ impl OrderPanel {
                     }
                 }
             }
-            if ui.button("Move Selected Down").clicked() {
+            if ui
+                .button(RichText::new("Move Selected Down").size(16.0))
+                .clicked()
+            {
                 if let Some(index) = self.sel_line {
                     if index < self.list.len() - 1 {
                         self.sel_line = Some(index + 1);
@@ -192,7 +201,10 @@ impl OrderPanel {
                     }
                 }
             }
-            if ui.button("Remove Selected Line").clicked() {
+            if ui
+                .button(light_red_text("Remove Selected Line").size(16.0))
+                .clicked()
+            {
                 if let Some(index) = self.sel_line {
                     self.list.remove(index);
                     self.sel_line = None;

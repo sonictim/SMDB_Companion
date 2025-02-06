@@ -161,11 +161,7 @@ async fn gather(
             // Use a reference to `records` instead of taking ownership
             for r in &*records {
                 // Borrow records immutably
-                let _ = writeln!(
-                    file,
-                    "{}",
-                    r.data.get("FilePath").unwrap_or(&"".to_string())
-                );
+                let _ = writeln!(file, "{}", r.data.get("FilePath").unwrap_or(&"".into()));
             }
 
             // Skip the first record and add the rest to results

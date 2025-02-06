@@ -16,6 +16,7 @@ use basic::Basic;
 use compare::Compare;
 use deep::Deep;
 use duration::Duration;
+use futures::io::empty;
 pub use order::OrderPanel;
 use remove::Remove;
 use tags::Tags;
@@ -43,6 +44,13 @@ impl Duplicates {
     pub fn tags_panel(&mut self) -> bool {
         if self.tags.open_panel {
             self.tags.open_panel = false;
+            return true;
+        }
+        false
+    }
+    pub fn find_panel(&mut self) -> bool {
+        if self.valid_path.open_panel {
+            self.valid_path.open_panel = false;
             return true;
         }
         false
@@ -131,7 +139,7 @@ impl Duplicates {
         ui.horizontal(|ui| {
             if self.handles_active() {
                 self.remove.run = false;
-                button(ui, "Cancel", || self.abort_all());
+                large_button(ui, "Cancel", || self.abort_all());
             } else {
                 self.remove.run = true;
                 if self.search_eligible() {
@@ -147,12 +155,15 @@ impl Duplicates {
                         );
                     } else {
                         ui.columns(2, |column| {
+                            let text = if self.remove.config.records.get().is_empty() {
+                                "Search for Duplicates"
+                            } else {
+                                "Clear and Search Again"
+                            };
                             column[0].horizontal(|ui| {
-                                rt_button(
-                                    ui,
-                                    RichText::new("Search for Duplicates").size(20.0).strong(),
-                                    || self.gather(db),
-                                );
+                                rt_button(ui, RichText::new(text).size(20.0).strong(), || {
+                                    self.gather(db)
+                                });
                             });
                             if !self.handles_active()
                                 && !self.remove.config.records.get().is_empty()
@@ -216,6 +227,7 @@ impl Duplicates {
     pub fn gather(&mut self, db: &Database) {
         self.abort_all();
         self.remove.config.records.clear();
+        self.records_window.clear();
         self.remove
             .config
             .status
@@ -246,6 +258,7 @@ impl Duplicates {
             node.clear();
         }
         self.remove.config.clear();
+        self.records_window.clear();
     }
 
     pub fn abort_all(&mut self) {
@@ -341,7 +354,7 @@ pub trait NodeCommon {
         self.config().abort();
     }
     fn clear(&mut self) {
-        self.config().clear()
+        self.config().clear();
     }
     fn render_progress_bar(&mut self, ui: &mut egui::Ui) {
         self.config().render(ui);
@@ -511,16 +524,17 @@ impl RecordsWindow {
                         .max_width(width)
                         .scroll_offset(egui::vec2(0.0, 0.0))
                         .show(ui, |ui| {
-                            ui.heading("Records Marked for Removal:");
-                            ui.label("These records have been marked for removal based on the rules established in File Preservation Logic.\nTo see all the possible matching records for a filename, search for the filename in your Soundminer.\nIf you find you prefer a different file be selected for removal, you will need to update the File Preservation Logic accordingly.");
+                            ui.heading(RichText::new("Records Marked for Removal:").strong());
+                            ui.label(RichText::new("These records have been marked for removal based on the rules established in File Preservation Logic.\nTo see all the possible matching records for a filename, search for the filename in your Soundminer.\nIf you find you prefer a different file be selected for removal, you will need to update the File Preservation Logic accordingly.").size(14.0));
+                            empty_line(ui);
                             ui.horizontal(|ui| {
-                                ui.label("Records to Display");
+                                ui.label(RichText::new("Records to Display").size(16.0));
                                 egui::ComboBox::from_id_salt("marked records")
                                     .selected_text(&self.selected)
                                     .show_ui(ui, |ui| {
                                         for (k, v) in &self.records {
                                             if !v.is_empty() {
-                                                ui.selectable_value(&mut self.selected, k.clone(), k.clone());
+                                                ui.selectable_value(&mut self.selected, k.clone(), RichText::new(k).size(16.0));
                                             }
                                         }
                                     });
@@ -537,17 +551,20 @@ impl RecordsWindow {
                         .max_height(height)
                         .max_width(width)
                         .show(ui, |ui| {
-                            ui.heading("Records Marked for Removal:");
-                            ui.label("These records have been marked for removal based on the rules established in File Preservation Logic.\nTo see all the possible matching records for a filename, search for the filename in your Soundminer.\nIf you find you prefer a different file be selected for removal, you will need to update the File Preservation Logic accordingly.");
+                            ui.heading(RichText::new("Records Marked for Removal:").strong());
+                            ui.label(RichText::new("These records have been marked for removal based on the rules established in File Preservation Logic.\nTo see all the possible matching records for a filename, search for the filename in your Soundminer.\nIf you find you prefer a different file be selected for removal, you will need to update the File Preservation Logic accordingly.").size(14.0));
+                            empty_line(ui);
                             ui.horizontal(|ui| {
-                                ui.label("Records to Display");
+                                ui.label(RichText::new("Records to Display").size(16.0));
                                 egui::ComboBox::from_id_salt("marked records")
-                                .selected_text(&self.selected)
-                                .show_ui(ui, |ui| {
-                                    for k in &self.keys {
-                                        ui.selectable_value(&mut self.selected, k.clone(), k.clone());
-                                    }
-                                });
+                                    .selected_text(&self.selected)
+                                    .show_ui(ui, |ui| {
+                                        for (k, v) in &self.records {
+                                            if !v.is_empty() {
+                                                ui.selectable_value(&mut self.selected, k.clone(), RichText::new(k).size(16.0));
+                                            }
+                                        }
+                                    });
                             });
                             if !self.Display_Data.is_empty() {
                                 ui.separator();
@@ -574,6 +591,15 @@ impl RecordsWindow {
             self.last = self.selected.clone();
         }
     }
+
+    fn clear(&mut self) {
+        self.Display_Data.clear();
+        self.records.clear();
+        self.keys.clear();
+        self.selected.clear();
+        self.last.clear();
+    }
+
     fn open(
         &mut self,
         all: &HashSet<FileRecord>,
@@ -585,11 +611,6 @@ impl RecordsWindow {
         duration: &HashSet<FileRecord>,
         valid: &HashSet<FileRecord>,
     ) {
-        self.Display_Data.clear();
-        self.records.clear();
-        self.keys.clear();
-        self.selected.clear();
-        self.last.clear();
         self.records.insert("All".to_owned(), all.clone());
         self.keys.push("All".to_owned());
         if !basic.is_empty() {

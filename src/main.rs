@@ -20,7 +20,7 @@ async fn main() -> eframe::Result {
         ..Default::default()
     };
     eframe::run_native(
-        "SMDB Companion",
+        &format!("SMDB Companion v{}", env!("CARGO_PKG_VERSION")),
         native_options,
         Box::new(|cc| Ok(Box::new(SMDB_Companion::App::new(cc)))),
     )

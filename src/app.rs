@@ -76,6 +76,7 @@ impl eframe::App for App {
 
         self.receive_async_data();
         if self.duplicates.tags_panel() {self.my_panel = Panel::Tags}
+        if self.duplicates.find_panel() {self.my_panel = Panel::Find}
 
 
         
@@ -240,6 +241,7 @@ impl App  {
                     let db = Database::open().await;
                     let _ = tx.send(db).await;
                 });
+                self.my_panel = Panel::Duplicates;
 
             }
             if ui.button("Close Database").clicked() {
@@ -309,6 +311,7 @@ impl App  {
             }
             
             if ui.button("Quit").clicked() {
+                self.duplicates.abort_all();
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
         });

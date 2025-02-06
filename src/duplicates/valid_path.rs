@@ -1,21 +1,25 @@
 use crate::prelude::*;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use tokio::task;
 
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(serde::Deserialize, serde::Serialize, Default)]
 #[serde(default)]
 pub struct PathValid {
     pub enabled: bool,
     #[serde(skip)]
     pub config: Node,
+    pub open_panel: bool,
 }
 
-impl Default for PathValid {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            config: Node::default(),
-        }
-    }
-}
+// impl Default for PathValid {
+//     fn default() -> Self {
+//         Self {
+//             enabled: false,
+//             config: Node::default(),
+//             open_panel: false,
+//         }
+//     }
+// }
 
 impl NodeCommon for PathValid {
     fn config(&mut self) -> &mut Node {
@@ -31,6 +35,20 @@ impl NodeCommon for PathValid {
             .on_hover_text_at_pointer(
                 "Audio Files with an invalid path will be marked for removal",
             );
+        ui.horizontal(|ui| {
+            ui.add_space(24.0);
+            ui.label("You can use the");
+            if ui.button("Metadata Replace").clicked() {
+                self.open_panel = true
+            };
+            ui.label("tab to fix these paths");
+        });
+        // ui.horizontal(|ui| {
+        //     ui.add_space(24.0);
+        //     if ui.button("Go to Metadata Replace").clicked() {
+        //         self.open_panel = true
+        //     };
+        // });
     }
 
     fn process(&mut self, db: &Database, _: &HashSet<String>, _: Arc<RwLock<OrderPanel>>) {
@@ -91,44 +109,70 @@ impl PathValid {
         progress_sender: mpsc::Sender<Progress>,
         status_sender: mpsc::Sender<Arc<str>>,
     ) -> Result<HashSet<FileRecord>, sqlx::Error> {
+        let _ = status_sender.send("Gathering Records".into()).await;
+
+        let file_records: HashSet<FileRecord> = db.fetch_all_filerecords().await?;
+        let total = file_records.len();
         let _ = status_sender
-            .send(format!("Searching for audio files with invalid paths").into())
+            .send("Searching for audio files with invalid paths".into())
             .await;
 
-        let mut file_records: HashSet<FileRecord> = db.fetch_all_filerecords().await?;
+        // Create chunks for parallel processing
+        const CHUNK_SIZE: usize = 10000;
+        let chunks: Vec<Vec<FileRecord>> = file_records
+            .into_iter()
+            .collect::<Vec<_>>()
+            .chunks(CHUNK_SIZE)
+            .map(|chunk| chunk.to_vec())
+            .collect();
 
-        let total = file_records.len();
-        let mut counter = 0;
+        // Progress tracking
+        let progress = Arc::new(AtomicUsize::new(0));
+        let progress_sender = Arc::new(progress_sender);
 
-        // Create a channel for progress updates
-        let (tx, mut rx) = tokio::sync::mpsc::channel(32);
-        let progress_sender_clone = progress_sender.clone();
+        // Process chunks in parallel
+        let mut handles = vec![];
+        for chunk in chunks {
+            let progress = Arc::clone(&progress);
+            let progress_sender = Arc::clone(&progress_sender);
 
-        // Spawn a task to handle progress updates
-        tokio::spawn(async move {
-            while let Some(count) = rx.recv().await {
-                let _ = progress_sender_clone
-                    .send(Progress {
-                        counter: count,
-                        total,
-                    })
-                    .await;
+            let handle = tokio::spawn(async move {
+                let mut invalid_files = HashSet::new();
+
+                for record in chunk {
+                    // let binding = &record.path.clone().to_string();
+                    let path = Path::new(&*record.path);
+                    if !path.exists() {
+                        invalid_files.insert(record);
+                    }
+
+                    let count = progress.fetch_add(1, Ordering::Relaxed);
+                    if count % 1231 == 0 {
+                        let _ = progress_sender
+                            .send(Progress {
+                                counter: count,
+                                total,
+                            })
+                            .await;
+                    }
+                }
+
+                invalid_files
+            });
+
+            handles.push(handle);
+        }
+
+        // Collect results
+        let mut filtered_records = HashSet::new();
+        for handle in handles {
+            if let Ok(invalid_files) = handle.await {
+                filtered_records.extend(invalid_files);
             }
-        });
+        }
 
-        file_records.retain(|record| {
-            counter += 1;
-            if counter % 100 == 0 {
-                let _ = tx.try_send(counter);
-            }
-
-            let binding = record.path.clone().to_string();
-            let path = Path::new(&binding);
-
-            !path.exists()
-        });
         println!("Found Invalid Files");
-        Ok(file_records)
+        Ok(filtered_records)
     }
 
     // // let mut count = 1;

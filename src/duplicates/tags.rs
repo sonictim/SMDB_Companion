@@ -154,7 +154,7 @@ impl Tags {
             empty_line(ui);
             self.list.add_text_input(ui);
 
-            if !self.list.get().is_empty() && ui.button("Remove Selected Tags").clicked() {
+            if !self.list.get().is_empty() && ui.button(light_red_text("Remove Selected Tags")).clicked() {
                 self.list.remove_selected();
             }
         });

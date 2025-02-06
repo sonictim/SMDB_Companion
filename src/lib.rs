@@ -47,7 +47,8 @@ impl FileRecord {
     pub fn update_metadata(&mut self, row: &SqliteRow, columns: &HashSet<String>) {
         for c in columns {
             let data = row.try_get(c.as_str());
-            self.data.insert(c.clone(), data.unwrap_or("").to_string());
+            self.data
+                .insert(c.clone().into(), data.unwrap_or("").into());
         }
     }
 }

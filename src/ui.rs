@@ -27,6 +27,24 @@ pub fn welcome_message(ui: &mut Ui) {
     });
     empty_line(ui);
     empty_line(ui);
+    ui.vertical_centered(|ui| {
+        ui.label(
+            RichText::new("SMDB Companion is designed to work in concert with Soundminer.")
+                .size(16.0),
+        );
+        ui.label(
+            RichText::new(
+                "While SMDB Companion will help you find the warts in your sound libraries,",
+            )
+            .size(16.0),
+        );
+        ui.label(
+            RichText::new(
+                "you may need the deep functionality of Soundminer to properly remove them.",
+            )
+            .size(16.0),
+        );
+    });
     // ui.vertical_centered(|ui| {
     //     ui.label(
     //         RichText::new("If this is your first time running SMDB Companion, the default settings are a great place to get started, but to get the best results, please investigate:").size(16.0),
@@ -273,7 +291,7 @@ impl SelectableList {
 
     pub fn add_text_input(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            if ui.button("Add Tag:").clicked() {
+            if ui.button(RichText::new("Add Tag:").size(18.0)).clicked() {
                 self.add();
             }
             ui.text_edit_singleline(&mut self.add);
