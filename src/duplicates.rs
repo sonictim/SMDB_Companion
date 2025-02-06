@@ -1,3 +1,5 @@
+use std::fs::File;
+
 use crate::prelude::*;
 
 pub mod basic;
@@ -57,11 +59,11 @@ impl Duplicates {
         [
             &mut self.basic as &mut dyn NodeCommon,
             &mut self.deep as &mut dyn NodeCommon,
-            &mut self.tags as &mut dyn NodeCommon,
-            &mut self.duration as &mut dyn NodeCommon,
-            &mut self.valid_path as &mut dyn NodeCommon,
             &mut self.waves as &mut dyn NodeCommon,
             &mut self.compare as &mut dyn NodeCommon,
+            &mut self.valid_path as &mut dyn NodeCommon,
+            &mut self.tags as &mut dyn NodeCommon,
+            &mut self.duration as &mut dyn NodeCommon,
         ]
     }
 
@@ -186,9 +188,18 @@ impl Duplicates {
         if registration == Some(true)
             && !self.handles_active()
             && !self.remove.config.records.get().is_empty()
-            && ui.button("Show Records").clicked()
+            && ui.button("Show Marked Records").clicked()
         {
-            self.records_window.open(self.remove.config.records.get());
+            self.records_window.open(
+                self.remove.config.records.get(),
+                self.basic.config.records.get(),
+                self.deep.config.records.get(),
+                self.waves.config.records.get(),
+                self.compare.config.records.get(),
+                self.tags.config.records.get(),
+                self.duration.config.records.get(),
+                self.valid_path.config.records.get(),
+            );
         }
 
         if self.remove.config.working {
@@ -473,6 +484,10 @@ pub struct RecordsWindow {
     open: bool,
     scroll_to_top: bool,
     Display_Data: String,
+    records: HashMap<String, HashSet<FileRecord>>,
+    selected: String,
+    last: String,
+    keys: Vec<String>,
 }
 
 impl RecordsWindow {
@@ -482,7 +497,7 @@ impl RecordsWindow {
         let height = available_size.height();
         egui::Window::new("Records Marked as Duplicates")
             .open(&mut self.open) // Control whether the window is open
-            .resizable(false) // Make window non-resizable if you want it fixed
+            .resizable(true) // Make window non-resizable if you want it fixed
             .min_width(width)
             .min_height(height)
             .max_width(width)
@@ -496,7 +511,25 @@ impl RecordsWindow {
                         .max_width(width)
                         .scroll_offset(egui::vec2(0.0, 0.0))
                         .show(ui, |ui| {
-                            ui.label(RichText::new(&self.Display_Data).size(14.0));
+                            ui.heading("Records Marked for Removal:");
+                            ui.label("These records have been marked for removal based on the rules established in File Preservation Logic.\nTo see all the possible matching records for a filename, search for the filename in your Soundminer.\nIf you find you prefer a different file be selected for removal, you will need to update the File Preservation Logic accordingly.");
+                            ui.horizontal(|ui| {
+                                ui.label("Records to Display");
+                                egui::ComboBox::from_id_salt("marked records")
+                                    .selected_text(&self.selected)
+                                    .show_ui(ui, |ui| {
+                                        for (k, v) in &self.records {
+                                            if !v.is_empty() {
+                                                ui.selectable_value(&mut self.selected, k.clone(), k.clone());
+                                            }
+                                        }
+                                    });
+                            });
+                            if !self.Display_Data.is_empty() {
+
+                                ui.separator();
+                                ui.label(RichText::new(&self.Display_Data).size(14.0));
+                            }
                         });
                     self.scroll_to_top = false;
                 } else {
@@ -504,20 +537,99 @@ impl RecordsWindow {
                         .max_height(height)
                         .max_width(width)
                         .show(ui, |ui| {
-                            ui.label(RichText::new(&self.Display_Data).size(14.0));
+                            ui.heading("Records Marked for Removal:");
+                            ui.label("These records have been marked for removal based on the rules established in File Preservation Logic.\nTo see all the possible matching records for a filename, search for the filename in your Soundminer.\nIf you find you prefer a different file be selected for removal, you will need to update the File Preservation Logic accordingly.");
+                            ui.horizontal(|ui| {
+                                ui.label("Records to Display");
+                                egui::ComboBox::from_id_salt("marked records")
+                                .selected_text(&self.selected)
+                                .show_ui(ui, |ui| {
+                                    for k in &self.keys {
+                                        ui.selectable_value(&mut self.selected, k.clone(), k.clone());
+                                    }
+                                });
+                            });
+                            if !self.Display_Data.is_empty() {
+                                ui.separator();
+                                ui.label(RichText::new(&self.Display_Data).size(14.0));
+
+                            }
+
                         });
                 }
             });
-    }
-    fn open(&mut self, records: &HashSet<FileRecord>) {
-        let mut marked_records: Vec<&str> = records
-            .par_iter() // Use parallel iterator
-            .map(|s| &*s.path) // Convert &String to &str
-            .collect();
+        if self.last != self.selected {
+            let mut marked_records: Vec<&str> = self
+                .records
+                .get(&self.selected)
+                .unwrap()
+                .par_iter() // Use parallel iterator
+                .map(|s| &*s.path) // Convert &String to &str
+                .collect();
 
-        // Sort in parallel
-        marked_records.par_sort();
-        self.Display_Data = marked_records.join("\n");
+            // Sort in parallel
+            marked_records.par_sort();
+
+            self.Display_Data = marked_records.join("\n");
+            self.last = self.selected.clone();
+        }
+    }
+    fn open(
+        &mut self,
+        all: &HashSet<FileRecord>,
+        basic: &HashSet<FileRecord>,
+        deep: &HashSet<FileRecord>,
+        waveform: &HashSet<FileRecord>,
+        compare: &HashSet<FileRecord>,
+        tags: &HashSet<FileRecord>,
+        duration: &HashSet<FileRecord>,
+        valid: &HashSet<FileRecord>,
+    ) {
+        self.Display_Data.clear();
+        self.records.clear();
+        self.keys.clear();
+        self.selected.clear();
+        self.last.clear();
+        self.records.insert("All".to_owned(), all.clone());
+        self.keys.push("All".to_owned());
+        if !basic.is_empty() {
+            let name = "Basic Duplicate Search";
+            self.records.insert(name.to_owned(), basic.clone());
+            self.keys.push(name.to_owned());
+        }
+        if !deep.is_empty() {
+            let name = "Similar Filename";
+            self.records.insert(name.to_owned(), deep.clone());
+            self.keys.push(name.to_owned());
+        }
+        if !waveform.is_empty() {
+            let name = "Duplicate Audio Content Duplicates";
+            self.records.insert(name.to_owned(), waveform.clone());
+            self.keys.push(name.to_owned());
+        }
+        if !tags.is_empty() {
+            let name = "Audiosuite Tags";
+            self.records.insert(name.to_owned(), tags.clone());
+            self.keys.push(name.to_owned());
+        }
+        if !duration.is_empty() {
+            let name = "Duration";
+            self.records.insert(name.to_owned(), duration.clone());
+            self.keys.push(name.to_owned());
+        }
+        if !valid.is_empty() {
+            let name = "Invalid Filepath";
+            self.records.insert(name.to_owned(), valid.clone());
+            self.keys.push(name.to_owned());
+        }
+        if !compare.is_empty() {
+            let name = "Compare Database";
+            self.records.insert(name.to_owned(), compare.clone());
+            self.keys.push(name.to_owned());
+        }
+
+        self.records.insert("compare".to_owned(), compare.clone());
+
         self.scroll_to_top = true;
         self.open = true;
     }

@@ -77,13 +77,16 @@ impl eframe::App for App {
         self.receive_async_data();
         if self.duplicates.tags_panel() {self.my_panel = Panel::Tags}
 
+
+        
+
         // For inspiration and more examples, go to https://emilk.github.io/egui
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
 
                self.file_menu(ui, ctx);
                self.pref_menu(ui);
-               self.view_menu(ui);
+            //    self.view_menu(ui);
                self.help_menu(ui);
 
             //    ui.label(RichText::new("|").weak().size(18.0));
@@ -99,6 +102,8 @@ impl eframe::App for App {
 
  
             });
+            ui.separator();
+            self.panel_tab_bar(ui);
         });
         // The central panel the region left after adding TopPanel's and SidePanel's
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -145,7 +150,7 @@ impl eframe::App for App {
     
 }
 
-impl App {
+impl App  {
         /// Called once before the first frame.
         pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
             // This is also where you can customize the look and feel of egui using
@@ -312,16 +317,16 @@ impl App {
 
     fn pref_menu(&mut self, ui: &mut egui::Ui,) {
         ui.menu_button(menu_text("Preferences"), |ui| {
-            if ui.button("Filename Preservation Priority").clicked() {
-                ui.close_menu();
-                self.my_panel = Panel::Order;
-            }
-            if ui.button("Audiosuite Tags Editor").clicked() {
-                ui.close_menu();
-                self.my_panel = Panel::Tags;
-            }
+            // if ui.button("Filename Preservation Priority").clicked() {
+            //     ui.close_menu();
+            //     self.my_panel = Panel::Order;
+            // }
+            // if ui.button("Audiosuite Tags Editor").clicked() {
+            //     ui.close_menu();
+            //     self.my_panel = Panel::Tags;
+            // }
             
-            ui.separator();
+            // ui.separator();
             if ui.button("Restore Defaults").clicked() {
                 ui.close_menu();
                 // self.clear_status();
@@ -378,8 +383,9 @@ impl App {
 
 
     fn panel_tab_bar(&mut self, ui: &mut egui::Ui) {
+        // ui.horizontal_centered(|ui| {
         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-            let mut space = ui.available_width() / 2.0 - 350.0;
+            let mut space = ui.available_width() / 2.0 - 325.0;
             if space < 5.0 {
                 space = 0.0;
             }
@@ -411,10 +417,10 @@ impl App {
                 }
             }
     
-            add_tab_button(ui, &mut self.my_panel, Panel::Find, "Find & Replace", size_big, size_small, column_width);
-            add_tab_button(ui, &mut self.my_panel, Panel::Duplicates, "Search for Duplicates", size_big, size_small, column_width);
-            add_tab_button(ui, &mut self.my_panel, Panel::Order, "Preservation Priority", size_big, size_small, column_width);
+            add_tab_button(ui, &mut self.my_panel, Panel::Duplicates, "Main Search", size_big, size_small, column_width);
+            add_tab_button(ui, &mut self.my_panel, Panel::Order, "File Preservation Logic", size_big, size_small, column_width);
             add_tab_button(ui, &mut self.my_panel, Panel::Tags, "Tag Editor", size_big, size_small, column_width);
+            add_tab_button(ui, &mut self.my_panel, Panel::Find, "Metadata Replace", size_big, size_small, column_width);
         });
     }
 

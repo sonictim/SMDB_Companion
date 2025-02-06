@@ -12,18 +12,29 @@ pub struct OrderPanel {
     pub operator: OrderOperator,
     #[serde(skip)]
     pub input: String,
+    pub presets: HashMap<String, Vec<PreservationLogic>>,
+    pub preset: String,
+    pub new_preset: String,
 }
 
 impl Default for OrderPanel {
     fn default() -> Self {
-        Self {
+        let mut default = Self {
             list: default_order(),
             sel_line: Option::default(),
             column: String::default(),
             operator: OrderOperator::default(),
             input: String::default(),
+            presets: HashMap::default(),
+            preset: "Default".to_owned(),
+            new_preset: String::default(),
             // ..Default::default()
-        }
+        };
+        default
+            .presets
+            .insert("Default".to_owned(), default_order());
+        default.presets.insert("TJF".to_owned(), tjf_order());
+        default
     }
 }
 
@@ -47,12 +58,15 @@ impl OrderPanel {
         ui.label("Entries at the top of list take precedence to those below");
         empty_line(ui);
         // ui.separator();
-        if let Some(db) = db {
-            self.top_toolbar(ui, &db.columns);
-        } else {
-            ui.label(light_red_text("Open DB to enable ADD NEW"));
-        }
+        self.presets_toolbar(ui);
+        // if let Some(db) = db {
+        //     self.top_toolbar(ui, &db.columns);
+        // } else {
+        //     ui.label(light_red_text("Open DB to enable ADD NEW LINE"));
+        // }
         empty_line(ui);
+        // self.bottom_toolbar(ui);
+
         ui.separator();
 
         ui.with_layout(
@@ -103,9 +117,14 @@ impl OrderPanel {
                         });
                     });
                 ui.separator();
-                empty_line(ui);
-
                 self.bottom_toolbar(ui);
+                empty_line(ui);
+                if let Some(db) = db {
+                    self.top_toolbar(ui, &db.columns);
+                } else {
+                    ui.label(light_red_text("Open DB to enable ADD NEW LINE"));
+                }
+                // self.presets_toolbar(ui);
             },
         );
     }
@@ -155,7 +174,7 @@ impl OrderPanel {
 
     pub fn bottom_toolbar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            if ui.button("Move Up").clicked() {
+            if ui.button("Move Selected Up").clicked() {
                 if let Some(index) = self.sel_line {
                     if index > 0 {
                         self.sel_line = Some(index - 1);
@@ -164,7 +183,7 @@ impl OrderPanel {
                     }
                 }
             }
-            if ui.button("Move Down").clicked() {
+            if ui.button("Move Selected Down").clicked() {
                 if let Some(index) = self.sel_line {
                     if index < self.list.len() - 1 {
                         self.sel_line = Some(index + 1);
@@ -173,12 +192,39 @@ impl OrderPanel {
                     }
                 }
             }
-            if ui.button("Remove").clicked() {
+            if ui.button("Remove Selected Line").clicked() {
                 if let Some(index) = self.sel_line {
                     self.list.remove(index);
                     self.sel_line = None;
                 }
             }
+        });
+    }
+    pub fn presets_toolbar(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label("Presets:");
+            combo_box(
+                ui,
+                "Presets",
+                &mut self.preset,
+                &self.presets.keys().cloned().collect::<Vec<String>>(),
+            );
+            if ui.button("Load").clicked() {
+                if let Some(preset) = self.presets.get(&self.preset) {
+                    self.list = preset.clone();
+                }
+            }
+            if ui.button("Delete").clicked() {
+                self.presets.remove(&self.preset);
+                self.preset.clear();
+            }
+            if ui.button("Save As:").clicked() && !self.new_preset.is_empty() {
+                self.presets
+                    .insert(self.new_preset.clone(), self.list.clone());
+                self.preset = self.new_preset.clone();
+                self.new_preset.clear();
+            }
+            ui.text_edit_singleline(&mut self.new_preset);
         });
     }
 

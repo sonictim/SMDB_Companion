@@ -11,6 +11,9 @@ pub struct Tags {
     #[serde(skip)]
     pub config: Node,
     pub open_panel: bool,
+    pub presets: HashMap<String, Vec<String>>,
+    pub preset: String,
+    pub new_preset: String,
 }
 
 impl Default for Tags {
@@ -20,8 +23,14 @@ impl Default for Tags {
             list: SelectableList::default(),
             config: Node::default(),
             open_panel: false,
+            presets: HashMap::new(),
+            preset: String::new(),
+            new_preset: String::new(),
+
         };
         default.list.set(default_tags());
+        default.presets.insert("Default".to_string(), default_tags());
+        default.presets.insert("TJF".to_string(), tjf_tags());
         default
     }
 }
@@ -135,6 +144,7 @@ impl Tags {
         ui.label("Protools Audiosuite Tags use the following format:  -example_");
         ui.label("You can enter any string of text as a tag and if it is a match, the file will be marked for removal");
         empty_line(ui);
+        self.presets_toolbar(ui);
         ui.separator();
         egui::ScrollArea::vertical().show(ui, |ui| {
             self.list.render(ui, 6, "tags editor", false);
@@ -155,6 +165,33 @@ impl Tags {
 
     pub fn set_tjf(&mut self) {
         self.list.set(tjf_tags());
+    }
+    pub fn presets_toolbar(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label("Presets:");
+            combo_box(
+                ui,
+                "Presets",
+                &mut self.preset,
+                &self.presets.keys().cloned().collect::<Vec<String>>(),
+            );
+            if ui.button("Load").clicked() {
+                if let Some(preset) = self.presets.get(&self.preset) {
+                    self.list.set(preset.clone());
+                }
+            }
+            if ui.button("Delete").clicked() {
+                self.presets.remove(&self.preset);
+                self.preset.clear();
+            }
+            if ui.button("Save As:").clicked() && !self.new_preset.is_empty() {
+                self.presets
+                    .insert(self.new_preset.clone(), self.list.get().to_vec());
+                self.preset = self.new_preset.clone();
+                self.new_preset.clear();
+            }
+            ui.text_edit_singleline(&mut self.new_preset);
+        });
     }
 }
 

@@ -10,7 +10,7 @@ async fn main() -> eframe::Result {
 
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([750.0, 750.0])
+            .with_inner_size([750.0, 1000.0])
             .with_min_inner_size([620.0, 620.0])
             .with_icon(
                 // NOTE: Adding an icon is optional
