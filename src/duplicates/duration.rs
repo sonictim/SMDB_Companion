@@ -102,7 +102,7 @@ impl Duration {
 
         for (counter, row) in results.iter().enumerate() {
             file_records.insert(FileRecord::new(row));
-            if counter % 100 == 0 {
+            if counter % 1231 == 0 {
                 let _ = progress_sender.send(Progress { counter, total }).await;
             }
         }
