@@ -505,15 +505,16 @@ impl Progress {
     }
 }
 
+
 #[derive(Default)]
 pub struct RecordsWindow {
     open: bool,
     scroll_to_top: bool,
-    Display_Data: String,
     records: HashMap<String, HashSet<FileRecord>>,
     selected: String,
     last: String,
     keys: Vec<String>,
+    cached_records: Vec<String>,
 }
 
 impl RecordsWindow {
@@ -521,93 +522,108 @@ impl RecordsWindow {
         let available_size = ctx.available_rect();
         let width = available_size.width() - 20.0;
         let height = available_size.height();
-    
+
+        let mut is_open = self.open;
         egui::Window::new("Records Marked as Duplicates")
-            .open(&mut self.open)
+            .open(&mut is_open)
             .resizable(true)
             .min_width(width)
             .min_height(height)
             .max_width(width)
             .max_height(height)
             .show(ctx, |ui| {
-                let scroll_offset = if self.scroll_to_top { 
-                    Some(egui::vec2(0.0, 0.0)) 
-                } else { 
-                    None 
-                };
-    
-                egui::ScrollArea::vertical()
-                    .max_height(height)
-                    .max_width(width)
-                    .scroll_offset(scroll_offset.unwrap_or_default())
-                    .show(ui, |ui| {
-                        ui.heading(RichText::new("Records Marked for Removal:").strong());
-                        ui.label(RichText::new(
-                            "These records have been marked for removal based on the rules established in File Preservation Logic.\n\
-                            To see all the possible matching records for a filename, search for the filename in your Soundminer.\n\
-                            If you find you prefer a different file be selected for removal, you will need to update the File Preservation Logic accordingly."
-                        ).size(14.0));
-                        
-                        empty_line(ui);
-                        
-                        ui.horizontal(|ui| {
-                            ui.label(RichText::new("Records to Display").size(16.0));
-                            egui::ComboBox::from_id_salt("marked records")
-                                .selected_text(&self.selected)
-                                .show_ui(ui, |ui| {
-                                    for (k, v) in &self.records {
-                                        if !v.is_empty() {
-                                            ui.selectable_value(&mut self.selected, k.clone(), RichText::new(k).size(16.0));
-                                        }
-                                    }
-                                });
+                ui.heading(RichText::new("Records Marked for Removal:").strong());
+                ui.label(RichText::new(
+                    "These records have been marked for removal based on the rules established in File Preservation Logic.\n\
+                    To see all the possible matching records for a filename, search for the filename in your Soundminer.\n\
+                    If you find you prefer a different file be selected for removal, you will need to update the File Preservation Logic accordingly."
+                ).size(14.0));
+                
+                ui.add_space(8.0);
+                
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Records to Display").size(16.0));
+                    egui::ComboBox::from_id_salt("marked records")
+                        .selected_text(&self.selected)
+                        .show_ui(ui, |ui| {
+                            for (k, v) in &self.records {
+                                if !v.is_empty() {
+                                    ui.selectable_value(&mut self.selected, k.clone(), RichText::new(k).size(16.0));
+                                }
+                            }
                         });
-    
-                        ui.separator();
-                        if self.Display_Data.is_empty() { 
-                            ui.label(RichText::new("Please Select a View Option to Display Records").size(14.0).strong());
-                        } else {
-                            ui.label(RichText::new(&self.Display_Data).size(14.0));
-                        }
-                    });
-            });
-    
-        // Reset scroll_to_top after rendering
-        self.scroll_to_top = false;
-    
-        if (self.last != self.selected) {
-            let mut marked_records: Vec<&str> = self
-                .records
-                .get(&self.selected)
-                .unwrap()
-                .par_iter()
-                .map(|s| &*s.path)
-                .collect();
-    
-            marked_records.par_sort();
+                });
 
-            if marked_records.is_empty() {
-                self.Display_Data = "No Records to Display".to_owned();
-            } else {
-                self.Display_Data = marked_records.join("\n");
-            };
-            self.last = self.selected.clone();
+                ui.separator();
+
+                if self.last != self.selected {
+                    self.update_cached_records();
+                    self.last = self.selected.clone();
+                }
+
+                let text_height = 20.0;
+                if self.selected.is_empty() {self.selected = "All".to_owned()};
+                if self.cached_records.is_empty() {
+                    ui.label(light_red_text(&format!("{} Has No Records to Display", self.selected)).size(16.0));
+                }
+                egui::ScrollArea::vertical()
+                    .max_height(height - 150.0)
+                    .max_width(width)
+                    .auto_shrink([false; 2])
+                    .id_salt("records_scroll_area")
+                    .show_rows(
+                        ui,
+                        text_height,
+                        self.cached_records.len(),
+                        |ui, row_range| {
+                            for row in row_range {
+                                if let Some(record) = self.cached_records.get(row) {
+                                    let label = egui::Label::new(
+                                        RichText::new(record)
+                                            .size(14.0)
+                                            .family(egui::FontFamily::Monospace)
+                                    );
+                                    ui.add(label);
+                                }
+                            }
+                        },
+                    );
+            });
+
+        self.open = is_open;
+    }
+
+    fn update_cached_records(&mut self) {
+        if let Some(records) = self.records.get(&self.selected) {
+            // Pre-allocate the vector to avoid reallocations
+            let capacity = records.len();
+            let mut cached = Vec::with_capacity(capacity);
+            cached.extend(
+                records
+                    .par_iter()
+                    .map(|record| record.path.to_string())
+                    .collect::<Vec<_>>()
+            );
+            cached.par_sort();
+            self.cached_records = cached;
+        } else {
+            self.cached_records.clear();
         }
     }
 
     fn clear(&mut self) {
-        self.Display_Data.clear();
         self.records.clear();
         self.keys.clear();
-        self.selected.clear();
+        // self.selected.clear();
         self.last.clear();
+        self.cached_records.clear();
     }
 
     fn add(&mut self, name: &str, set: &HashSet<FileRecord>) {
-        if !set.is_empty() {
+        // if !set.is_empty() {
             self.records.insert(name.to_owned(), set.clone());
             self.keys.push(name.to_owned());
-        };
+        // };
     }
 
     fn open(
