@@ -198,7 +198,7 @@ impl Duplicates {
     fn render_records_button(&mut self, ui: &mut egui::Ui, registration: Option<bool>) {
         if registration == Some(true)
             && !self.handles_active()
-            && !self.remove.config.records.get().is_empty()
+            && self.has_records()
             && ui.button("Show Marked Records").clicked()
         {
             self.records_window.open(
@@ -289,6 +289,19 @@ impl Duplicates {
             || self.duration.enabled
             || self.valid_path.enabled
     }
+
+    fn has_records(&self) -> bool {
+        !self.basic.config.records.get().is_empty()
+        || !self.deep.config.records.get().is_empty()
+        || !self.tags.config.records.get().is_empty()
+        || !self.compare.config.records.get().is_empty()
+        || !self.waves.config.records.get().is_empty()
+        || !self.duration.config.records.get().is_empty()
+        || !self.remove.config.records.get().is_empty()
+        || !self.valid_path.config.records.get().is_empty()
+    
+    }
+
 
     fn receive_async_data(&mut self) {
         if let Some(records) = self.remove.config.receive() {
@@ -505,89 +518,79 @@ pub struct RecordsWindow {
 
 impl RecordsWindow {
     pub fn render(&mut self, ctx: &egui::Context) {
-        let available_size = ctx.available_rect(); // Get the full available width and height
+        let available_size = ctx.available_rect();
         let width = available_size.width() - 20.0;
         let height = available_size.height();
+    
         egui::Window::new("Records Marked as Duplicates")
-            .open(&mut self.open) // Control whether the window is open
-            .resizable(true) // Make window non-resizable if you want it fixed
+            .open(&mut self.open)
+            .resizable(true)
             .min_width(width)
             .min_height(height)
             .max_width(width)
             .max_height(height)
             .show(ctx, |ui| {
-                // ui.label("To Be Implemented\n Testing line break");
-
-                if self.scroll_to_top {
-                    egui::ScrollArea::vertical()
-                        .max_height(height)
-                        .max_width(width)
-                        .scroll_offset(egui::vec2(0.0, 0.0))
-                        .show(ui, |ui| {
-                            ui.heading(RichText::new("Records Marked for Removal:").strong());
-                            ui.label(RichText::new("These records have been marked for removal based on the rules established in File Preservation Logic.\nTo see all the possible matching records for a filename, search for the filename in your Soundminer.\nIf you find you prefer a different file be selected for removal, you will need to update the File Preservation Logic accordingly.").size(14.0));
-                            empty_line(ui);
-                            ui.horizontal(|ui| {
-                                ui.label(RichText::new("Records to Display").size(16.0));
-                                egui::ComboBox::from_id_salt("marked records")
-                                    .selected_text(&self.selected)
-                                    .show_ui(ui, |ui| {
-                                        for (k, v) in &self.records {
-                                            if !v.is_empty() {
-                                                ui.selectable_value(&mut self.selected, k.clone(), RichText::new(k).size(16.0));
-                                            }
+                let scroll_offset = if self.scroll_to_top { 
+                    Some(egui::vec2(0.0, 0.0)) 
+                } else { 
+                    None 
+                };
+    
+                egui::ScrollArea::vertical()
+                    .max_height(height)
+                    .max_width(width)
+                    .scroll_offset(scroll_offset.unwrap_or_default())
+                    .show(ui, |ui| {
+                        ui.heading(RichText::new("Records Marked for Removal:").strong());
+                        ui.label(RichText::new(
+                            "These records have been marked for removal based on the rules established in File Preservation Logic.\n\
+                            To see all the possible matching records for a filename, search for the filename in your Soundminer.\n\
+                            If you find you prefer a different file be selected for removal, you will need to update the File Preservation Logic accordingly."
+                        ).size(14.0));
+                        
+                        empty_line(ui);
+                        
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("Records to Display").size(16.0));
+                            egui::ComboBox::from_id_salt("marked records")
+                                .selected_text(&self.selected)
+                                .show_ui(ui, |ui| {
+                                    for (k, v) in &self.records {
+                                        if !v.is_empty() {
+                                            ui.selectable_value(&mut self.selected, k.clone(), RichText::new(k).size(16.0));
                                         }
-                                    });
-                            });
-                            if !self.Display_Data.is_empty() {
-
-                                ui.separator();
-                                ui.label(RichText::new(&self.Display_Data).size(14.0));
-                            }
+                                    }
+                                });
                         });
-                    self.scroll_to_top = false;
-                } else {
-                    egui::ScrollArea::vertical()
-                        .max_height(height)
-                        .max_width(width)
-                        .show(ui, |ui| {
-                            ui.heading(RichText::new("Records Marked for Removal:").strong());
-                            ui.label(RichText::new("These records have been marked for removal based on the rules established in File Preservation Logic.\nTo see all the possible matching records for a filename, search for the filename in your Soundminer.\nIf you find you prefer a different file be selected for removal, you will need to update the File Preservation Logic accordingly.").size(14.0));
-                            empty_line(ui);
-                            ui.horizontal(|ui| {
-                                ui.label(RichText::new("Records to Display").size(16.0));
-                                egui::ComboBox::from_id_salt("marked records")
-                                    .selected_text(&self.selected)
-                                    .show_ui(ui, |ui| {
-                                        for (k, v) in &self.records {
-                                            if !v.is_empty() {
-                                                ui.selectable_value(&mut self.selected, k.clone(), RichText::new(k).size(16.0));
-                                            }
-                                        }
-                                    });
-                            });
-                            if !self.Display_Data.is_empty() {
-                                ui.separator();
-                                ui.label(RichText::new(&self.Display_Data).size(14.0));
-
-                            }
-
-                        });
-                }
+    
+                        ui.separator();
+                        if self.Display_Data.is_empty() { 
+                            ui.label(RichText::new("Please Select a View Option to Display Records").size(14.0).strong());
+                        } else {
+                            ui.label(RichText::new(&self.Display_Data).size(14.0));
+                        }
+                    });
             });
-        if self.last != self.selected {
+    
+        // Reset scroll_to_top after rendering
+        self.scroll_to_top = false;
+    
+        if (self.last != self.selected) {
             let mut marked_records: Vec<&str> = self
                 .records
                 .get(&self.selected)
                 .unwrap()
-                .par_iter() // Use parallel iterator
-                .map(|s| &*s.path) // Convert &String to &str
+                .par_iter()
+                .map(|s| &*s.path)
                 .collect();
-
-            // Sort in parallel
+    
             marked_records.par_sort();
 
-            self.Display_Data = marked_records.join("\n");
+            if marked_records.is_empty() {
+                self.Display_Data = "No Records to Display".to_owned();
+            } else {
+                self.Display_Data = marked_records.join("\n");
+            };
             self.last = self.selected.clone();
         }
     }
@@ -598,6 +601,13 @@ impl RecordsWindow {
         self.keys.clear();
         self.selected.clear();
         self.last.clear();
+    }
+
+    fn add(&mut self, name: &str, set: &HashSet<FileRecord>) {
+        if !set.is_empty() {
+            self.records.insert(name.to_owned(), set.clone());
+            self.keys.push(name.to_owned());
+        };
     }
 
     fn open(
@@ -611,45 +621,14 @@ impl RecordsWindow {
         duration: &HashSet<FileRecord>,
         valid: &HashSet<FileRecord>,
     ) {
-        self.records.insert("All".to_owned(), all.clone());
-        self.keys.push("All".to_owned());
-        if !basic.is_empty() {
-            let name = "Basic Duplicate Search";
-            self.records.insert(name.to_owned(), basic.clone());
-            self.keys.push(name.to_owned());
-        }
-        if !deep.is_empty() {
-            let name = "Similar Filename";
-            self.records.insert(name.to_owned(), deep.clone());
-            self.keys.push(name.to_owned());
-        }
-        if !waveform.is_empty() {
-            let name = "Duplicate Audio Content Duplicates";
-            self.records.insert(name.to_owned(), waveform.clone());
-            self.keys.push(name.to_owned());
-        }
-        if !tags.is_empty() {
-            let name = "Audiosuite Tags";
-            self.records.insert(name.to_owned(), tags.clone());
-            self.keys.push(name.to_owned());
-        }
-        if !duration.is_empty() {
-            let name = "Duration";
-            self.records.insert(name.to_owned(), duration.clone());
-            self.keys.push(name.to_owned());
-        }
-        if !valid.is_empty() {
-            let name = "Invalid Filepath";
-            self.records.insert(name.to_owned(), valid.clone());
-            self.keys.push(name.to_owned());
-        }
-        if !compare.is_empty() {
-            let name = "Compare Database";
-            self.records.insert(name.to_owned(), compare.clone());
-            self.keys.push(name.to_owned());
-        }
-
-        self.records.insert("compare".to_owned(), compare.clone());
+        self.add("All", all);
+        self.add("Basic Duplicate Search", basic);
+        self.add("Similar Filename", deep);
+        self.add("Audio Content Duplicates", waveform);
+        self.add("Audiosuite Tags", tags);
+        self.add("Duration", duration);
+        self.add("Invalid Filepath", valid);
+        self.add("Compare Database", compare);
 
         self.scroll_to_top = true;
         self.open = true;
