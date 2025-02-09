@@ -35,31 +35,47 @@ impl Remove {
     }
 
     pub fn render_options(&mut self, ui: &mut egui::Ui) {
-        ui.heading(RichText::new("Remove Options").strong());
-        let mut text = RichText::new("Create New Safety Database of Thinned Records");
+        // ui.heading(RichText::new("Remove Options").strong());
+        ui.radio_value(
+            &mut self.safe,
+            true,
+            "Create New Safety Database of Thinned Records",
+        );
+        let mut text = RichText::new("Remove Records from Currently Open Database");
         if !self.safe {
             text = text.strong().color(egui::Color32::from_rgb(255, 100, 100))
         }
-        ui.checkbox(&mut self.safe, text);
+
+        ui.radio_value(&mut self.safe, false, text);
+        // ui.horizontal(|ui| {
+        //     ui.label(red_text("UNSAFE!"));
+        // });
+        // let mut text = RichText::new("Create New Safety Database of Thinned Records");
+        // if !self.safe {
+        //     text = text.strong().color(egui::Color32::from_rgb(255, 100, 100))
+        // }
+        // ui.checkbox(&mut self.safe, text);
         if !&self.safe {
             ui.horizontal(|ui| {
                 ui.add_space(24.0);
                 ui.label(red_text("UNSAFE!"));
-                ui.label(RichText::new("This removes records from current database").strong());
-            });
-
-            ui.horizontal(|ui| {
-                ui.add_space(24.0);
                 ui.label(
                     RichText::new("This is NOT undoable. Make sure database is backed up.")
                         .strong(),
                 );
+                // ui.label(RichText::new("This removes records from current database").strong());
             });
+
+            // ui.horizontal(|ui| {
+            //     ui.add_space(24.0);
+            // });
         }
+        empty_line(ui);
         ui.checkbox(
             &mut self.dupes_db,
             "Create New Database of Duplicate Records",
         );
+        empty_line(ui);
         ui.horizontal_wrapped(|ui| {
             let mut text = RichText::new("Remove Duplicate Files From Disk ");
             if self.remove_files {

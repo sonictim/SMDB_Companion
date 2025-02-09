@@ -1,7 +1,6 @@
 use crate::prelude::*;
 
 use clipboard::{ClipboardContext, ClipboardProvider};
-use futures::io::empty;
 use reqwest::Client;
 // use reqwest::blocking::Client;
 use sha2::{Digest, Sha256};
@@ -14,6 +13,7 @@ pub enum Panel {
     Tags,
     Find,
     KeyGen,
+    Remove,
 }
 
 
@@ -28,7 +28,7 @@ pub struct App {
     #[serde(skip)]
     my_panel: Panel,
     find_replace: FindPanel,
-    duplicates: Duplicates, 
+    pub duplicates: Duplicates, 
     registration: Registration,
     #[serde(skip)]
     update: Update,
@@ -133,6 +133,20 @@ impl eframe::App for App {
                     }
                     Panel::KeyGen => {
                         self.registration.render(ui);
+                    }
+                    Panel::Remove => {
+                        self.duplicates.update_cached_records();
+                        // self.duplicates.records_window.open2(
+                        //     self.duplicates.remove.config.records.get(),
+                        //     self.duplicates.basic.config.records.get(),
+                        //     self.duplicates.deep.config.records.get(),
+                        //     self.duplicates.waves.config.records.get(),
+                        //     self.duplicates.compare.config.records.get(),
+                        //     self.duplicates.tags.config.records.get(),
+                        //     self.duplicates.duration.config.records.get(),
+                        //     self.duplicates.valid_path.config.records.get(),
+                        // );
+                        self.duplicates.render_remove_panel(ctx, ui, self.db.get().as_ref(), self.registration.valid);
                     }
                 }
                 empty_line(ui);
@@ -241,6 +255,8 @@ impl App  {
                     let db = Database::open().await;
                     let _ = tx.send(db).await;
                 });
+                self.duplicates.clear_status();
+                self.duplicates.abort_all();
                 self.my_panel = Panel::Duplicates;
 
             }
@@ -347,21 +363,21 @@ impl App  {
         });
 
     }
-    fn view_menu(&mut self, ui: &mut egui::Ui,) {
-        ui.menu_button(menu_text("Action"), |ui| {
-            if ui.button("Search for Duplicates").clicked() {
-                ui.close_menu();
-                self.my_panel = Panel::Duplicates;
-            }
-            if ui.button("Metadata Find and Replace").clicked() {
-                ui.close_menu();
-                self.my_panel = Panel::Find;
-            }
+    // fn view_menu(&mut self, ui: &mut egui::Ui,) {
+    //     ui.menu_button(menu_text("Action"), |ui| {
+    //         if ui.button("Search for Duplicates").clicked() {
+    //             ui.close_menu();
+    //             self.my_panel = Panel::Duplicates;
+    //         }
+    //         if ui.button("Metadata Find and Replace").clicked() {
+    //             ui.close_menu();
+    //             self.my_panel = Panel::Find;
+    //         }
             
             
-        });
+    //     });
 
-    }
+    // }
 
     fn help_menu(&mut self, ui: &mut egui::Ui,) {
         ui.menu_button(menu_text("Help"), |ui| {
@@ -421,6 +437,9 @@ impl App  {
             }
     
             add_tab_button(ui, &mut self.my_panel, Panel::Duplicates, "Main Search", size_big, size_small, column_width);
+            #[cfg(debug_assertions)] {
+                add_tab_button(ui, &mut self.my_panel, Panel::Remove, "Results/Remove", size_big, size_small, column_width);
+            }
             add_tab_button(ui, &mut self.my_panel, Panel::Order, "File Preservation Logic", size_big, size_small, column_width);
             add_tab_button(ui, &mut self.my_panel, Panel::Tags, "Tag Editor", size_big, size_small, column_width);
             add_tab_button(ui, &mut self.my_panel, Panel::Find, "Metadata Replace", size_big, size_small, column_width);
@@ -440,6 +459,9 @@ impl App  {
                             .strong()
                             .extra_letter_spacing(5.0),
                     )
+                    .on_hover_text_at_pointer(
+                        "Click to open a new database",
+                    )
                     .clicked()
                 {
                     
@@ -448,6 +470,9 @@ impl App  {
                         let db = Database::open().await;
                         let _ = tx.send(db).await;
                     });
+                    self.duplicates.clear_status();
+                    self.duplicates.abort_all();
+                    self.my_panel = Panel::Duplicates;
                 };
                 // self.duplicates.new_db();
                 ui.label(format!("{} records", &db.size));
@@ -462,6 +487,9 @@ impl App  {
                         let db = Database::open().await;
                         let _ = tx.send(db).await;
                     });
+                    self.duplicates.clear_status();
+                    self.duplicates.abort_all();
+                    self.my_panel = Panel::Duplicates;
                 });
             });
         }

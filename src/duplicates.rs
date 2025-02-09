@@ -1,4 +1,3 @@
-use std::fs::File;
 
 use crate::prelude::*;
 
@@ -16,28 +15,78 @@ use basic::Basic;
 use compare::Compare;
 use deep::Deep;
 use duration::Duration;
-use futures::io::empty;
 pub use order::OrderPanel;
 use remove::Remove;
 use tags::Tags;
 use valid_path::PathValid;
 use waveform::Waveforms;
 
+#[derive(PartialEq, serde::Serialize, Deserialize, Clone, Copy, Default)]
+pub enum Algorithm {
+    #[default]
+    All,
+    Basic,
+    Deep,
+    Waveforms,
+    Compare,
+    Tags,
+    ValidPath,
+    Duration,
+}
+
+impl EnumComboBox for Algorithm {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Algorithm::Basic => "Basic Duplicate Search",
+            Algorithm::Deep => "Similar Filename",
+            Algorithm::Tags => "Audiosuite Tags",
+            Algorithm::Duration => "Duration",
+            Algorithm::ValidPath => "Invalid Filepath",
+            Algorithm::Waveforms => "Audio Content Duplicates",
+            Algorithm::Compare => "Compare Database",
+            Algorithm::All => "All",
+        }
+    }
+    fn variants() -> &'static [Algorithm] {
+        &[
+            Algorithm::All,
+            Algorithm::Basic,
+            Algorithm::Deep,
+            Algorithm::Waveforms,
+            Algorithm::Compare,
+            Algorithm::Tags,
+            Algorithm::ValidPath,
+            Algorithm::Duration,
+        ]
+    }
+
+}
+
+
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 #[serde(default)]
 pub struct Duplicates {
-    basic: Basic,
-    deep: Deep,
-    tags: Tags,
-    duration: Duration,
-    valid_path: PathValid,
-    waves: Waveforms,
-    compare: Compare,
-    remove: Remove,
-    order: Arc<RwLock<OrderPanel>>,
+    pub basic: Basic,
+    pub deep: Deep,
+    pub tags: Tags,
+    pub duration: Duration,
+    pub valid_path: PathValid,
+    pub waves: Waveforms,
+    pub compare: Compare,
+    pub remove: Remove,
+    pub order: Arc<RwLock<OrderPanel>>,
 
     #[serde(skip)]
     pub records_window: RecordsWindow,
+    
+    #[serde(skip)]
+    pub algorithm: Algorithm,
+    #[serde(skip)]
+    pub last: Algorithm,
+    #[serde(skip)]
+    cached_records: Vec<String>,
+    #[serde(skip)]
+    current_set: Vec<FileRecord>,
 }
 
 impl Duplicates {
@@ -62,6 +111,246 @@ impl Duplicates {
     pub fn render_tags_panel(&mut self, ui: &mut egui::Ui) {
         self.tags.render_panel(ui);
     }
+
+    pub fn render_remove_panel(&mut self, ctx: &egui::Context, ui: &mut egui::Ui, db: Option<&Database>, registration: Option<bool>) {
+        if registration == Some(false) {
+            ui.label(light_red_text("Registration Required to use this feature").size(18.0));
+            return;
+        }
+    
+        let Some(db) = db else {
+            ui.heading(RichText::new("No Open Database").weak());
+            welcome_message(ui);
+            return;
+        };
+        
+        if db.size == 0 {
+            ui.heading("No Records in Database");
+            welcome_message(ui);
+            return;
+        }
+    
+        self.receive_async_data();
+    
+        // Calculate available space once
+        let available_size = ctx.available_rect();
+        let width = available_size.width() - 20.0;
+        let height = available_size.height();
+    
+        ui.heading(RichText::new("Records Marked for Removal:").strong());
+        ui.label(RichText::new(
+            "These records have been marked for removal based on the rules established in File Preservation Logic.\n\
+            To see all the possible matching records for a filename, search for the filename in your Soundminer.\n\
+            If you find you prefer a different file be selected for removal, you will need to update the File Preservation Logic accordingly."
+        ).size(14.0));
+        
+        ui.add_space(8.0);
+        
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Records to Display").size(16.0));
+            enum_combo_box(ui, &mut self.algorithm, "algorithm");
+        });
+    
+        ui.separator();
+    
+        // Update cached records only when algorithm changes
+        if self.last != self.algorithm {
+            self.update_cached_records();
+            self.last = self.algorithm;
+        }
+    
+        let text_height = 20.0;
+        if self.cached_records.is_empty() {
+            ui.label(light_red_text(&format!("{} Has No Records to Display", self.algorithm.as_str())).size(16.0));
+        }
+        
+        egui::ScrollArea::vertical()
+            .max_height(height - 150.0)
+            .max_width(width)
+            .auto_shrink([false; 2])
+            .id_salt("records_scroll_area")
+            .show_rows(
+                ui,
+                text_height,
+                self.cached_records.len(),
+                |ui, row_range| {
+                    for row in row_range {
+                        if let Some(record) = self.cached_records.get(row) {
+                            let label = egui::Label::new(
+                                RichText::new(record)
+                                    .size(14.0)
+                                    .family(egui::FontFamily::Monospace)
+                            );
+                            ui.add(label);
+                        }
+                    }
+                },
+            );
+    }
+    
+    pub fn update_cached_records(&mut self) {
+        let records = match self.algorithm {
+            Algorithm::All => self.remove.config.records.get(),
+            Algorithm::Basic => self.basic.config.records.get(),
+            Algorithm::Deep => self.deep.config.records.get(),
+            Algorithm::Waveforms => self.waves.config.records.get(),
+            Algorithm::Compare => self.compare.config.records.get(),
+            Algorithm::Tags => self.tags.config.records.get(),
+            Algorithm::ValidPath => self.valid_path.config.records.get(),
+            Algorithm::Duration => self.duration.config.records.get(), 
+        };
+
+        // Clone the HashSet to a Vec once when algorithm changes
+        self.current_set = records.iter().cloned().collect();
+        
+        // Now work with the cloned Vec instead of the original HashSet
+        let mut cached = Vec::with_capacity(self.current_set.len());
+        cached.extend(self.current_set.iter().map(|record| record.path.to_string()));
+        cached.sort_unstable();
+        self.cached_records = cached;
+    }
+    // pub fn render_remove_panel(&mut self, ctx: &egui::Context, ui: &mut egui::Ui, db: Option<&Database>, registration: Option<bool>) {
+    //     if registration == Some(false) {
+    //         ui.label(light_red_text("Registration Required to use this feature").size(18.0));
+    //         return;
+    //     }
+
+
+
+    //     let Some(db) = db else {
+    //         ui.heading(RichText::new("No Open Database").weak());
+    //         welcome_message(ui);
+    //         return;
+    //     };
+        
+    //     if db.size == 0 {
+    //         ui.heading("No Records in Database");
+    //         welcome_message(ui);
+    //         return;
+    //     }
+
+    //     self.receive_async_data();
+
+        
+    //     // REMOVE BUTTONS
+    //     // ui.columns(2, |column| {
+    //     //     large_button2(&mut column[0], "Remove Records", || self.remove.process(db, registration));
+            
+    //     //     column[0].horizontal(|ui| {
+    //     //         if self.remove.config.working {
+    //     //             ui.spinner();
+    //     //         }
+    //     //         ui.label(RichText::new(&**self.remove.config.status.get()).strong());
+    //     //     });
+
+    //     //     column[0].horizontal(|ui| {
+    //     //         ui.label(RichText::new("Records to Display").size(16.0));
+    //     //         egui::ComboBox::from_id_salt("marked records")
+    //     //             .selected_text(&self.records_window.selected)
+    //     //             .show_ui(ui, |ui| {
+    //     //                 for (k, v) in &self.records_window.records {
+    //     //                     if !v.is_empty() {
+    //     //                         ui.selectable_value(&mut self.records_window.selected, k.clone(), RichText::new(k).size(16.0));
+    //     //                     }
+    //     //                 }
+    //     //             });
+    //     //     });
+    
+    //     //     self.remove.render_options(&mut column[1]);
+    //     // });
+
+
+    //     ui.heading(RichText::new("Records Marked for Removal:").strong());
+    //     ui.label(RichText::new(
+    //         "These records have been marked for removal based on the rules established in File Preservation Logic.\n\
+    //         To see all the possible matching records for a filename, search for the filename in your Soundminer.\n\
+    //         If you find you prefer a different file be selected for removal, you will need to update the File Preservation Logic accordingly."
+    //     ).size(14.0));
+        
+    //     ui.add_space(8.0);
+        
+    //     ui.horizontal(|ui| {
+    //         ui.label(RichText::new("Records to Display").size(16.0));
+    //         enum_combo_box(ui, &mut self.algorithm, "algorithm");
+    //     }); 
+
+
+    //     ui.separator();
+
+    //     let available_size = ctx.available_rect();
+    //     let width = available_size.width() - 20.0;
+    //     let height = available_size.height();
+
+    //     if self.last != self.algorithm {
+    //         self.update_cached_records();
+    //         self.last = self.algorithm;
+    //     }
+
+    //     let text_height = 20.0;
+    //     if self.cached_records.is_empty() {
+    //         ui.label(light_red_text(&format!("{} Has No Records to Display", self.algorithm.as_str())).size(16.0));
+    //     }
+    //     egui::ScrollArea::vertical()
+    //         .max_height(height - 150.0)
+    //         .max_width(width)
+    //         .auto_shrink([false; 2])
+    //         .id_salt("records_scroll_area")
+    //         .show_rows(
+    //             ui,
+    //             text_height,
+    //             self.cached_records.len(),
+    //             |ui, row_range| {
+    //                 for row in row_range {
+    //                     if let Some(record) = self.cached_records.get(row) {
+    //                         let label = egui::Label::new(
+    //                             RichText::new(record)
+    //                                 .size(14.0)
+    //                                 .family(egui::FontFamily::Monospace)
+    //                         );
+    //                         ui.add(label);
+    //                     }
+    //                 }
+    //             },
+    //         );
+
+        
+
+
+
+
+
+
+    // }
+
+    // fn update_cached_records(&mut self) {
+
+    //     let records = match self.algorithm {
+    //         Algorithm::All => self.remove.config.records.get(),
+    //         Algorithm::Basic => self.basic.config.records.get(),
+    //         Algorithm::Deep => self.deep.config.records.get(),
+    //         Algorithm::Waveforms => self.waves.config.records.get(),
+    //         Algorithm::Compare => self.compare.config.records.get(),
+    //         Algorithm::Tags => self.tags.config.records.get(),
+    //         Algorithm::ValidPath => self.valid_path.config.records.get(),
+    //         Algorithm::Duration => self.duration.config.records.get(), 
+    //     };
+
+    //     // if let Some(records) = self.algorithm.get_records() {
+    //         // Pre-allocate the vector to avoid reallocations
+    //         let capacity = records.len();
+    //         let mut cached = Vec::with_capacity(capacity);
+    //         cached.extend(
+    //             records
+    //                 .par_iter()
+    //                 .map(|record| record.path.to_string())
+    //                 .collect::<Vec<_>>()
+    //         );
+    //         cached.par_sort();
+    //         self.cached_records = cached;
+    //     // } else {
+    //     //     self.cached_records.clear();
+    //     // }
+    // }
 
     fn nodes(&mut self) -> [&mut dyn NodeCommon; 7] {
         [
@@ -88,8 +377,51 @@ impl Duplicates {
         }
 
         self.receive_async_data();
+
+        self.render_action_buttons(ui, db, registration);
+
+        ui.horizontal(|ui| {
+            if self.remove.config.working {
+                ui.spinner();
+            }
+       
+            ui.label(RichText::new(&**self.remove.config.status.get()).strong());
+        //     if ui.selectable_label(false, RichText::new(&**self.remove.config.status.get()).strong()).clicked() 
+        //     && registration == Some(true)
+        //     && !self.handles_active()
+        //     && self.has_records()
+            
+        // {
+        //     self.records_window.open(
+        //         self.remove.config.records.get(),
+        //         self.basic.config.records.get(),
+        //         self.deep.config.records.get(),
+        //         self.waves.config.records.get(),
+        //         self.compare.config.records.get(),
+        //         self.tags.config.records.get(),
+        //         self.duration.config.records.get(),
+        //         self.valid_path.config.records.get(),
+        //     );
+        // }
+
+        // if self.remove.config.working {
+        //     ui.add(
+        //         egui::ProgressBar::new(
+        //             self.remove.config.progress.get().counter as f32
+        //                 / self.remove.config.progress.get().total as f32,
+        //         )
+        //         .desired_height(4.0),
+        //     );
+        // }
+        });
+
+        self.render_records_button(ui, registration);
+
+        empty_line(ui);
+
+
         ui.columns(2, |column| {
-            column[0].heading(RichText::new("Search for Duplicate Records").strong());
+            // column[0].heading(RichText::new("Search for Duplicate Records").strong());
             for node in self.nodes() {
                 node.render(&mut column[0], db);
                 node.render_progress_bar(&mut column[0]);
@@ -114,21 +446,23 @@ impl Duplicates {
         // self.compare.render(ui, db);
         // self.compare.render_progress_bar(ui);
 
-        ui.separator();
-        empty_line(ui);
+        // ui.separator();
+        // empty_line(ui);
 
-        self.render_action_buttons(ui, db, registration);
+        // self.render_action_buttons(ui, db, registration);
 
-        empty_line(ui);
+        // empty_line(ui);
 
-        ui.horizontal(|ui| {
-            if self.remove.config.working {
-                ui.spinner();
-            }
-            ui.label(RichText::new(&**self.remove.config.status.get()).strong());
-        });
+        // ui.horizontal(|ui| {
+        //     if self.remove.config.working {
+        //         ui.spinner();
+        //     }
+        //     ui.label(RichText::new(&**self.remove.config.status.get()).strong());
+        // });
 
-        self.render_records_button(ui, registration);
+        // self.render_records_button(ui, registration);
+
+
     }
     fn render_action_buttons(
         &mut self,
@@ -144,9 +478,9 @@ impl Duplicates {
                 self.remove.run = true;
                 if self.search_eligible() {
                     if ui.input(|i| i.modifiers.alt) {
-                        rt_button(
+                        large_button2(
                             ui,
-                            light_red_text("Search and Remove Duplicates").size(20.0),
+                            "Search and Remove Duplicates",
                             || {
                                 self.remove.enabled = true;
                                 self.remove.run = false;
@@ -161,7 +495,7 @@ impl Duplicates {
                                 "Clear and Search Again"
                             };
                             column[0].horizontal(|ui| {
-                                rt_button(ui, RichText::new(text).size(20.0).strong(), || {
+                                large_button(ui, text, || {
                                     self.gather(db)
                                 });
                             });
@@ -169,9 +503,9 @@ impl Duplicates {
                                 && !self.remove.config.records.get().is_empty()
                             {
                                 column[1].horizontal(|ui| {
-                                    rt_button(
+                                    large_button2(
                                         ui,
-                                        light_red_text("Remove Duplicates").size(20.0).strong(),
+                                        "Remove Duplicates",
                                         || self.remove.process(db, registration),
                                     );
                                 });
@@ -201,6 +535,7 @@ impl Duplicates {
             && self.has_records()
             && ui.button("Show Marked Records").clicked()
         {
+            self.records_window.clear();
             self.records_window.open(
                 self.remove.config.records.get(),
                 self.basic.config.records.get(),
@@ -211,6 +546,7 @@ impl Duplicates {
                 self.duration.config.records.get(),
                 self.valid_path.config.records.get(),
             );
+            self.records_window.update_cached_records();
         }
 
         if self.remove.config.working {
@@ -546,8 +882,10 @@ impl RecordsWindow {
                     egui::ComboBox::from_id_salt("marked records")
                         .selected_text(&self.selected)
                         .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut self.selected, "All".to_owned(), RichText::new("All").size(16.0));
+
                             for (k, v) in &self.records {
-                                if !v.is_empty() {
+                                if !v.is_empty() && k != "All" {
                                     ui.selectable_value(&mut self.selected, k.clone(), RichText::new(k).size(16.0));
                                 }
                             }
@@ -649,6 +987,7 @@ impl RecordsWindow {
         self.scroll_to_top = true;
         self.open = true;
     }
+
 }
 
 #[derive(PartialEq, serde::Serialize, Deserialize, Clone, Copy, Default)]
