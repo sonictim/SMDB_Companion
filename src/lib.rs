@@ -21,6 +21,7 @@ pub struct FileRecord {
     pub filename: Arc<str>,
     pub duration: Arc<str>,
     pub path: Arc<str>,
+    // pub path2: std::path::PathBuf,
     pub data: HashMap<String, String>,
 }
 
@@ -36,11 +37,14 @@ impl FileRecord {
         let filename: &str = row.get(1);
         let duration = row.try_get(2).unwrap_or("");
         let path: &str = row.get(3);
+        // let path2 = std::path::PathBuf::from(path);
+        // if path2.exists() {};
         Self {
             id: id as usize,
             filename: filename.into(),
             duration: duration.into(),
             path: path.into(),
+            // path2,
             data: HashMap::new(),
         }
     }
