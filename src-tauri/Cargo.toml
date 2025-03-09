@@ -1,0 +1,68 @@
+[package]
+name = "SMDB_Companion"
+version = "0.5.0"
+description = "Soundminer Database Cleanup Tool"
+authors = ["Tim Farrell"]
+edition = "2024"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "smdbc_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rfd = "0.15.2"
+tauri-plugin-store = "2.2.0"
+sqlx = { version = "0.8.3", features = ["runtime-tokio", "sqlite"] }
+rayon = "1.10.0"
+hex = "0.4.3"
+sha2 = "0.10.8"
+regex = "1.11.1"
+once_cell = "1.20.3"
+chrono = "0.4"
+claxon = "0.4.3"
+minimp3 = "0.5.1"
+hound = "3.5.1"
+anyhow = "1.0.97"
+dashmap = "6.1.0"
+tauri-plugin-dialog = "2"
+lazy_static = "1.5.0"
+crossbeam-channel = "0.5"
+parking_lot = "0.12"
+lru = "0.10"
+num_cpus = "1.16"
+trash = "5.2.2"
+chromaprint = "0.2.0"
+chromaprint-rust = "0.1.3"
+base64 = "0.22.1"
+# chromaprint-rust = "0.1.3"
+# tokio = { version = "1.44.0", features = ["full"] }
+# memmap2 = "0.9.5"
+# tauri-plugin-window = "2.0.0-alpha.2"
+# tauri-plugin-window = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "v2" }
+
+[profile.dev]
+incremental = true # Compile your binary in smaller steps.
+
+[profile.release]
+codegen-units = 1 # Allows LLVM to perform better optimization.
+lto = true        # Enables link-time-optimizations.
+opt-level = "s"   # Prioritizes small binary size. Use `3` if you prefer speed.
+panic = "abort"   # Higher performance by disabling panic handlers.
+strip = true      # Ensures debug symbols are removed.
+
+
+# [build]
+# jobs = 8
+# rustc-wrapper = "sccache"

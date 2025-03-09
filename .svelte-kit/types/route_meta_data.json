@@ -1,0 +1,9 @@
+{
+	"/": [
+		"src/routes/+layout.js",
+		"src/routes/+layout.js"
+	],
+	"/preferences": [
+		"src/routes/+layout.js"
+	]
+}

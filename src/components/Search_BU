@@ -1,0 +1,148 @@
+<script lang="ts">
+    import { X, Search, AlertCircle, Loader, Square, CheckSquare } from 'lucide-svelte';
+    import { invoke } from '@tauri-apps/api/core';
+
+    // Define props
+    export let dbSize: number;
+    export let activeTab: string; // This prop is now bindable
+    export let isRemove: boolean;
+    export let selectedDb: string | null;
+
+    let isSearching = false;
+
+    import { algorithmsStore, preferencesStore } from '../store';
+    import { get } from 'svelte/store';
+
+    // Ensure algorithms are typed properly
+    import type { Algorithm, Preferences } from '../store';
+
+    let algorithms: Algorithm[] = get(algorithmsStore);
+
+    // Don't create a local snapshot - use the store directly when needed
+    // Remove this line: $: prefs = $preferencesStore;
+
+    function toggleAlgorithm(id: string) {
+        algorithms = algorithms.map((algo) =>
+            algo.id === id ? { ...algo, enabled: !algo.enabled } : algo
+        );
+        algorithmsStore.set(algorithms); // Update store
+    }
+
+    function toggleSearch() {
+        console.log('Toggle Search');
+        isSearching = !isSearching;
+        if (isSearching) {
+            search();
+        }
+    }
+
+    async function search() {
+        let $pref = get(preferencesStore);
+        console.log($pref.preservation_order); // Correctly access the current value
+        // Always access the current store value by using get() or $ prefix
+        // console.log($preferencesStore.match_criteria); // Correctly access the current value
+
+        console.log('Starting Search');
+        // console.log(get(preferencesStore)); // Correctly access the current value
+        isRemove = true;
+
+        let algorithmState = algorithms.reduce((acc: Record<string, boolean | number>, algo: Algorithm) => {
+            acc[algo.id] = algo.enabled;
+            if (algo.id === "duration") {
+                acc["min_dur"] = algo.min_dur ?? 0;
+            }
+            return acc;
+        }, {} as Record<string, boolean | number>);
+
+        await invoke<string>('search', { 
+            enabled: algorithmState, 
+            pref: get(preferencesStore) // Get the CURRENT store value at call time
+        })
+            .then((result) => {
+                console.log(result);
+            })
+            .catch((error) => console.error(error));
+
+        isSearching = false;
+        activeTab = 'results'; // Ensure this updates properly
+    }
+</script>
+
+<div class="search-container">
+    <!-- Rest of your template remains the same -->
+    <div class="features">
+        <div class="status-header">
+            <h2 class="flex items-center flex-wrap gap-2">
+                Search Algorithms
+            </h2>
+            {#if selectedDb == null}
+                <button class="cta-button inactive">
+                    <Search size={18} />
+                    <span>Search</span>
+                </button>
+            {:else}
+                <button class="cta-button {isSearching ? 'cancel' : ''}" on:click={toggleSearch}>
+                    <div class="flex items-center gap-2">
+                        {#if isSearching}
+                            <X size={18} />
+                            <span>Cancel</span>
+                        {:else}
+                            <Search size={18} />
+                            <span>Search</span>
+                        {/if}
+                    </div>
+                </button>
+            {/if}
+        </div>
+
+        <div class="algorithm-grid">
+            {#each algorithms as algo}
+                <div class="algorithm-item">
+                    <button type="button" class="algorithm-item" on:click={() => toggleAlgorithm(algo.id)}>
+                        {#if algo.enabled}
+                            <CheckSquare size={20} class="checkbox checked" />
+                        {:else}
+                            <Square size={20} class="checkbox" />
+                        {/if}
+                        <span>{algo.name}</span>
+                    </button>
+
+                    {#if algo.id === 'duration'}
+                        <input
+                            type="number"
+                            min="0"
+                            step="0.1"
+                            bind:value={algo.min_dur}
+                            class="duration-input"
+                        />
+                        s
+                    {/if}
+                </div>
+            {/each}
+        </div>
+    </div>
+
+    <div class="features">
+        <div class="status-header">
+            <h2 class="flex items-center flex-wrap gap-2">
+                <span class="inline-flex items-center">
+                    Status:
+                    {#if isSearching}
+                        <Loader size={24} class="spinner ml-2" />
+                    {/if}
+                </span>
+                <span class="basic-text" style="display: inline-flex; margin: 0;">
+                    {dbSize} records in database
+                </span>
+            </h2>
+        </div>
+        <div class="status-log">
+            <div class="status-message">
+                {#if isSearching}
+                    <AlertCircle size={18} class="ellipsis" />
+                    <span>Searching Basic Duplicates...</span>
+                {/if}
+            </div>
+        </div>
+    </div>
+</div>
