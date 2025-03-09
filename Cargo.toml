@@ -27,8 +27,8 @@ icon = ["assets/icon.icns"]
 #[lib]
 #crate-type = ["cdylib"]
 
-[build]
-rustflags = ["-C", "target-feature=+crt-static"]
+# [build]
+# rustflags = ["-C", "target-feature=+crt-static"]
 
 [dependencies]
 egui = "0.30.0"
@@ -70,7 +70,6 @@ raw-window-handle = "0.6.2"
 egui-multiwin = "0.5.2"
 
 
-
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 env_logger = "0.11.6"
@@ -100,6 +99,3 @@ opt-level = 2
 # If you fork https://github.com/emilk/egui you can test with:
 # egui = { path = "../egui/crates/egui" }
 # eframe = { path = "../egui/crates/eframe" }
-
-
-
