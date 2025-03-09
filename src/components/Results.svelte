@@ -403,6 +403,9 @@
 </script>
 
 <div class="block">
+  <!-- {#each results[0].algorithm as algo}
+    Algorithms: {algo}
+  {/each} -->
   <div class="header">
     <h2>Search Results:</h2>
     <span style="font-size: 18px">
