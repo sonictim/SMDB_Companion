@@ -205,8 +205,8 @@
                 </button>
             </span>
             {#if pref.exact_waveform == false}
-                <span style="margin-left: 15px">
-                    Threshold (0-100):
+                <span style="margin-left: 70px">
+                    Threshold:
                     <input
                         type="number"
                         class="input-field"
