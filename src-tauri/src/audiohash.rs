@@ -289,7 +289,7 @@ fn convert_to_raw_pcm(input_path: &str) -> Result<Vec<u8>> {
         .arg("-i")
         .arg(input_path)
         .arg("-ar")
-        .arg("16000")
+        .arg("48000")
         .arg("-ac")
         .arg("1")
         .arg("-f")

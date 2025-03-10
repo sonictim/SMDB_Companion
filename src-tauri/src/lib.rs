@@ -1388,34 +1388,32 @@ impl Database {
                     .ok();
                 }
 
-                if checkduration(&record.duration, 1.0) {
-                    let hash =
-                        audiohash::hash_audio_content(record.get_path(), pref.ignore_filetype);
-                    if let Ok(hash) = hash {
-                        Some((record.id, hash.clone(), hash.clone()))
-                    } else {
-                        None
-                    }
-                } else {
-                    let result = audiohash::get_chromaprint_fingerprint(&record.path);
-                    if let Ok(result) = result {
-                        let (fingerprint, encoded) = result;
-                        if encoded.is_empty() {
-                            let hash = audiohash::hash_audio_content(
-                                record.get_path(),
-                                pref.ignore_filetype,
-                            );
-                            if let Ok(hash) = hash {
-                                return Some((record.id, hash.clone(), hash));
-                            } else {
-                                return None;
-                            }
+                // if checkduration(&record.duration, 1.0) {
+                //     let hash =
+                //         audiohash::hash_audio_content(record.get_path(), pref.ignore_filetype);
+                //     if let Ok(hash) = hash {
+                //         Some((record.id, hash.clone(), hash.clone()))
+                //     } else {
+                //         None
+                //     }
+                // } else {
+                let result = audiohash::get_chromaprint_fingerprint(&record.path);
+                if let Ok(result) = result {
+                    let (fingerprint, encoded) = result;
+                    if encoded.is_empty() {
+                        let hash =
+                            audiohash::hash_audio_content(record.get_path(), pref.ignore_filetype);
+                        if let Ok(hash) = hash {
+                            return Some((record.id, hash.clone(), hash));
+                        } else {
+                            return None;
                         }
-                        Some((record.id, fingerprint, encoded))
-                    } else {
-                        None
                     }
+                    Some((record.id, fingerprint, encoded))
+                } else {
+                    None
                 }
+                // }
             })
             .collect();
 

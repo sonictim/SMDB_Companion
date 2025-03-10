@@ -157,8 +157,8 @@ pub async fn search(
         .unwrap();
         counter += 1;
 
-        state.db.wave_search(&pref);
-        // state.db.wave_search_chromaprint(&pref, &app).await;
+        // state.db.wave_search(&pref);
+        state.db.wave_search_chromaprint(&pref, &app).await;
 
         // Emit progress update
     }
