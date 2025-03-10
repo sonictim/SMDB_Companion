@@ -40,6 +40,7 @@ declare module '$env/static/private' {
 	export const MallocNanoZone: string;
 	export const TAURI_ENV_DEBUG: string;
 	export const npm_config_registry: string;
+	export const RUST_BACKTRACE: string;
 	export const PNPM_HOME: string;
 	export const USER: string;
 	export const TAURI_ENV_TARGET_TRIPLE: string;
@@ -135,6 +136,7 @@ declare module '$env/dynamic/private' {
 		MallocNanoZone: string;
 		TAURI_ENV_DEBUG: string;
 		npm_config_registry: string;
+		RUST_BACKTRACE: string;
 		PNPM_HOME: string;
 		USER: string;
 		TAURI_ENV_TARGET_TRIPLE: string;

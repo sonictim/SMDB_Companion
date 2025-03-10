@@ -158,6 +158,7 @@ pub async fn search(
         counter += 1;
 
         state.db.wave_search(&pref);
+        // state.db.wave_search_chromaprint(&pref, &app).await;
 
         // Emit progress update
     }
@@ -283,11 +284,23 @@ pub async fn replace_metadata(
         || data.column == "Pathname"
     {
         vec![
-                    format!("UPDATE {TABLE} SET FilePath = REPLACE(Filename, '{}', '{}'){} WHERE Filename {} ?", data.find, data.replace, dirty_text, case_text),
-                    format!("UPDATE {TABLE} SET Filename = REPLACE(Filename, '{}', '{}'){} WHERE Filename {} ?", data.find, data.replace, dirty_text, case_text ),
-                    format!("UPDATE {TABLE} SET Pathname = REPLACE(Pathname, '{}', '{}'){} WHERE Pathname {} ?", data.find, data.replace, dirty_text, case_text),
-                    format!("UPDATE justinrdb_Pathname SET Pathname = REPLACE(Pathname, '{}', '{}'){} WHERE Pathname {} ?", data.find, data.replace, dirty_text, case_text),
-                ]
+            format!(
+                "UPDATE {TABLE} SET FilePath = REPLACE(Filename, '{}', '{}'){} WHERE Filename {} ?",
+                data.find, data.replace, dirty_text, case_text
+            ),
+            format!(
+                "UPDATE {TABLE} SET Filename = REPLACE(Filename, '{}', '{}'){} WHERE Filename {} ?",
+                data.find, data.replace, dirty_text, case_text
+            ),
+            format!(
+                "UPDATE {TABLE} SET Pathname = REPLACE(Pathname, '{}', '{}'){} WHERE Pathname {} ?",
+                data.find, data.replace, dirty_text, case_text
+            ),
+            format!(
+                "UPDATE justinrdb_Pathname SET Pathname = REPLACE(Pathname, '{}', '{}'){} WHERE Pathname {} ?",
+                data.find, data.replace, dirty_text, case_text
+            ),
+        ]
     } else {
         vec![format!(
             "UPDATE {TABLE} SET {} = REPLACE({}, '{}', '{}'){} WHERE {} {} ?",

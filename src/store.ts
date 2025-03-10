@@ -129,6 +129,10 @@ export const defaultPreferences: Preferences = {
     safety_db_tag: "thinned",
     erase_files: "Keep",
     autoselects: [],
+    exact_waveform: true,
+    similarity_threshold: 0.9,
+    store_waveforms: true,
+    fetch_waveforms: true,
     preservation_order: [
         {
             column: "Description",
@@ -405,7 +409,7 @@ const storedPresets = localStorage.getItem('presets');
 // Define types for the store data
 export type Algorithm = { id: string; name: string; enabled: boolean; min_dur?: number, db?: string | null };
 export type Registration = { name: string; email: string; license: string };
-export type Preferences = { match_criteria: string[]; ignore_filetype: boolean; autoselects: string[]; tags: string[], preservation_order: PreservationLogic[], columns: string[], display_all_records: boolean, safety_db: boolean, safety_db_tag: string, erase_files: string, colors: Colors };
+export type Preferences = { match_criteria: string[]; ignore_filetype: boolean; autoselects: string[]; tags: string[], preservation_order: PreservationLogic[], columns: string[], display_all_records: boolean, safety_db: boolean, safety_db_tag: string, erase_files: string, exact_waveform: boolean, similarity_threshold: number, store_waveforms: boolean, fetch_waveforms: boolean, colors: Colors };
 export type PreservationLogic = { column: string, operator: string, variable: string };
 export type FileRecord = { root: string; path: string; algorithm: string[]; id: number };
 export type Preset = { name: string, pref: Preferences };
@@ -430,7 +434,7 @@ const defaultAlgorithms: Algorithm[] = [
     { id: 'duration', name: 'Minimum Duration:', enabled: false, min_dur: 0.5 },
     { id: 'audiosuite', name: 'Audiosuite Tags', enabled: false },
     { id: 'filetags', name: 'Filename Contains Tag', enabled: false },
-    { id: 'waveform', name: 'Waveform Comparison', enabled: false, db: null },
+    { id: 'waveform', name: 'Audio Content Comparison', enabled: false, db: null },
     { id: 'dbcompare', name: 'Database Compare:', enabled: false },
 ];
 

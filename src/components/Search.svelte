@@ -67,6 +67,7 @@
 
     $: results = resultsStore;
     $: metadata = metadataStore;
+    let waveform_match = true;
 
     let pref: Preferences = get(preferencesStore);
     let algorithms = get(algorithmsStore);
@@ -365,13 +366,37 @@
                                 step="0.1"
                                 bind:value={algo.min_dur}
                                 class="duration-input"
-                                style="width: 55px"
+                                style="width: 55px; background-color: var(--primary-bg)"
                             />
                             s
                         {/if}
+                        <!-- {#if algo.id === "waveform"}
+                            <select
+                                class="select-field"
+                                style="width: 150px"
+                                bind:value={waveform_match}
+                            >
+                                {#each [{ text: "Exact Match", val: true }, { text: "Relative Match", val: false }] as { text, val }}
+                                    <option value={val}>{text}</option>
+                                {/each}
+                            </select>
+                        {/if} -->
                     </div>
                 {/each}
             </div>
+            <span style="margin-left: 255px">
+                <!-- {#if waveform_match == false}
+                    <span>
+                        Threshold:
+                        <input
+                            type="number"
+                            class="input-field"
+                            style="width: 100px"
+                            placeholder="0.0"
+                        />
+                    </span>
+                {/if} -->
+            </span>
         {/if}
         <!-- </div> -->
     </div>

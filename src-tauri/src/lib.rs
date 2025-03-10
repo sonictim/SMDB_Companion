@@ -1,6 +1,8 @@
 mod audiohash;
 mod commands;
 use anyhow::Result;
+use base64::Engine;
+use base64::engine::general_purpose;
 use chrono::{Duration, NaiveDateTime};
 use once_cell::sync::Lazy;
 use rayon::prelude::*;
@@ -83,6 +85,10 @@ pub struct Preferences {
     autoselects: Vec<Arc<str>>,
     preservation_order: Vec<PreservationLogic>,
     display_all_records: bool,
+    exact_waveform: bool,
+    store_waveforms: bool,
+    fetch_waveforms: bool,
+    similarity_threshold: f64,
 }
 
 impl Preferences {
@@ -430,73 +436,81 @@ pub struct FileRecord {
     pub root: Arc<str>,
     pub duration: Arc<str>,
     pub data: HashMap<Arc<str>, Arc<str>>,
-    pub audio_hash: Option<Arc<str>>,
+    pub audio_fingerprint: Option<Arc<str>>,
+    pub audio_fingerprint_raw: Option<Arc<str>>,
     pub algorithm: HashSet<Algorithm>,
 }
 
 impl FileRecord {
     pub fn new(row: &SqliteRow, enabled: &Enabled, pref: &Preferences, is_compare: bool) -> Self {
-        // Preallocate HashMap with exact capacity
-        let data_capacity = pref.match_criteria.len() + pref.preservation_order.len();
-        let mut data = HashMap::with_capacity(data_capacity);
-
-        // Use entry API for efficient insertions
-        for x in &pref.match_criteria {
-            data.entry(x.clone())
-                .or_insert_with(|| Arc::from(row.try_get::<&str, _>(&**x).unwrap_or_default()));
-        }
-
-        for x in &pref.preservation_order {
-            data.entry(x.column.clone()).or_insert_with(|| {
-                Arc::from(row.try_get::<&str, _>(&*x.column).unwrap_or_default())
-            });
-        }
-
-        // Avoid unnecessary allocations for path and duration
+        let id = row.get::<u32, _>(0) as usize;
         let path_str: &str = row.get(1);
+        let path = PathBuf::from(path_str);
         let duration_str: &str = row.get(2);
+        let path_exists = path.exists();
 
-        let path = Path::new(path_str);
-        let mut algorithm = HashSet::from([Algorithm::default()]);
-
-        // Efficiently handle algorithm changes using retain
-        if !path.exists() && enabled.invalidpath {
+        // Create a HashSet for algorithm
+        let mut algorithm = HashSet::new();
+        if !path_exists && enabled.invalidpath {
             algorithm.insert(Algorithm::InvalidPath);
-        }
-        if enabled.duration && checkduration(duration_str, enabled.min_dur) {
+        } else if enabled.duration && checkduration(duration_str, enabled.min_dur) {
             algorithm.insert(Algorithm::Duration);
-        }
-        if enabled.filetags && checktags(path_str, &pref.autoselects) {
+        } else if enabled.filetags && checktags(path_str, &pref.autoselects) {
             algorithm.insert(Algorithm::FileTags);
+        } else {
+            algorithm.insert(Algorithm::Keep);
         }
-        if algorithm.len() > 1 {
-            algorithm.retain(|alg| *alg != Algorithm::Keep);
-        }
 
-        // Construct struct with minimal allocations
-        let mut result = Self {
-            id: row.get::<u32, _>(0) as usize,
-            path: path.to_path_buf(),
-            duration: Cow::Borrowed(duration_str).into(),
-            algorithm,
-            data,
-            audio_hash: None,
-            root: Arc::default(), // Avoid unnecessary empty string allocation
-        };
+        // Create a HashMap for column data
+        let mut data = HashMap::new();
 
-        result.set_root(enabled, pref);
-
-        // Perform audio hashing conditionally
-        if !is_compare && enabled.waveform && path.exists() {
-            if let Some(hash) = path
-                .to_str()
-                .and_then(|p| audiohash::hash_audio_content(p, pref.ignore_filetype).ok())
-            {
-                result.audio_hash = Some(Arc::from(hash));
+        // Gather required columns from preferences
+        for column in &pref.match_criteria {
+            if let Some(value) = get_column_as_string(row, column) {
+                data.insert(column.clone(), value);
             }
         }
 
-        result
+        // Gather columns from preservation logic
+        for logic in &pref.preservation_order {
+            let column = &logic.column;
+            if let Some(value) = get_column_as_string(row, column) {
+                data.insert(column.clone(), value);
+            }
+        }
+
+        // Get audio fingerprint if it exists
+        let audio_fingerprint = if pref.fetch_waveforms {
+            match row.try_get::<&str, _>("_fingerprint") {
+                Ok(hash) if !hash.is_empty() => Some(Arc::from(hash)),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        let audio_fingerprint_raw = if pref.fetch_waveforms {
+            match row.try_get::<&str, _>("_fingerprint_raw") {
+                Ok(hash) if !hash.is_empty() => Some(Arc::from(hash)),
+                _ => None,
+            }
+        } else {
+            None
+        };
+
+        // Create the record
+        let mut record = Self {
+            id,
+            path,
+            root: Arc::default(),
+            duration: Arc::from(duration_str),
+            data,
+            audio_fingerprint,
+            audio_fingerprint_raw,
+            algorithm,
+        };
+
+        record.set_root(enabled, pref);
+        record
     }
 
     pub fn set_root(&mut self, enabled: &Enabled, pref: &Preferences) {
@@ -637,6 +651,8 @@ impl Database {
             self.size = self.fetch_size().await.unwrap();
             self.records = Vec::with_capacity(self.size); // No need for .into()
             self.is_compare = is_compare;
+            self.add_column("_fingerprint").await.ok();
+            self.add_column("_fingerprint_raw").await.ok();
         }
     }
 
@@ -686,6 +702,37 @@ impl Database {
             return SqlitePool::connect(&path).await.ok();
         }
         None
+    }
+
+    async fn add_column(&self, add: &str) -> Result<(), sqlx::Error> {
+        if let Some(pool) = self.get_pool().await {
+            // First check if the column already exists
+            let columns = sqlx::query(&format!("PRAGMA table_info({});", TABLE))
+                .fetch_all(&pool)
+                .await?;
+
+            // Check if our column exists
+            let column_exists = columns.iter().any(|row| {
+                let column_name: &str = row.try_get("name").unwrap_or_default();
+                column_name == add
+            });
+
+            // Only add the column if it doesn't exist
+            if !column_exists {
+                // Add the column with TEXT type (you can change this if needed)
+                let query = format!("ALTER TABLE {} ADD COLUMN {} TEXT;", TABLE, add);
+                sqlx::query(&query).execute(&pool).await?;
+                println!("Added new column: {}", add);
+            } else {
+                println!("Column '{}' already exists", add);
+            }
+
+            return Ok(());
+        }
+
+        Err(sqlx::Error::Configuration(
+            "No database connection available".into(),
+        ))
     }
 
     async fn fetch_size(&self) -> Result<usize, sqlx::Error> {
@@ -794,7 +841,7 @@ impl Database {
         println!("Gathering all records from database");
         self.fetch_filerecords(
             &format!(
-                "SELECT rowid, filepath, duration, {} FROM {}",
+                "SELECT rowid, filepath, duration, _chromaprint, {} FROM {}",
                 pref.get_data_requirements(),
                 TABLE
             ),
@@ -941,6 +988,7 @@ impl Database {
             }
             let mut key = Vec::new();
             for m in &pref.match_criteria {
+                println!("m: {}", m);
                 if &**m == "Filename" {
                     key.push(record.root.clone());
                 } else {
@@ -1019,15 +1067,15 @@ impl Database {
     fn wave_search(&mut self, pref: &Preferences) {
         println!("Starting Waveform Search");
 
-        for record in &self.records {
-            let _ = audiohash::get_chromaprint_fingerprint(&record.path);
-        }
+        // for record in &self.records {
+        //     let _ = audiohash::get_chromaprint_fingerprint(&record.path);
+        // }
 
         // Step 1: Calculate hashes for records that don't have them using parallel processing
         let paths_to_hash: Vec<String> = self
             .records
             .iter()
-            .filter(|record| record.audio_hash.is_none())
+            .filter(|record| record.audio_fingerprint.is_none())
             .filter_map(|record| record.path.to_str().map(|p| p.to_owned()))
             .collect();
 
@@ -1054,7 +1102,7 @@ impl Database {
                         .iter_mut()
                         .find(|r| r.path.to_string_lossy() == path)
                     {
-                        record.audio_hash = Some(Arc::from(hash.as_str()));
+                        record.audio_fingerprint = Some(Arc::from(hash.as_str()));
                     }
                     self.records = records;
                 } else {
@@ -1077,7 +1125,7 @@ impl Database {
                     let mut local_groups: HashMap<Arc<str>, Vec<FileRecord>> = HashMap::new();
 
                     for record in chunk {
-                        if let Some(hash) = &record.audio_hash {
+                        if let Some(hash) = &record.audio_fingerprint {
                             local_groups
                                 .entry(hash.clone())
                                 .or_default()
@@ -1161,154 +1209,414 @@ impl Database {
         println!("All done!");
     }
 
-    fn wave_search_better(&mut self, pref: &Preferences) {
-        println!("Starting Waveform Search");
+    // fn wave_search_better(&mut self, pref: &Preferences) {
+    //     println!("Starting Waveform Search");
 
-        // Use rayon's parallel iterator for initial processing
-        let groups = {
-            let (sender, receiver) = crossbeam_channel::bounded(1024);
-            let record_count = self.records.len();
+    //     // Use rayon's parallel iterator for initial processing
+    //     let groups = {
+    //         let (sender, receiver) = crossbeam_channel::bounded(1024);
+    //         let record_count = self.records.len();
 
-            // Process records in parallel
-            self.records
-                .par_chunks(record_count.max(1) / num_cpus::get().max(1))
-                .for_each_with(sender.clone(), |s, chunk| {
-                    // Process each chunk of records
-                    let mut local_groups: HashMap<Arc<str>, Vec<FileRecord>> = HashMap::new();
+    //         // Process records in parallel
+    //         self.records
+    //             .par_chunks(record_count.max(1) / num_cpus::get().max(1))
+    //             .for_each_with(sender.clone(), |s, chunk| {
+    //                 // Process each chunk of records
+    //                 let mut local_groups: HashMap<Arc<str>, Vec<FileRecord>> = HashMap::new();
 
-                    for record in chunk {
-                        if let Some(hash) = &record.audio_hash {
-                            local_groups
-                                .entry(hash.clone())
-                                .or_default()
-                                .push(record.clone());
-                        }
-                    }
+    //                 for record in chunk {
+    //                     if let Some(hash) = &record.audio_hash {
+    //                         local_groups
+    //                             .entry(hash.clone())
+    //                             .or_default()
+    //                             .push(record.clone());
+    //                     }
+    //                 }
 
-                    // Send local results to the collector
-                    for (hash, records) in local_groups {
-                        s.send((hash, records)).unwrap();
-                    }
-                });
+    //                 // Send local results to the collector
+    //                 for (hash, records) in local_groups {
+    //                     s.send((hash, records)).unwrap();
+    //                 }
+    //             });
 
-            // Drop the sender to signal completion
-            drop(sender);
+    //         // Drop the sender to signal completion
+    //         drop(sender);
 
-            // Collect results into a hashmap
-            let mut file_groups: HashMap<Arc<str>, Vec<FileRecord>> =
-                HashMap::with_capacity(record_count / 2);
+    //         // Collect results into a hashmap
+    //         let mut file_groups: HashMap<Arc<str>, Vec<FileRecord>> =
+    //             HashMap::with_capacity(record_count / 2);
 
-            while let Ok((hash, records)) = receiver.recv() {
-                file_groups
-                    .entry(hash)
-                    .or_default()
-                    .append(&mut records.clone());
-            }
+    //         while let Ok((hash, records)) = receiver.recv() {
+    //             file_groups
+    //                 .entry(hash)
+    //                 .or_default()
+    //                 .append(&mut records.clone());
+    //         }
 
-            file_groups
-        };
+    //         file_groups
+    //     };
 
-        println!("Marking duplicates");
+    //     println!("Marking duplicates");
 
-        // Process groups in parallel
-        let processed_records = {
-            let (sender, receiver) = crossbeam_channel::bounded(1024);
+    //     // Process groups in parallel
+    //     let processed_records = {
+    //         let (sender, receiver) = crossbeam_channel::bounded(1024);
 
-            // Use rayon to process groups in parallel
-            groups
-                .into_par_iter()
-                .for_each_with(sender.clone(), |s, (_, mut records)| {
-                    if records.len() < 2 {
-                        // Send single records directly
-                        for record in records {
-                            s.send(record).unwrap();
-                        }
-                        return;
-                    }
+    //         // Use rayon to process groups in parallel
+    //         groups
+    //             .into_par_iter()
+    //             .for_each_with(sender.clone(), |s, (_, mut records)| {
+    //                 if records.len() < 2 {
+    //                     // Send single records directly
+    //                     for record in records {
+    //                         s.send(record).unwrap();
+    //                     }
+    //                     return;
+    //                 }
 
-                    // Sort records according to preferences
-                    pref.sort_vec(&mut records);
+    //                 // Sort records according to preferences
+    //                 pref.sort_vec(&mut records);
 
-                    // Mark duplicates
-                    records.iter_mut().enumerate().for_each(|(i, record)| {
-                        if i > 0 {
-                            record.algorithm.remove(&A::Keep);
-                        }
-                        record.algorithm.insert(A::Waveforms);
-                    });
+    //                 // Mark duplicates
+    //                 records.iter_mut().enumerate().for_each(|(i, record)| {
+    //                     if i > 0 {
+    //                         record.algorithm.remove(&A::Keep);
+    //                     }
+    //                     record.algorithm.insert(A::Waveforms);
+    //                 });
 
-                    // Send all processed records
-                    for record in records {
-                        s.send(record).unwrap();
-                    }
-                });
+    //                 // Send all processed records
+    //                 for record in records {
+    //                     s.send(record).unwrap();
+    //                 }
+    //             });
 
-            // Drop sender to signal completion
-            drop(sender);
+    //         // Drop sender to signal completion
+    //         drop(sender);
 
-            // Collect all records into a vector
-            let mut result = Vec::with_capacity(self.records.len());
-            while let Ok(record) = receiver.recv() {
-                result.push(record);
-            }
+    //         // Collect all records into a vector
+    //         let mut result = Vec::with_capacity(self.records.len());
+    //         while let Ok(record) = receiver.recv() {
+    //             result.push(record);
+    //         }
 
-            result
-        };
+    //         result
+    //     };
 
-        // Replace records with processed records
-        self.records = processed_records;
+    //     // Replace records with processed records
+    //     self.records = processed_records;
 
-        println!("All done!");
-    }
+    //     println!("All done!");
+    // }
 
-    fn wave_search_old(&mut self, pref: &Preferences) {
-        println!("Starting Waveform Search");
-        println!("Match Criteria: {:?}", pref.match_criteria);
+    async fn update_column_value(
+        &self,
+        row: usize,
+        column: &str,
+        value: &str,
+    ) -> Result<(), sqlx::Error> {
+        if let Some(pool) = self.get_pool().await {
+            // Create a parameterized query to update a specific column in a specific row
+            let query = format!("UPDATE {} SET {} = ? WHERE rowid = ?", TABLE, column);
 
-        let mut file_groups: HashMap<Arc<str>, Vec<FileRecord>> =
-            HashMap::with_capacity(self.records.len() / 2);
+            // Execute the query with the provided parameters
+            sqlx::query(&query)
+                .bind(value)
+                .bind(row as i64) // SQLite uses i64 for rowid
+                .execute(&pool)
+                .await?;
 
-        // Group records by waveform - changed to directly iterate over self.records
-        for record in &self.records {
-            if let Some(hash) = &record.audio_hash {
-                file_groups
-                    .entry(hash.clone())
-                    .or_default()
-                    .push(record.clone());
-            }
+            // println!("Updated column '{}' in row {} with value '{}'", column_name, row_id, value);
+            return Ok(());
         }
 
-        println!("marking dupes");
+        Err(sqlx::Error::Configuration(
+            "No database connection available".into(),
+        ))
+    }
 
-        // Determine whether to filter out single-record groups
-        let processed_records: Vec<FileRecord> = file_groups
-            .into_iter()
-            // .filter(|(_, records)| {
-            //     pref.display_all_records
-            //         || enabled.basic
-            //         || records.len() > 1
-            //         || records[0].algorithm != A::Keep
-            // })
-            .flat_map(|(_, mut records)| {
-                if records.len() < 2 {
-                    return records;
+    async fn wave_search_chromaprint(&mut self, pref: &Preferences, app: &AppHandle) {
+        println!("Starting Waveform Search");
+
+        // Count how many files need fingerprinting
+        let to_fingerprint = self
+            .records
+            .iter()
+            .filter(|record| {
+                record.audio_fingerprint.is_none() || record.audio_fingerprint_raw.is_none()
+            })
+            .count();
+
+        app.emit(
+            "search-sub-status",
+            SearchStatus {
+                stage: "fingerprinting".into(),
+                progress: 0,
+                message: format!("Analyzing {} audio files", to_fingerprint),
+            },
+        )
+        .ok();
+
+        // Use atomic counter for thread-safe progress tracking
+        let counter = std::sync::atomic::AtomicUsize::new(0);
+
+        // Collect fingerprints and their corresponding record IDs
+        let fingerprints: Vec<(usize, String, String)> = self
+            .records
+            .par_iter()
+            .filter(|record| {
+                record.audio_fingerprint.is_none() || record.audio_fingerprint_raw.is_none()
+            })
+            .filter_map(|record| {
+                let idx = counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+                // Report progress for each file
+                if idx % RECORD_DIVISOR == 0 || idx == 0 || idx == to_fingerprint - 1 {
+                    app.emit(
+                        "search-sub-status",
+                        SearchStatus {
+                            stage: "fingerprinting".into(),
+                            progress: ((idx + 1) * 100 / to_fingerprint) as u64,
+                            message: format!(
+                                "Analyzing: {} ({}/{})",
+                                record.get_filename(),
+                                idx + 1,
+                                to_fingerprint
+                            ),
+                        },
+                    )
+                    .ok();
                 }
-                pref.sort_vec(&mut records); // Sort only when `display_all_records` is false
 
-                records.iter_mut().enumerate().for_each(|(i, record)| {
-                    if i > 0 {
-                        record.algorithm.remove(&A::Keep);
+                if checkduration(&record.duration, 1.0) {
+                    let hash =
+                        audiohash::hash_audio_content(record.get_path(), pref.ignore_filetype);
+                    if let Ok(hash) = hash {
+                        Some((record.id, hash.clone(), hash.clone()))
+                    } else {
+                        None
                     }
-                    record.algorithm.insert(A::Waveforms);
-                });
-
-                records
+                } else {
+                    let result = audiohash::get_chromaprint_fingerprint(&record.path);
+                    if let Ok(result) = result {
+                        let (fingerprint, encoded) = result;
+                        if encoded.is_empty() {
+                            let hash = audiohash::hash_audio_content(
+                                record.get_path(),
+                                pref.ignore_filetype,
+                            );
+                            if let Ok(hash) = hash {
+                                return Some((record.id, hash.clone(), hash));
+                            } else {
+                                return None;
+                            }
+                        }
+                        Some((record.id, fingerprint, encoded))
+                    } else {
+                        None
+                    }
+                }
             })
             .collect();
 
-        self.records = processed_records;
+        // Update database in separate step
+        if pref.store_waveforms && !fingerprints.is_empty() {
+            app.emit(
+                "search-sub-status",
+                SearchStatus {
+                    stage: "storing".into(),
+                    progress: 0,
+                    message: "Storing fingerprints in database...".into(),
+                },
+            )
+            .ok();
 
-        println!("all done!");
+            for (i, (id, fingerprint, encoded)) in fingerprints.iter().enumerate() {
+                if i % RECORD_DIVISOR == 0 || i == 0 || i == fingerprints.len() - 1 {
+                    app.emit(
+                        "search-sub-status",
+                        SearchStatus {
+                            stage: "storing".into(),
+                            progress: ((i + 1) * 100 / fingerprints.len()) as u64,
+                            message: format!(
+                                "Storing fingerprints: {}/{}",
+                                i + 1,
+                                fingerprints.len()
+                            ),
+                        },
+                    )
+                    .ok();
+                }
+
+                let _ = self
+                    .update_column_value(*id, "_fingerprint", fingerprint)
+                    .await;
+                let _ = self
+                    .update_column_value(*id, "_fingerprint_raw", encoded)
+                    .await;
+            }
+        }
+
+        // Update records with the collected fingerprints
+        app.emit(
+            "search-sub-status",
+            SearchStatus {
+                stage: "updating".into(),
+                progress: 0,
+                message: "Updating records with fingerprints...".into(),
+            },
+        )
+        .ok();
+
+        for (i, (id, fingerprint, encoded)) in fingerprints.iter().enumerate() {
+            if i % RECORD_DIVISOR == 0 || i == 0 || i == fingerprints.len() - 1 {
+                app.emit(
+                    "search-sub-status",
+                    SearchStatus {
+                        stage: "updating".into(),
+                        progress: ((i + 1) * 100 / fingerprints.len()) as u64,
+                        message: format!("Updating records: {}/{}", i + 1, fingerprints.len()),
+                    },
+                )
+                .ok();
+            }
+
+            if let Some(record) = self.records.iter_mut().find(|r| r.id == *id) {
+                record.audio_fingerprint = Some(Arc::from(fingerprint.as_str()));
+                record.audio_fingerprint_raw = Some(Arc::from(encoded.as_str()));
+            }
+        }
+
+        if pref.exact_waveform {
+            app.emit(
+                "search-sub-status",
+                SearchStatus {
+                    stage: "grouping".into(),
+                    progress: 0,
+                    message: "Grouping identical audio fingerprints...".into(),
+                },
+            )
+            .ok();
+
+            let mut file_groups: HashMap<Arc<str>, Vec<FileRecord>> =
+                HashMap::with_capacity(self.records.len() / 2);
+
+            // Group records by waveform
+            for (i, record) in self.records.iter().enumerate() {
+                if i % RECORD_DIVISOR == 0 || i == 0 || i == self.records.len() - 1 {
+                    app.emit(
+                        "search-sub-status",
+                        SearchStatus {
+                            stage: "grouping".into(),
+                            progress: ((i + 1) * 100 / self.records.len()) as u64,
+                            message: format!(
+                                "Grouping by fingerprint: {}/{}",
+                                i + 1,
+                                self.records.len()
+                            ),
+                        },
+                    )
+                    .ok();
+                }
+
+                if let Some(hash) = &record.audio_fingerprint {
+                    file_groups
+                        .entry(hash.clone())
+                        .or_default()
+                        .push(record.clone());
+                }
+            }
+
+            println!("Marking duplicate audio files");
+            app.emit(
+                "search-sub-status",
+                SearchStatus {
+                    stage: "marking".into(),
+                    progress: 0,
+                    message: "Marking duplicate audio files...".into(),
+                },
+            )
+            .ok();
+
+            // Process groups
+            let group_count = file_groups.len();
+            let processed_records: Vec<FileRecord> = file_groups
+                .into_iter()
+                .enumerate()
+                .flat_map(|(i, (_, mut records))| {
+                    if i % RECORD_DIVISOR == 0 || i == 0 || i == group_count - 1 {
+                        app.emit(
+                            "search-sub-status",
+                            SearchStatus {
+                                stage: "marking".into(),
+                                progress: ((i + 1) * 100 / group_count) as u64,
+                                message: format!("Processing group: {}/{}", i + 1, group_count),
+                            },
+                        )
+                        .ok();
+                    }
+
+                    if records.len() < 2 {
+                        return records;
+                    }
+                    pref.sort_vec(&mut records);
+
+                    records.iter_mut().enumerate().for_each(|(i, record)| {
+                        print!(
+                            "{}, {}",
+                            record.audio_fingerprint.as_ref().unwrap(),
+                            record.root
+                        );
+                        if i > 0 {
+                            record.algorithm.remove(&A::Keep);
+                            print!(" Removed ");
+                        }
+                        record.algorithm.insert(A::Waveforms);
+                        println!();
+                    });
+
+                    records
+                })
+                .collect();
+
+            self.records = processed_records;
+
+            app.emit(
+                "search-sub-status",
+                SearchStatus {
+                    stage: "complete".into(),
+                    progress: 100,
+                    message: "Audio fingerprint analysis complete".into(),
+                },
+            )
+            .ok();
+        } else {
+            // Similar progress reporting for similarity comparison...
+            app.emit(
+                "search-sub-status",
+                SearchStatus {
+                    stage: "similarity".into(),
+                    progress: 0,
+                    message: "Starting similarity-based audio comparison...".into(),
+                },
+            )
+            .ok();
+
+            // For similarity comparison implementation, follow the same pattern
+            // of reporting progress at key steps
+
+            // ...existing similarity comparison code with progress updates...
+
+            app.emit(
+                "search-sub-status",
+                SearchStatus {
+                    stage: "complete".into(),
+                    progress: 100,
+                    message: "Similarity-based audio comparison complete".into(),
+                },
+            )
+            .ok();
+        }
     }
 }
 
@@ -1376,4 +1684,23 @@ impl Delete {
 
         Ok(())
     }
+}
+
+fn get_column_as_string(row: &SqliteRow, column: &str) -> Option<Arc<str>> {
+    // Try getting as text first (most common case)
+    if let Ok(value) = row.try_get::<&str, _>(column) {
+        return Some(Arc::from(value));
+    }
+
+    // Then try numeric types
+    if let Ok(value) = row.try_get::<i64, _>(column) {
+        return Some(Arc::from(value.to_string()));
+    }
+
+    if let Ok(value) = row.try_get::<f64, _>(column) {
+        return Some(Arc::from(value.to_string()));
+    }
+
+    // Handle null or other types
+    None
 }

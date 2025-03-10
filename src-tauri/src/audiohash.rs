@@ -443,7 +443,7 @@ where
     (result, duration)
 }
 
-pub fn get_chromaprint_fingerprint<P: AsRef<Path>>(file_path: P) -> Result<String> {
+pub fn get_chromaprint_fingerprint<P: AsRef<Path>>(file_path: P) -> Result<(String, String)> {
     let path_str = file_path.as_ref().to_string_lossy().to_string();
     println!("Generating Chromaprint fingerprint for: {}", path_str);
 
@@ -471,21 +471,30 @@ pub fn get_chromaprint_fingerprint<P: AsRef<Path>>(file_path: P) -> Result<Strin
     c.start(16000, 1);
     c.feed(&samples);
     c.finish();
-    let fingerprint = c.fingerprint();
 
+    // Get both fingerprint formats
+    let text_fingerprint = c.fingerprint();
     let raw_fingerprint = c.raw_fingerprint();
 
-    println!(
-        "Fingerprint generated: {}",
-        fingerprint
-            .as_ref()
-            .unwrap_or(&"did not unwrap fingerprint".to_string())
-    );
-    println!(
-        "  Length (raw): {} bytes",
-        raw_fingerprint.as_ref().map_or(0, |v| v.len())
-    );
-    // println!("  Encoded: {}", encoded);
+    // Base64-encode the raw fingerprint (more efficient for database storage)
+    let encoded = raw_fingerprint.as_ref().map_or(String::new(), |v| {
+        // Convert Vec<i32> to bytes before encoding
+        let bytes: Vec<u8> = v.iter().flat_map(|&x| x.to_le_bytes()).collect();
+        general_purpose::STANDARD.encode(bytes)
+    });
 
-    Ok(fingerprint.unwrap_or("did not unwrap fingerprint".to_string()))
+    // println!(
+    //     "Fingerprint generated: {}",
+    //     text_fingerprint
+    //         .as_ref()
+    //         .unwrap_or(&"did not unwrap fingerprint".to_string())
+    // );
+    // println!(
+    //     "  Length (raw): {} bytes",
+    //     raw_fingerprint.as_ref().map_or(0, |v| v.len())
+    // );
+    // println!("  Encoded (B64): {} chars", encoded.len());
+
+    // Return the encoded version for database storage
+    Ok((text_fingerprint.unwrap_or_default(), encoded))
 }
