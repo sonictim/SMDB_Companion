@@ -211,10 +211,10 @@
                         type="number"
                         class="input-field"
                         style="width: 100px"
-                        placeholder="0.9"
-                        step="0.1"
+                        placeholder="90"
+                        step="1"
                         min="0"
-                        max="1"
+                        max="100"
                         value={$preferencesStore.similarity_threshold}
                         on:input={(e) =>
                             updateSimilarityThreshold(

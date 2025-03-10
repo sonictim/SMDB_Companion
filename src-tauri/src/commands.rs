@@ -143,6 +143,23 @@ pub async fn search(
         // Emit progress update
     }
 
+    if enabled.basic {
+        let mut state = state.lock().await;
+        app.emit(
+            "search-status",
+            SearchStatus {
+                stage: "dupes".into(),
+                progress: counter * 100 / total,
+                message: "Performing Duplicate Search".into(),
+            },
+        )
+        .unwrap();
+        counter += 1;
+        state.db.dupe_search(&pref, &app);
+
+        // Emit progress update
+    }
+
     if enabled.waveform {
         let mut state = state.lock().await;
 
@@ -159,23 +176,6 @@ pub async fn search(
 
         // state.db.wave_search(&pref);
         state.db.wave_search_chromaprint(&pref, &app).await;
-
-        // Emit progress update
-    }
-
-    if enabled.basic {
-        let mut state = state.lock().await;
-        app.emit(
-            "search-status",
-            SearchStatus {
-                stage: "dupes".into(),
-                progress: counter * 100 / total,
-                message: "Performing Duplicate Search".into(),
-            },
-        )
-        .unwrap();
-        counter += 1;
-        state.db.dupe_search(&pref, &app);
 
         // Emit progress update
     }
