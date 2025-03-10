@@ -171,13 +171,13 @@
             // Filename is now completely independent
         }
 
-        await invoke<FileRecord>("search", {
+        await invoke<FileRecord[]>("search", {
             enabled: algorithmState,
             pref: get(preferencesStore),
         })
             .then((result) => {
                 console.log("Search Results:", result);
-                resultsStore.set([result]); // ✅ Store the results in session storage
+                resultsStore.set(result); // ✅ Store the results in session storage
             })
             .catch((error) => console.error(error));
 

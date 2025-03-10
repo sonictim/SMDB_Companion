@@ -13,6 +13,11 @@ pub fn greet(name: &str) -> String {
 }
 
 #[tauri::command]
+pub fn get_current_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
+#[tauri::command]
 pub async fn get_reg(data: Registration) -> Result<Arc<str>, String> {
     Ok(generate_license_key(&data.name, &data.email))
 }

@@ -7,8 +7,8 @@ use rayon::prelude::*;
 pub use regex::Regex;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-pub use sqlx::sqlite::{SqlitePool, SqliteRow};
 use sqlx::Row;
+pub use sqlx::sqlite::{SqlitePool, SqliteRow};
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
@@ -19,9 +19,9 @@ use tauri::async_runtime::Mutex;
 use tauri::{AppHandle, Emitter};
 use tauri::{Manager, State};
 
-use commands::*;
 pub use Algorithm as A;
 pub use OrderOperator as O;
+use commands::*;
 
 pub const TABLE: &str = "justinmetadata";
 pub const RECORD_DIVISOR: usize = 1231;
@@ -33,6 +33,13 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            let version = app.package_info().version.to_string();
+            let _ = app
+                .webview_windows()
+                .get("main")
+                .unwrap()
+                .set_title(&format!("SMDB Companion :: v{}", version));
+
             app.manage(Mutex::new(AppState::default()));
             Ok(())
         })
@@ -41,6 +48,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             greet,
+            get_current_version,
             open_db,
             get_db_name,
             get_db_size,
@@ -347,8 +355,34 @@ fn generate_license_key(name: &str, email: &str) -> Arc<str> {
     let mut hasher = Sha256::new();
     hasher.update(format!("{}{}{}", name.to_lowercase(), email.to_lowercase(), salt).as_bytes());
     let hash = hasher.finalize();
-    hex::encode_upper(hash).into()
+
+    // Option 1: Take first 16 bytes (32 characters) of the hash
+    let shortened = &hash[..16];
+
+    // Format as XXXX-XXXX-XXXX-XXXX for readability
+    let formatted = format!(
+        "{:02X}{:02X}{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}",
+        shortened[0],
+        shortened[1],
+        shortened[2],
+        shortened[3],
+        shortened[4],
+        shortened[5],
+        shortened[6],
+        shortened[7],
+        shortened[8],
+        shortened[9],
+        shortened[10],
+        shortened[11],
+        shortened[12],
+        shortened[13],
+        shortened[14],
+        shortened[15]
+    );
+
+    formatted.into()
 }
+
 fn generate_license_key_old(name: &str, email: &str) -> Arc<str> {
     let salt = "Valhalla Delay";
     let mut hasher = Sha256::new();

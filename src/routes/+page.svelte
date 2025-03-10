@@ -13,6 +13,8 @@
   import { Menu } from "@tauri-apps/api/menu";
   import { onMount } from "svelte";
   import { listen } from "@tauri-apps/api/event";
+  import { confirm } from "@tauri-apps/plugin-dialog";
+  import { openUrl } from "@tauri-apps/plugin-opener";
 
   import SearchComponent from "../components/Search.svelte";
   import ResultsComponent from "../components/Results.svelte";
@@ -74,6 +76,49 @@
       );
     }
   });
+
+  export async function checkForUpdates(): Promise<{
+    latest: string;
+    needsUpdate: boolean;
+  }> {
+    try {
+      const response = await fetch(
+        "https://smdbc.com/latest.php?token=how-cool-am-i",
+      );
+      if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
+
+      const latestVersion = await response.text();
+      const currentVersion = await invoke("get_current_version");
+
+      console.log("Latest version:", latestVersion);
+      console.log("Current version:", currentVersion);
+
+      // Compare versions (you can use semver-parser in frontend)
+      const needsUpdate =
+        compareVersions(latestVersion.trim(), currentVersion as string) > 0;
+
+      return {
+        latest: latestVersion.trim(),
+        needsUpdate,
+      };
+    } catch (error) {
+      console.error("Failed to check for updates:", error);
+      throw error;
+    }
+  }
+
+  // Simple version comparison helper
+  function compareVersions(v1: string, v2: string): number {
+    const parts1 = v1.split(".").map(Number);
+    const parts2 = v2.split(".").map(Number);
+
+    for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
+      const p1 = parts1[i] || 0;
+      const p2 = parts2[i] || 0;
+      if (p1 !== p2) return p1 - p2;
+    }
+    return 0;
+  }
 
   async function fetchColumns() {
     try {
@@ -193,6 +238,32 @@
   }
 
   onMount(checkRegistered);
+  onMount(() => {
+    checkForUpdates()
+      .then(async ({ latest, needsUpdate }) => {
+        // needsUpdate = true;
+        if (needsUpdate) {
+          console.log("Update available:", latest);
+          const confirmed = await confirm(
+            "Version " + latest + " is available. Download now?",
+            {
+              title: "Update Available",
+              kind: "info",
+            },
+          );
+          if (confirmed) {
+            console.log("User confirmed download.");
+            // Open the download page in the default browser
+            await openUrl("https://smdbc.com/download.php");
+          }
+        } else {
+          console.log("No updates available");
+        }
+      })
+      .catch((err) => {
+        console.error("Update check failed:", err);
+      });
+  });
 </script>
 
 <div class="app-container">

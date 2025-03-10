@@ -34,7 +34,7 @@
   $: metadata = $metadataStore;
 
   let loading = true;
-  let items: FileRecord[] = [];
+  // let items: FileRecord[] = [];
   let total: number = 0;
   let selectedItems = new Set<number>();
   // let checkedItems = new Set<FileRecord>();
@@ -48,7 +48,7 @@
 
   // Update filtered items whenever the filter or items change
   $: {
-    let newFiltered = filterItems(items, currentFilter);
+    let newFiltered = filterItems(results, currentFilter);
     newFiltered.forEach((item) => {
       if (selectedItems.has(item.id)) {
         selectedItems.add(item.id); // Ensure selected state persists
@@ -232,7 +232,7 @@
     total += isKeeping ? -1 : 1;
 
     // Update items array
-    items = items.map((i) => (i === item ? updatedItem : i));
+    results = results.map((i) => (i === item ? updatedItem : i));
   }
 
   function clearSelected() {
@@ -256,7 +256,7 @@
           console.log("Successfully replaced metadata");
           metadata.find = "";
           metadata.replace = "";
-          items = [];
+          results = [];
           activeTab = "search";
         })
         .catch((error) => {
@@ -268,8 +268,8 @@
   async function fetchData() {
     try {
       loading = true;
-      total = await invoke<number>("get_records_size"); // Fetch total count first
-      items = await invoke<FileRecord[]>("get_results"); // Then fetch the items
+      total = results.filter((item) => !item.algorithm.includes("Keep")).length; // Fetch total count first
+      // items = await invoke<FileRecord[]>("get_results"); // Then fetch the items
     } catch (error) {
       console.error("Failed to fetch data:", error);
     } finally {
@@ -278,6 +278,7 @@
   }
 
   onMount(() => {
+    loading = false;
     fetchData();
 
     // Initial size calculation
@@ -403,16 +404,13 @@
 </script>
 
 <div class="block">
-  <!-- {#each results[0].algorithm as algo}
-    Algorithms: {algo}
-  {/each} -->
   <div class="header">
     <h2>Search Results:</h2>
     <span style="font-size: 18px">
       {#if isRemove}
-        {total} of {items.length} Records marked for Removal
+        {total} of {results.length} Records marked for Removal
       {:else}
-        {items.length} Records found
+        {results.length} Records found
       {/if}
     </span>
 
@@ -622,40 +620,42 @@
     {/if}
   </div>
   <div class="header" style="margin-bottom: 0px">
-    <span
-      style={pref.safety_db
-        ? ""
-        : "color: var(--warning-hover); font-style: bold;"}
-      >Remove Records From:
+    <span>
+      Remove Records From:
       <select
         class="select-field"
         bind:value={pref.safety_db}
         on:change={() => preferencesStore.set(pref)}
       >
-        {#each [{ bool: true, text: "Database Copy with tag:" }, { bool: false, text: "Current Database" }] as option}
+        {#each [{ bool: true, text: "Database Copy" }, { bool: false, text: "Current Database" }] as option}
           <option value={option.bool}>{option.text}</option>
         {/each}
       </select>
       {#if pref.safety_db}
+        with tag:
         <input
           class="input-field"
-          placeholder="_thinned"
+          placeholder="thinned"
           type="text"
           id="new_db_tag"
           bind:value={pref.safety_db_tag}
           on:change={() => preferencesStore.set(pref)}
         />
       {:else}
-        <TriangleAlert size="20" class="blinking" />
+        <TriangleAlert
+          size="20"
+          class="blinking"
+          style="color: var(--warning-hover)"
+        />
       {/if}
     </span>
-    <span
-      style={pref.erase_files != "Keep"
-        ? "color: var(--warning-hover); font-style: bold;"
-        : ""}
-    >
-      {#if pref.erase_files === "Delete"}
-        <TriangleAlert size="20" class="blinking" />
+    <span>
+      {#if pref.erase_files !== "Keep"}
+        <TriangleAlert
+          size="20"
+          class={pref.erase_files == "Delete" ? "blinking" : ""}
+          style="color: var(--warning-hover)"
+        />
       {/if}
       Duplicate Files On Disk:
       <select class="select-field" on:change={handleFileEraseChange}>

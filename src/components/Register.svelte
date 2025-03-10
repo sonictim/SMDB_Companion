@@ -1,104 +1,121 @@
 <script lang="ts">
-    import { X, Search, AlertCircle, Loader, Square, CheckSquare } from 'lucide-svelte';
-    import { invoke } from '@tauri-apps/api/core';
-    import { onMount } from 'svelte';
-    export let isRegistered: boolean;
+  import {
+    X,
+    Search,
+    AlertCircle,
+    Loader,
+    Square,
+    CheckSquare,
+  } from "lucide-svelte";
+  import { invoke } from "@tauri-apps/api/core";
+  import { onMount } from "svelte";
+  export let isRegistered: boolean;
 
-    import { registrationStore } from '../store';
-    import { get } from 'svelte/store';
+  import { registrationStore } from "../store";
+  import { get } from "svelte/store";
 
-    import type { Registration } from '../store';
+  import type { Registration } from "../store";
 
-    let reg: Registration = get(registrationStore);
+  const DEBUG_MODE = import.meta.env.DEV || false; // Will be true in development, false in production
 
+  let reg: Registration = get(registrationStore);
 
+  // let reg: Registration = { name: '', email: '', license: '' };
+  let total: number = 0;
 
+  let r2 = "";
 
-    // let reg: Registration = { name: '', email: '', license: '' };
-    let total: number = 0;
-
-    let r2 = 'temp';
-  
   async function getreg() {
-      try {
-          r2 = await invoke<string>('get_reg', {data: reg}); // Fetch total count first
-      } catch (error) {
-          console.error('Failed to fetch data:', error);
-        }
+    if (!DEBUG_MODE) return;
+    try {
+      r2 = await invoke<string>("get_reg", { data: reg }); // Fetch total count first
+    } catch (error) {
+      console.error("Failed to fetch data:", error);
+    }
   }
 
   async function setReg() {
-      registrationStore.set(reg);
-      invoke<boolean>('check_reg', {data: reg})
-      .then((result) => { isRegistered = result; console.log("Registration:", result); })
+    registrationStore.set(reg);
+    invoke<boolean>("check_reg", { data: reg })
+      .then((result) => {
+        isRegistered = result;
+        console.log("Registration:", result);
+        if (!result) getreg();
+      })
       .catch((error) => console.error(error));
   }
 
   async function fetchData() {
-      try {
-          total = await invoke<number>('get_records_size'); // Fetch total count first
-      } catch (error) {
-          console.error('Failed to fetch data:', error);
-        }
+    try {
+      total = await invoke<number>("get_records_size"); // Fetch total count first
+    } catch (error) {
+      console.error("Failed to fetch data:", error);
+    }
   }
-  
-    onMount(fetchData);
-    onMount(getreg);
-  
-  
-  
-  
-  </script>
-  <div class="block">
-    <div class="header">
-      <h2>
-          Search Results:
-        <span class="basic-text" style="display: inline-flex; margin: 0;">
-          {total} duplicates found
-        </span>
-      </h2>
-      <button class="cta-button cancel" on:click={setReg}>
-        Register
-      </button>
-    </div>
-    <div class="input-group2">
-        <label for="case-sensitive">
-            Registration Required to View Results
-        </label>
 
-    </div>
-    <div class="input-group">
-        <label for="name">Name:</label>
-        <input
-            type="text"
-            id="find-text"
-            bind:value={reg.name}
-            placeholder="Enter Registration Name"
-            class="input-field"
-        />
-    </div>
-    <div class="input-group">
-        <label for="email">Email:</label>
-        <input
-            type="text"
-            id="find-text"
-            bind:value={reg.email}
-            placeholder="Enter Registration Email"
-            class="input-field"
-        />
-    </div>
+  onMount(fetchData);
+  onMount(getreg);
+</script>
 
-    <div class="input-group">
-        <label for="Reg">License:</label>
-        <input
-            type="text"
-            id="replace-text"
-            bind:value={reg.license}
-            placeholder="Enter License number"
-            class="input-field"
-        />
-    </div>
-    {r2}
-
+<div class="block">
+  <div class="header">
+    <h2>
+      Search Results:
+      <span class="basic-text" style="display: inline-flex; margin: 0;">
+        {total} duplicates found
+      </span>
+    </h2>
+    <button class="cta-button cancel" on:click={setReg}> Register </button>
   </div>
-   
+  <div class="input-group2">
+    <label for="case-sensitive"> Registration Required to View Results </label>
+  </div>
+  <div class="input-group">
+    <label for="name">Name:</label>
+    <input
+      type="text"
+      id="find-text"
+      bind:value={reg.name}
+      placeholder="Enter Registration Name"
+      class="input-field"
+    />
+  </div>
+  <div class="input-group">
+    <label for="email">Email:</label>
+    <input
+      type="text"
+      id="find-text"
+      bind:value={reg.email}
+      placeholder="Enter Registration Email"
+      class="input-field"
+    />
+  </div>
+
+  <div class="input-group">
+    <label for="Reg">License:</label>
+    <input
+      type="text"
+      id="replace-text"
+      bind:value={reg.license}
+      placeholder="Enter License number"
+      class="input-field"
+    />
+  </div>
+  {#if DEBUG_MODE}
+    <div class="debug-info">
+      Debug: {r2}
+    </div>
+  {/if}
+</div>
+
+<style>
+  .debug-info {
+    margin-top: 8px;
+    padding: 8px;
+    color: black;
+    background-color: #ffe8e8;
+    border: 1px dashed #ff5252;
+    font-family: monospace;
+    font-size: 0.9em;
+  }
+</style>
