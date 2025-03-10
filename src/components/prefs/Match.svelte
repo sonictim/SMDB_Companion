@@ -5,6 +5,7 @@
     import { preferencesStore } from "../../store";
 
     // Use the store directly instead of assigning to `pref`
+    let currentColumn = "";
     $: pref = $preferencesStore;
     let selectedMatches = new Set<string>();
 
@@ -47,17 +48,21 @@
         selectedMatches = new Set(); // Ensure reactivity
     }
 
-    function handleFilterChange(event: Event) {
-        const select = event.target as HTMLSelectElement;
+    function addColumn() {
         preferencesStore.update((p) => {
-            if (!p.match_criteria.includes(select.value)) {
+            if (currentColumn && !p.match_criteria.includes(currentColumn)) {
                 return {
                     ...p,
-                    match_criteria: [...p.match_criteria, select.value],
+                    match_criteria: [...p.match_criteria, currentColumn],
                 };
             }
             return p;
         });
+        currentColumn = "";
+    }
+
+    function handleColumnChange(event: Event) {
+        currentColumn = (event.target as HTMLSelectElement).value;
     }
 
     // Get filtered columns that are not in match_criteria
@@ -78,10 +83,14 @@
         </button>
     </div>
 
-    <div class="bar">
+    <div class="header">
         <div class="button-group">
-            <span>Add: </span>
-            <select class="select-field" on:change={handleFilterChange}>
+            <button class="cta-button small" on:click={addColumn}>Add</button>
+            <select
+                class="select-field"
+                bind:value={currentColumn}
+                on:change={handleColumnChange}
+            >
                 {#each filteredColumns as option}
                     <option value={option}>{option}</option>
                 {/each}

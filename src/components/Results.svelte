@@ -401,44 +401,70 @@
       mark_dirty: !p.mark_dirty,
     }));
   }
+
+  // Add this function to update CSS variables when columns change
+  $: {
+    if (containerElement && columnWidths) {
+      containerElement.style.setProperty(
+        "--col1-width",
+        `${columnWidths[0]}px`,
+      );
+      containerElement.style.setProperty(
+        "--col2-width",
+        `${columnWidths[1]}px`,
+      );
+      containerElement.style.setProperty(
+        "--col3-width",
+        `${columnWidths[2]}px`,
+      );
+      containerElement.style.setProperty(
+        "--col4-width",
+        `${columnWidths[3]}px`,
+      );
+    }
+  }
+
+  $: {
+    if (containerElement) {
+      containerElement.style.setProperty(
+        "--grid-template-columns",
+        `${columnWidths[0]}px ${columnWidths[1]}px ${columnWidths[2]}px ${columnWidths[3]}px`,
+      );
+    }
+  }
 </script>
 
 <div class="block">
   <div class="header">
     <h2>Search Results:</h2>
     <span style="font-size: 18px">
-      {#if isRemove}
-        {total} of {results.length} Records marked for Removal
-      {:else}
-        {results.length} Records found
-      {/if}
-    </span>
+      <div style="margin-left: auto; display: flex; gap: 20px;">
+        {#if isRemove}
+          {#if enableSelections}
+            <button
+              class="cta-button cancel"
+              style="margin-right: 8px"
+              on:click={removeSelected}
+            >
+              <OctagonX size="18" />
+              Remove Selected
+            </button>
+          {/if}
 
-    <div style="margin-left: auto; display: flex; gap: 20px;">
-      {#if isRemove}
-        {#if enableSelections}
-          <button
-            class="cta-button cancel"
-            style="margin-right: 8px"
-            on:click={removeSelected}
-          >
+          <button class="cta-button cancel" on:click={removeRecords}>
             <OctagonX size="18" />
-            Remove Selected
+            Remove Checked
+          </button>
+        {:else}
+          <button class="cta-button cancel" on:click={replaceMetadata}>
+            <NotebookPenIcon size="18" />
+            <span
+              >Replace '{metadata.find}' with '{metadata?.replace || ""}'</span
+            >
           </button>
         {/if}
-
-        <button class="cta-button cancel" on:click={removeRecords}>
-          <OctagonX size="18" />
-          Remove Checked
-        </button>
-      {:else}
-        <button class="cta-button cancel" on:click={replaceMetadata}>
-          <NotebookPenIcon size="18" />
-          <span>Replace '{metadata.find}' with '{metadata?.replace || ""}'</span
-          >
-        </button>
-      {/if}
-    </div>
+      </div>
+    </span>
   </div>
 
   <div class="bar" style="margin-bottom: 16px; margin-top: 10px">
@@ -516,7 +542,7 @@
     {:else}
       <div class="grid-header">
         <div
-          class="grid-container rheader"
+          class="grid-container"
           style="grid-template-columns: {columnWidths[0]}px {columnWidths[1]}px {columnWidths[2]}px {columnWidths[3]}px;"
         >
           <!-- Checkbox Header -->
@@ -668,11 +694,27 @@
 </div>
 
 <style>
+  /* Update resizer styles */
+  .resizer {
+    width: 2px;
+    height: 100%; /* Changed from 40px to 100% to stretch full height */
+    background-color: var(--inactive-color);
+    position: absolute;
+    right: -1px; /* Adjusted to better align with column boundaries */
+    top: 0; /* Changed from -40px to 0 to align with top */
+    bottom: 0; /* Added to ensure it stretches full height */
+    cursor: col-resize;
+    z-index: 20;
+    opacity: 0.7;
+  }
+
+  /* Add these styles for the resizer container */
   .resizer-container {
     display: grid;
-    height: 5px;
     position: relative;
-    cursor: row-resize;
+    width: 100%;
+    height: 30px; /* Increase this if you want taller click areas */
+    margin-bottom: 5px;
   }
 
   .resizer-cell {
@@ -681,24 +723,14 @@
     height: 100%;
   }
 
-  .resizer {
-    width: 2px;
-    height: 40px;
-    background-color: var(--inactive-color);
-    position: absolute;
-    right: -6px; /* Changed from 0 to -4px to move right */
-    top: -40px;
-    cursor: col-resize;
-    z-index: 20;
-    opacity: 0.7;
+  .grid-container {
+    display: grid;
+    grid-template-columns:
+      var(--col1-width, 50px) var(--col2-width, 200px) var(--col3-width, 300px)
+      var(--col4-width, 150px);
+    width: 100%;
   }
 
-  .resizer:hover {
-    background-color: var(--hover-color);
-    opacity: 1;
-  }
-
-  /* Make sure the position is set correctly for grid items */
   .grid-item {
     position: relative;
     padding: 3px;
