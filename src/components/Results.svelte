@@ -509,7 +509,7 @@
     class="block inner"
     bind:this={containerElement}
     on:resize={handleResize}
-    style="margin-bottom: 15px"
+    style="margin-bottom: 15px;"
   >
     {#if loading}
       <p class="ellipsis">Loading data...</p>
@@ -540,7 +540,7 @@
         <!-- Resizers -->
         <div
           class="resizer-container"
-          style="grid-template-columns: {columnWidths[0]}px {columnWidths[1]}px {columnWidths[2]}px {columnWidths[3]}px;"
+          style="grid-template-columns: {columnWidths[0]}px {columnWidths[1]}px {columnWidths[2]}px {columnWidths[3]}px; "
         >
           <div class="resizer-cell">
             <div

@@ -180,10 +180,15 @@
                 console.log("Search Results:", result);
                 resultsStore.set(result); // ✅ Store the results in session storage
             })
-            .catch((error) => console.error(error));
+            .catch((error) => {
+                isSearching = false;
+                console.error(error);
+            });
 
-        isSearching = false;
-        activeTab = "results"; // Ensure this updates properly
+        if (isSearching) {
+            isSearching = false;
+            activeTab = "results"; // Ensure this updates properly
+        }
     }
 
     // Add these variables for search status
