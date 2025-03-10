@@ -1417,7 +1417,7 @@ impl Database {
             })
             .collect();
 
-        // Update database in separate step
+        // Update database in separate step - with better error handling
         if pref.store_waveforms && !fingerprints.is_empty() {
             app.emit(
                 "search-sub-status",
@@ -1429,29 +1429,97 @@ impl Database {
             )
             .ok();
 
-            for (i, (id, fingerprint, encoded)) in fingerprints.iter().enumerate() {
-                if i % RECORD_DIVISOR == 0 || i == 0 || i == fingerprints.len() - 1 {
-                    app.emit(
-                        "search-sub-status",
-                        SearchStatus {
-                            stage: "storing".into(),
-                            progress: ((i + 1) * 100 / fingerprints.len()) as u64,
-                            message: format!(
-                                "Storing fingerprints: {}/{}",
-                                i + 1,
-                                fingerprints.len()
-                            ),
-                        },
-                    )
-                    .ok();
+            // Process in smaller batches
+            const BATCH_SIZE: usize = 25; // Reduced batch size for more frequent commits
+
+            for (batch_idx, chunk) in fingerprints.chunks(BATCH_SIZE).enumerate() {
+                let batch_start = batch_idx * BATCH_SIZE;
+                let batch_end = batch_start + chunk.len();
+
+                app.emit(
+                    "search-sub-status",
+                    SearchStatus {
+                        stage: "storing".into(),
+                        progress: (batch_end * 100 / fingerprints.len()) as u64,
+                        message: format!(
+                            "Storing batch {}/{}: records {}-{}",
+                            batch_idx + 1,
+                            fingerprints.len().div_ceil(BATCH_SIZE),
+                            batch_start + 1,
+                            batch_end
+                        ),
+                    },
+                )
+                .ok();
+
+                // Get a new connection for each batch to avoid locks
+                if let Some(pool) = self.get_pool().await {
+                    // Start a transaction for the entire batch
+                    let mut tx = match pool.begin().await {
+                        Ok(tx) => tx,
+                        Err(e) => {
+                            println!("Failed to start transaction: {}", e);
+                            continue; // Skip this batch but continue with next one
+                        }
+                    };
+
+                    let mut batch_success = true;
+
+                    // Process each record in the batch
+                    for (id, fingerprint, encoded) in chunk {
+                        println!("Storing fingerprint for record ID {}", id);
+
+                        // Prepare both queries at once
+                        let fp_query =
+                            format!("UPDATE {} SET _fingerprint = ? WHERE rowid = ?", TABLE);
+                        let raw_query =
+                            format!("UPDATE {} SET _fingerprint_raw = ? WHERE rowid = ?", TABLE);
+
+                        // Execute fingerprint query
+                        if let Err(e) = sqlx::query(&fp_query)
+                            .bind(fingerprint)
+                            .bind(*id as i64)
+                            .execute(&mut *tx)
+                            .await
+                        {
+                            println!("Error storing fingerprint: {}", e);
+                            batch_success = false;
+                            break;
+                        }
+
+                        // Execute raw fingerprint query
+                        if let Err(e) = sqlx::query(&raw_query)
+                            .bind(encoded)
+                            .bind(*id as i64)
+                            .execute(&mut *tx)
+                            .await
+                        {
+                            println!("Error storing raw fingerprint: {}", e);
+                            batch_success = false;
+                            break;
+                        }
+                    }
+
+                    // Commit the transaction if all operations succeeded
+                    if batch_success {
+                        if let Err(e) = tx.commit().await {
+                            println!("Failed to commit batch: {}", e);
+                        } else {
+                            println!("Successfully stored batch {}", batch_idx + 1);
+                        }
+                    }
                 }
 
-                let _ = self
-                    .update_column_value(*id, "_fingerprint", fingerprint)
-                    .await;
-                let _ = self
-                    .update_column_value(*id, "_fingerprint_raw", encoded)
-                    .await;
+                // Update in-memory records for this batch regardless of DB success
+                for (id, fingerprint, encoded) in chunk {
+                    if let Some(record) = self.records.iter_mut().find(|r| r.id == *id) {
+                        record.audio_fingerprint = Some(Arc::from(fingerprint.as_str()));
+                        record.audio_fingerprint_raw = Some(Arc::from(encoded.as_str()));
+                    }
+                }
+
+                // Brief pause between batches to allow other operations
+                std::thread::sleep(std::time::Duration::from_millis(10));
             }
         }
 

@@ -124,19 +124,19 @@ pub fn hash_audio_content(file_path: &str, ignore_filetypes: bool) -> Result<Str
 
 fn hash_audio_bytes(audio_data: &[u8]) -> Result<String> {
     // For very large files, use downsampled hashing
-    if (audio_data.len() > 50_000_000) {
+    if audio_data.len() > 50_000_000 {
         // 50MB threshold
         return hash_downsampled_audio(audio_data);
     }
 
     // For large files, use chunked parallel hashing
-    if (audio_data.len() > 10_000_000) {
+    if audio_data.len() > 10_000_000 {
         // 10MB threshold
         return hash_large_audio_content(audio_data);
     }
 
     // For medium files, use rayon's par_chunks
-    if (audio_data.len() > 1_000_000) {
+    if audio_data.len() > 1_000_000 {
         // 1MB threshold
         return hash_medium_audio_content(audio_data);
     }

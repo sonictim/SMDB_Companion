@@ -82,6 +82,20 @@
     $: filteredColumns = $preferencesStore.columns.filter(
         (col) => !$preferencesStore.match_criteria.includes(col),
     );
+
+    function updateExactWaveform(value: boolean) {
+        preferencesStore.update((p) => ({
+            ...p,
+            exact_waveform: value,
+        }));
+    }
+
+    function updateSimilarityThreshold(value: number) {
+        preferencesStore.update((p) => ({
+            ...p,
+            similarity_threshold: value,
+        }));
+    }
 </script>
 
 <div class="grid-container">
@@ -163,7 +177,14 @@
             </span>
             <span>
                 Compare Algorithm:
-                <select class="select-field" bind:value={pref.exact_waveform}>
+                <select
+                    class="select-field"
+                    value={$preferencesStore.exact_waveform}
+                    on:change={(e) =>
+                        updateExactWaveform(
+                            (e.target as HTMLSelectElement).value === "true",
+                        )}
+                >
                     {#each [{ text: "Exact Match", val: true }, { text: "Relative Match", val: false }] as { text, val }}
                         <option value={val}>{text}</option>
                     {/each}
@@ -190,10 +211,17 @@
                         type="number"
                         class="input-field"
                         style="width: 100px"
-                        placeholder="0.0"
+                        placeholder="0.9"
                         step="0.1"
                         min="0"
-                        bind:value={pref.similarity_threshold}
+                        max="1"
+                        value={$preferencesStore.similarity_threshold}
+                        on:input={(e) =>
+                            updateSimilarityThreshold(
+                                parseFloat(
+                                    (e.target as HTMLInputElement).value,
+                                ),
+                            )}
                     />
                 </span>
             {/if}
