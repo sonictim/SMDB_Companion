@@ -46,6 +46,19 @@ trash = "5.2.2"
 chromaprint-rust = { version = "0.1.3" }
 base64 = "0.22.1"
 futures = "0.3.31"
+symphonia = { version = "0.5.4", features = [
+    "aac",
+    "mp3",
+    "flac",
+    "wav",
+    "vorbis",
+    "alac",
+    "isomp4",
+    "mkv",
+    "ogg",
+    "pcm",
+    "default",
+] }
 
 [profile.dev]
 incremental = true # Compile your binary in smaller steps.

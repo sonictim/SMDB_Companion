@@ -19,6 +19,13 @@ use rayon::prelude::*;
 use sha2::{Digest, Sha256};
 use std::process::{Command, Stdio};
 
+use symphonia::core::audio::SampleBuffer;
+use symphonia::core::codecs::DecoderOptions;
+use symphonia::core::formats::FormatOptions;
+use symphonia::core::io::MediaSourceStream;
+use symphonia::core::meta::MetadataOptions;
+use symphonia::core::probe::Hint;
+
 // Process pool size for FFmpeg conversions
 const MAX_FFMPEG_PROCESSES: usize = 4;
 // Downsampling factor for large audio files
@@ -260,7 +267,122 @@ fn read_audio_data(file_path: &str, ignore_filetypes: bool) -> Result<Vec<u8>> {
     }
 }
 
+// Replace your convert_to_raw_pcm function with this Symphonia implementation
 fn convert_to_raw_pcm(input_path: &str) -> Result<Vec<u8>> {
+    // Open the media source
+    let file = std::fs::File::open(input_path)?;
+    let mss = MediaSourceStream::new(Box::new(file), Default::default());
+
+    // Create a hint to help the format registry guess what format the file is
+    let mut hint = Hint::new();
+    if let Some(extension) = Path::new(input_path).extension() {
+        if let Some(ext_str) = extension.to_str() {
+            hint.with_extension(ext_str);
+        }
+    }
+
+    // Use the default options for format and metadata
+    let format_opts = FormatOptions {
+        enable_gapless: true,
+        ..Default::default()
+    };
+    let metadata_opts = MetadataOptions::default();
+
+    // Probe the media source to determine its format
+    let mut probed = symphonia::default::get_probe()
+        .format(&hint, mss, &format_opts, &metadata_opts)
+        .context("Failed to probe media format")?;
+
+    // Get the default track
+    let track = probed
+        .format
+        .default_track()
+        .ok_or_else(|| anyhow::anyhow!("No default track found"))?;
+
+    // Create a decoder for the track
+    let mut decoder = symphonia::default::get_codecs()
+        .make(&track.codec_params, &DecoderOptions::default())
+        .context("Failed to create decoder")?;
+
+    // Store the decoded PCM data
+    let mut pcm_data = Vec::with_capacity(1_000_000); // Pre-allocate 1MB
+
+    // Decode the track
+    let mut sample_count = 0;
+    let target_sample_rate = 48000; // Same as your FFmpeg setting
+
+    let mut resampler = None;
+
+    loop {
+        // Get the next packet from the format reader
+        let packet = match probed.format.next_packet() {
+            Ok(packet) => packet,
+            Err(symphonia::core::errors::Error::ResetRequired) => {
+                // Reset the decoder when required
+                let _ = decoder.reset();
+                continue;
+            }
+            Err(symphonia::core::errors::Error::IoError(ref e))
+                if e.kind() == std::io::ErrorKind::UnexpectedEof =>
+            {
+                // End of file reached
+                break;
+            }
+            Err(e) => {
+                // Some other error occurred
+                return Err(anyhow::anyhow!("Error reading packet: {}", e));
+            }
+        };
+
+        // Decode the packet
+        let decoded = match decoder.decode(&packet) {
+            Ok(decoded) => decoded,
+            Err(symphonia::core::errors::Error::IoError(_)) => {
+                // Skip decoding errors
+                continue;
+            }
+            Err(e) => {
+                eprintln!("Error decoding packet: {}", e);
+                continue;
+            }
+        };
+
+        // Get the decoded audio buffer
+        let spec = *decoded.spec();
+
+        // Create a buffer for the decoded audio
+        let mut sample_buffer = SampleBuffer::<f32>::new(decoded.capacity() as u64, spec);
+
+        // Copy the decoded audio to the sample buffer
+        sample_buffer.copy_interleaved_ref(decoded);
+        let samples = sample_buffer.samples();
+
+        // Convert the samples to f32 bytes and store in the PCM data
+        for &sample in samples {
+            pcm_data.extend_from_slice(&sample.to_le_bytes());
+            sample_count += 1;
+
+            // Apply a limit to prevent excessive memory usage (equivalent to 10 minutes at 48kHz)
+            if sample_count > 10 * 60 * target_sample_rate {
+                break;
+            }
+        }
+
+        // Break if we've hit our sample limit
+        if sample_count > 10 * 60 * target_sample_rate {
+            break;
+        }
+    }
+
+    Ok(pcm_data)
+}
+
+// Remove the get_ffmpeg_path function and FFMPEG_PATH static reference
+// Remove this:
+// static ref FFMPEG_PATH: Arc<String> = Arc::new(get_ffmpeg_path());
+// And the get_ffmpeg_path function
+
+fn convert_to_raw_pcm_old(input_path: &str) -> Result<Vec<u8>> {
     // Implement proper semaphore with MAX_FFMPEG_PROCESSES limit
     {
         let mut count = FFMPEG_SEMAPHORE.lock().unwrap();
