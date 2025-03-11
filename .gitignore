@@ -17,3 +17,7 @@ target_wasm
 waveform_log.txt
 
 .syncthing.*
+
+
+/.svelte-kit/output
+/build/_app/immutable
