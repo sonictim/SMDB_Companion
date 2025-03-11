@@ -132,6 +132,8 @@
         isSearching = !isSearching;
         if (isSearching) {
             search();
+        } else {
+            cancelSearch();
         }
     }
 

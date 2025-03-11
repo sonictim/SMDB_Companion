@@ -81,6 +81,10 @@ pub async fn search(
     pref: Preferences,
 ) -> Result<Vec<FileRecordFrontend>, String> {
     println!("Starting Search");
+    {
+        let state = state.lock().await;
+        *state.db.abort.write().await = false;
+    }
 
     // Count enabled algorithms
     let mut counter = 0;
@@ -111,6 +115,9 @@ pub async fn search(
     // Run first phase
     {
         let mut state = state.lock().await;
+        if *state.db.abort.read().await {
+            return Err(String::from("Search Canceled"));
+        }
 
         app.emit(
             "search-status",
@@ -128,6 +135,9 @@ pub async fn search(
 
     if enabled.dbcompare {
         let mut state = state.lock().await;
+        if *state.db.abort.read().await {
+            return Err(String::from("Search Canceled"));
+        }
         app.emit(
             "search-status",
             SearchStatus {
@@ -145,6 +155,9 @@ pub async fn search(
 
     if enabled.basic {
         let mut state = state.lock().await;
+        if *state.db.abort.read().await {
+            return Err(String::from("Search Canceled"));
+        }
         app.emit(
             "search-status",
             SearchStatus {
@@ -162,6 +175,9 @@ pub async fn search(
 
     if enabled.waveform {
         let mut state = state.lock().await;
+        if *state.db.abort.read().await {
+            return Err(String::from("Search Canceled"));
+        }
 
         app.emit(
             "search-status",
@@ -175,9 +191,15 @@ pub async fn search(
         counter += 1;
 
         // state.db.wave_search(&pref);
-        state.db.wave_search_chromaprint(&pref, &app).await;
+        let _ = state.db.wave_search_chromaprint(&pref, &app).await;
 
         // Emit progress update
+    }
+    {
+        let state = state.lock().await;
+        if *state.db.abort.read().await {
+            return Err(String::from("Search Canceled"));
+        }
     }
 
     // Final update
@@ -249,7 +271,7 @@ pub async fn find(
             record
         })
         .collect();
-    state.db.records = new_records.into();
+    state.db.records = new_records;
     println!("Search Ended");
     Ok(String::from("Find Success"))
 }
@@ -369,8 +391,17 @@ pub async fn get_columns(state: State<'_, Mutex<AppState>>) -> Result<Vec<Arc<st
 
 #[tauri::command]
 pub fn open_quicklook(file_path: String) {
-    Command::new("qlmanage")
-        .args(&["-p", &file_path])
+    let _ = Command::new("qlmanage")
+        .args(["-p", &file_path])
         .spawn()
-        .expect("Failed to open Quick Look");
+        .expect("Failed to open Quick Look")
+        .wait();
+}
+
+#[tauri::command]
+pub async fn cancel_search(state: State<'_, Mutex<AppState>>) -> Result<String, String> {
+    let state = state.lock().await;
+    *state.db.abort.write().await = true;
+
+    Ok(String::from("Search Canceled"))
 }
