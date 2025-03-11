@@ -21,3 +21,4 @@ waveform_log.txt
 
 /.svelte-kit/output
 /build/_app/immutable
+src-tauri/resources/chromaprint
