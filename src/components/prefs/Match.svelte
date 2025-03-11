@@ -223,6 +223,9 @@
                                 ),
                             )}
                     />
+                    <span class="inactive" style="margin-left: 5px">
+                        0-100%</span
+                    >
                 </span>
             {/if}
         </div>
