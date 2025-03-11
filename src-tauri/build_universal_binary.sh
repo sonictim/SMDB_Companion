@@ -4,6 +4,7 @@ APPLE_ID="soundguru@gmail.com"
 APPLE_PASSWORD="ndtq-xhsn-wxyl-lzji"
 APPLE_TEAM_ID="22D9VBGAWF"
 
+# export DYLD_LIBRARY_PATH=/Users/tfarrell/Documents/CODE/SMDB_Companion/src-tauri/resources/libchromaprint.dylib:$DYLD_LIBRARY_PATH
 
 export APPLE_CERTIFICATE
 export APPLE_ID
@@ -40,6 +41,21 @@ command -v cargo-bundle >/dev/null 2>&1 || { echo "cargo-bundle is required but 
 # Add the necessary targets
 rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
+# Add this check to your build script
+check_file() {
+  if [ ! -f "$1" ]; then
+    echo "ERROR: Required library file not found: $1"
+    exit 1
+  else
+    echo "Found library file: $1"
+  fi
+}
 
-# Build for both architectures
+# Check source files
+check_file "./resources/libchromaprint.a"
+
+# Add this to your build script before compiling
+echo "Checking library architecture:"
+lipo -info ./resources/libchromaprint.a
+
 cargo tauri build --target universal-apple-darwin

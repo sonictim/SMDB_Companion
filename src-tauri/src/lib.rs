@@ -4,7 +4,6 @@ use anyhow::Result;
 use base64::Engine;
 use base64::engine::general_purpose;
 use chrono::{Duration, NaiveDateTime};
-use futures::FutureExt;
 use once_cell::sync::Lazy;
 use rayon::prelude::*;
 pub use regex::Regex;
@@ -33,6 +32,7 @@ pub const RECORD_DIVISOR: usize = 1231;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    set_library_path();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
@@ -70,6 +70,42 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+
+// In your main.rs or lib.rs
+fn set_library_path() {
+    use std::env;
+    use std::path::Path;
+
+    if let Ok(exe_path) = env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            #[cfg(debug_assertions)]
+            let resources_path = Path::new(&exe_dir).join("../../../resources");
+
+            #[cfg(not(debug_assertions))]
+            let resources_path = if exe_dir.to_string_lossy().contains("MacOS") {
+                // We're inside a macOS bundle
+                Path::new(&exe_dir)
+                    .join("../Resources/resources")
+                    .to_path_buf()
+            } else {
+                Path::new(&exe_dir).join("resources").to_path_buf()
+            };
+
+            if resources_path.exists() {
+                println!("Found resources at: {}", resources_path.display());
+                let path_string = resources_path.to_string_lossy().to_string();
+                // env::set_var is unsafe because it modifies process-wide state
+                unsafe {
+                    env::set_var("DYLD_LIBRARY_PATH", &path_string);
+                }
+                println!("Set DYLD_LIBRARY_PATH to {}", path_string);
+            } else {
+                println!("Resources path not found at: {}", resources_path.display());
+            }
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct AppState {
     db: Database,
@@ -1134,7 +1170,7 @@ impl Database {
             )
             .ok();
 
-            if let Ok(result) = audiohash::get_chromaprint_fingerprint(&record.path) {
+            if let Ok(result) = audiohash::get_chromaprint_rust_fingerprint(&record.path) {
                 let (mut fingerprint, mut raw) = result;
                 if raw.is_empty() {
                     if *self.abort.read().await {
@@ -1348,7 +1384,7 @@ impl Database {
                 if chunk.len() == 4 {
                     let mut array = [0u8; 4];
                     array.copy_from_slice(chunk);
-                    fp_i.push(i32::from_le_bytes(array));
+                    fp_i.push(u32::from_le_bytes(array));
                 }
             }
 
@@ -1380,7 +1416,7 @@ impl Database {
                         if chunk.len() == 4 {
                             let mut array = [0u8; 4];
                             array.copy_from_slice(chunk);
-                            fp_j.push(i32::from_le_bytes(array));
+                            fp_j.push(u32::from_le_bytes(array));
                         }
                     }
 
@@ -1579,7 +1615,7 @@ impl Database {
                     }
 
                     // Generate fingerprint
-                    match audiohash::get_chromaprint_fingerprint(&record.path) {
+                    match audiohash::get_chromaprint_rust_fingerprint(&record.path) {
                         Ok((mut fingerprint, mut raw)) => {
                             if raw.is_empty() {
                                 // Fallback to hash if raw is empty
@@ -1788,7 +1824,7 @@ impl Database {
                         }
 
                         // 9. IO OPTIMIZATION: Use memory-mapped files for large files
-                        match audiohash::get_chromaprint_fingerprint(&record.path) {
+                        match audiohash::get_chromaprint_rust_fingerprint(&record.path) {
                             Ok((mut fingerprint, mut raw)) => {
                                 if raw.is_empty() {
                                     // 10. FAST FALLBACK: Use quick hash for small files
@@ -1972,7 +2008,7 @@ async fn store_fingerprints_batch(pool: &SqlitePool, fingerprints: &[(usize, Str
 }
 
 // Helper function to calculate similarity between two fingerprints
-fn calculate_similarity(fp1: &[i32], fp2: &[i32]) -> f64 {
+fn calculate_similarity(fp1: &[u32], fp2: &[u32]) -> f64 {
     let min_len = fp1.len().min(fp2.len());
     if min_len == 0 {
         return 0.0;
