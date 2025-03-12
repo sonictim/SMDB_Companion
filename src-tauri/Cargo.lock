@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "SMDB_Companion"
-version = "0.5.4"
+version = "0.5.6"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -13,6 +13,7 @@ dependencies = [
  "claxon",
  "crossbeam-channel",
  "dashmap",
+ "dirs",
  "futures",
  "hex",
  "hound",

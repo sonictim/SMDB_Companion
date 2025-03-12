@@ -1,23 +1,23 @@
 use std::env;
 use std::fs::File;
-use std::io::{BufReader, Read};
+use std::io::BufReader;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use std::thread;
-use std::time::Duration;
+// use std::thread;
+// use std::time::Duration;
 
 use anyhow::{Context, Result};
 use base64::{Engine as _, engine::general_purpose};
 // use chromaprint::Chromaprint;
-use chromaprint_rust::{Context as ChromaprintContext, Fingerprint};
+use chromaprint_rust::Context as ChromaprintContext;
 use claxon::FlacReader;
-use crossbeam_channel::{bounded, unbounded};
+// use crossbeam_channel::{bounded, unbounded};
 use hound::WavReader;
 use minimp3::{Decoder, Frame};
 use parking_lot::RwLock;
 use rayon::prelude::*;
 use sha2::{Digest, Sha256};
-use std::process::{Command, Stdio};
+use std::process::Command;
 
 use symphonia::core::audio::SampleBuffer;
 use symphonia::core::codecs::DecoderOptions;
@@ -27,7 +27,7 @@ use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 
 // Process pool size for FFmpeg conversions
-const MAX_FFMPEG_PROCESSES: usize = 4;
+// const MAX_FFMPEG_PROCESSES: usize = 4;
 // Downsampling factor for large audio files
 const DOWNSAMPLE_FACTOR: usize = 4;
 // Threshold for large files (in bytes)
@@ -49,50 +49,50 @@ lazy_static::lazy_static! {
     static ref FFMPEG_PATH: Arc<String> = Arc::new(get_ffmpeg_path());
 }
 
-pub fn process_files_in_parallel(
-    file_paths: &[String],
-    ignore_filetype: bool,
-) -> Vec<(String, Result<String>)> {
-    // Create a work queue with bounded capacity
-    let (sender, receiver) = bounded::<(String, bool)>(32);
-    let (result_sender, result_receiver) = unbounded::<(String, Result<String>)>();
+// pub fn process_files_in_parallel(
+//     file_paths: &[String],
+//     ignore_filetype: bool,
+// ) -> Vec<(String, Result<String>)> {
+//     // Create a work queue with bounded capacity
+//     let (sender, receiver) = bounded::<(String, bool)>(32);
+//     let (result_sender, result_receiver) = unbounded::<(String, Result<String>)>();
 
-    // Spawn worker threads based on CPU count
-    let num_workers = num_cpus::get();
-    let mut handles = Vec::with_capacity(num_workers);
+//     // Spawn worker threads based on CPU count
+//     let num_workers = num_cpus::get();
+//     let mut handles = Vec::with_capacity(num_workers);
 
-    for _ in 0..num_workers {
-        let receiver = receiver.clone();
-        let result_sender = result_sender.clone();
-        let handle = thread::spawn(move || {
-            while let Ok((path, ignore)) = receiver.recv() {
-                let hash_result = hash_audio_content(&path, ignore);
-                result_sender.send((path.to_string(), hash_result)).unwrap();
-            }
-        });
-        handles.push(handle);
-    }
+//     for _ in 0..num_workers {
+//         let receiver = receiver.clone();
+//         let result_sender = result_sender.clone();
+//         let handle = thread::spawn(move || {
+//             while let Ok((path, ignore)) = receiver.recv() {
+//                 let hash_result = hash_audio_content(&path, ignore);
+//                 result_sender.send((path.to_string(), hash_result)).unwrap();
+//             }
+//         });
+//         handles.push(handle);
+//     }
 
-    // Send work to the queue
-    for path in file_paths {
-        sender.send((path.clone(), ignore_filetype)).unwrap();
-    }
-    drop(sender); // Close sender to signal no more work
-    drop(result_sender); // Close original sender
+//     // Send work to the queue
+//     for path in file_paths {
+//         sender.send((path.clone(), ignore_filetype)).unwrap();
+//     }
+//     drop(sender); // Close sender to signal no more work
+//     drop(result_sender); // Close original sender
 
-    // Collect results
-    let mut results = Vec::with_capacity(file_paths.len());
-    while let Ok(result) = result_receiver.recv() {
-        results.push(result);
-    }
+//     // Collect results
+//     let mut results = Vec::with_capacity(file_paths.len());
+//     while let Ok(result) = result_receiver.recv() {
+//         results.push(result);
+//     }
 
-    // Wait for all threads to complete
-    for handle in handles {
-        handle.join().unwrap();
-    }
+//     // Wait for all threads to complete
+//     for handle in handles {
+//         handle.join().unwrap();
+//     }
 
-    results
-}
+//     results
+// }
 
 pub fn hash_audio_content(file_path: &str, ignore_filetypes: bool) -> Result<String> {
     // Check if file exists and get its modified time
@@ -311,7 +311,8 @@ fn convert_to_raw_pcm(input_path: &str) -> Result<Vec<u8>> {
     let mut sample_count = 0;
     let target_sample_rate = 48000; // Same as your FFmpeg setting
 
-    let mut resampler = None;
+    // We'll leave resampling for a future implementation if needed
+    // let mut resampler = None;
 
     loop {
         // Get the next packet from the format reader
@@ -319,7 +320,7 @@ fn convert_to_raw_pcm(input_path: &str) -> Result<Vec<u8>> {
             Ok(packet) => packet,
             Err(symphonia::core::errors::Error::ResetRequired) => {
                 // Reset the decoder when required
-                let _ = decoder.reset();
+                decoder.reset();
                 continue;
             }
             Err(symphonia::core::errors::Error::IoError(ref e))
@@ -382,65 +383,65 @@ fn convert_to_raw_pcm(input_path: &str) -> Result<Vec<u8>> {
 // static ref FFMPEG_PATH: Arc<String> = Arc::new(get_ffmpeg_path());
 // And the get_ffmpeg_path function
 
-fn convert_to_raw_pcm_old(input_path: &str) -> Result<Vec<u8>> {
-    // Implement proper semaphore with MAX_FFMPEG_PROCESSES limit
-    {
-        let mut count = FFMPEG_SEMAPHORE.lock().unwrap();
-        while *count >= MAX_FFMPEG_PROCESSES {
-            // Release lock and wait before retrying
-            drop(count);
-            thread::sleep(Duration::from_millis(50));
-            count = FFMPEG_SEMAPHORE.lock().unwrap();
-        }
-        *count += 1;
-    }
+// fn convert_to_raw_pcm_old(input_path: &str) -> Result<Vec<u8>> {
+//     // Implement proper semaphore with MAX_FFMPEG_PROCESSES limit
+//     {
+//         let mut count = FFMPEG_SEMAPHORE.lock().unwrap();
+//         while *count >= MAX_FFMPEG_PROCESSES {
+//             // Release lock and wait before retrying
+//             drop(count);
+//             thread::sleep(Duration::from_millis(50));
+//             count = FFMPEG_SEMAPHORE.lock().unwrap();
+//         }
+//         *count += 1;
+//     }
 
-    // Ensure we decrement the counter when done
-    struct SemaphoreGuard;
-    impl Drop for SemaphoreGuard {
-        fn drop(&mut self) {
-            let mut count = FFMPEG_SEMAPHORE.lock().unwrap();
-            if *count > 0 {
-                *count -= 1;
-            }
-        }
-    }
-    let _guard = SemaphoreGuard;
+//     // Ensure we decrement the counter when done
+//     struct SemaphoreGuard;
+//     impl Drop for SemaphoreGuard {
+//         fn drop(&mut self) {
+//             let mut count = FFMPEG_SEMAPHORE.lock().unwrap();
+//             if *count > 0 {
+//                 *count -= 1;
+//             }
+//         }
+//     }
+//     let _guard = SemaphoreGuard;
 
-    let ffmpeg_binary_path = FFMPEG_PATH.as_str();
-    let ffmpeg_command = Command::new(ffmpeg_binary_path)
-        .arg("-i")
-        .arg(input_path)
-        .arg("-ar")
-        .arg("48000")
-        .arg("-ac")
-        .arg("1")
-        .arg("-f")
-        .arg("f32le")
-        .arg("-vn")
-        .arg("-map_metadata")
-        .arg("-1")
-        // Add thread count limit to avoid overloading system
-        .arg("-threads")
-        .arg("2")
-        // Add timeout for stuck processes
-        .arg("-t")
-        .arg("300") // 5-minute maximum processing time
-        .arg("-")
-        .stderr(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .context("Failed to start FFmpeg")?;
+//     let ffmpeg_binary_path = FFMPEG_PATH.as_str();
+//     let ffmpeg_command = Command::new(ffmpeg_binary_path)
+//         .arg("-i")
+//         .arg(input_path)
+//         .arg("-ar")
+//         .arg("48000")
+//         .arg("-ac")
+//         .arg("1")
+//         .arg("-f")
+//         .arg("f32le")
+//         .arg("-vn")
+//         .arg("-map_metadata")
+//         .arg("-1")
+//         // Add thread count limit to avoid overloading system
+//         .arg("-threads")
+//         .arg("2")
+//         // Add timeout for stuck processes
+//         .arg("-t")
+//         .arg("300") // 5-minute maximum processing time
+//         .arg("-")
+//         .stderr(Stdio::piped())
+//         .stdout(Stdio::piped())
+//         .spawn()
+//         .context("Failed to start FFmpeg")?;
 
-    let mut ffmpeg_process = ffmpeg_command
-        .stdout
-        .ok_or_else(|| anyhow::anyhow!("Failed to open FFmpeg stdout"))?;
+//     let mut ffmpeg_process = ffmpeg_command
+//         .stdout
+//         .ok_or_else(|| anyhow::anyhow!("Failed to open FFmpeg stdout"))?;
 
-    let mut pcm_data = Vec::with_capacity(1_000_000); // Pre-allocate 1MB
-    ffmpeg_process.read_to_end(&mut pcm_data)?;
+//     let mut pcm_data = Vec::with_capacity(1_000_000); // Pre-allocate 1MB
+//     ffmpeg_process.read_to_end(&mut pcm_data)?;
 
-    Ok(pcm_data)
-}
+//     Ok(pcm_data)
+// }
 
 fn read_flac_audio_data(file: &File) -> Result<Vec<u8>> {
     let mut reader = BufReader::with_capacity(65536, file); // 64KB buffer
@@ -556,15 +557,15 @@ fn read_mp3_audio_data(file: &File) -> Result<Vec<u8>> {
 }
 
 // Utility function to measure performance
-pub fn measure_performance<F, T>(func: F) -> (T, Duration)
-where
-    F: FnOnce() -> T,
-{
-    let start = std::time::Instant::now();
-    let result = func();
-    let duration = start.elapsed();
-    (result, duration)
-}
+// pub fn measure_performance<F, T>(func: F) -> (T, Duration)
+// where
+//     F: FnOnce() -> T,
+// {
+//     let start = std::time::Instant::now();
+//     let result = func();
+//     let duration = start.elapsed();
+//     (result, duration)
+// }
 
 // pub fn get_chromaprint_fingerprint<P: AsRef<Path>>(file_path: P) -> Result<(String, String)> {
 //     let path_str = file_path.as_ref().to_string_lossy().to_string();
