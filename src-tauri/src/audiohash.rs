@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
 use base64::{Engine as _, engine::general_purpose};
-// use chromaprint::Chromaprint;
+use chromaprint::Chromaprint;
 use chromaprint_rust::Context as ChromaprintContext;
 use claxon::FlacReader;
 // use crossbeam_channel::{bounded, unbounded};
@@ -567,63 +567,7 @@ fn read_mp3_audio_data(file: &File) -> Result<Vec<u8>> {
 //     (result, duration)
 // }
 
-// pub fn get_chromaprint_fingerprint<P: AsRef<Path>>(file_path: P) -> Result<(String, String)> {
-//     let path_str = file_path.as_ref().to_string_lossy().to_string();
-//     println!("Generating Chromaprint fingerprint for: {}", path_str);
-
-//     // Get PCM data (reuse your existing function)
-//     let pcm_data = convert_to_raw_pcm(&path_str)?;
-//     println!("Got PCM data, length: {} bytes", pcm_data.len());
-
-//     // Convert to i16 samples
-//     let samples: Vec<i16> = pcm_data
-//         .chunks(4)
-//         .filter_map(|chunk| {
-//             if chunk.len() == 4 {
-//                 let bytes = [chunk[0], chunk[1], chunk[2], chunk[3]];
-//                 let float = f32::from_le_bytes(bytes);
-//                 Some((float * 32767.0) as i16)
-//             } else {
-//                 None
-//             }
-//         })
-//         .collect();
-
-//     println!("Converted to {} i16 samples", samples.len());
-
-//     let mut c = Chromaprint::new();
-//     c.start(16000, 1);
-//     c.feed(&samples);
-//     c.finish();
-
-//     // Get both fingerprint formats
-//     let text_fingerprint = c.fingerprint();
-//     let raw_fingerprint = c.raw_fingerprint();
-
-//     // Base64-encode the raw fingerprint (more efficient for database storage)
-//     let encoded = raw_fingerprint.as_ref().map_or(String::new(), |v| {
-//         // Convert Vec<i32> to bytes before encoding
-//         let bytes: Vec<u8> = v.iter().flat_map(|&x| x.to_le_bytes()).collect();
-//         general_purpose::STANDARD.encode(bytes)
-//     });
-
-//     // println!(
-//     //     "Fingerprint generated: {}",
-//     //     text_fingerprint
-//     //         .as_ref()
-//     //         .unwrap_or(&"did not unwrap fingerprint".to_string())
-//     // );
-//     // println!(
-//     //     "  Length (raw): {} bytes",
-//     //     raw_fingerprint.as_ref().map_or(0, |v| v.len())
-//     // );
-//     // println!("  Encoded (B64): {} chars", encoded.len());
-
-//     // Return the encoded version for database storage
-//     Ok((text_fingerprint.unwrap_or_default(), encoded))
-// }
-
-pub fn get_chromaprint_rust_fingerprint<P: AsRef<Path>>(file_path: P) -> Result<(String, String)> {
+pub fn get_chromaprint_fingerprint<P: AsRef<Path>>(file_path: P) -> Result<(String, String)> {
     let path_str = file_path.as_ref().to_string_lossy().to_string();
     println!("Generating Chromaprint fingerprint for: {}", path_str);
 
@@ -647,52 +591,82 @@ pub fn get_chromaprint_rust_fingerprint<P: AsRef<Path>>(file_path: P) -> Result<
 
     println!("Converted to {} i16 samples", samples.len());
 
-    let mut c = ChromaprintContext::new(chromaprint_rust::Algorithm::default());
-    let _ = c.start(16000, 1);
-    let _ = c.feed(&samples);
-    let _ = c.finish();
-
-    let mut text_fingerprint = String::new();
-    let mut raw_fingerprint_data: Vec<u32> = Vec::new();
-    // let mut encoded_fingerprint = String::new();
+    let mut c = Chromaprint::new();
+    c.start(48000, 1);
+    c.feed(&samples);
+    c.finish();
 
     // Get both fingerprint formats
-    if let Ok(fingerprint) = c.get_fingerprint_hash() {
-        let fingerprint = fingerprint.get();
-        text_fingerprint = fingerprint.to_string();
-    };
-    if let Ok(fingerprint) = c.get_fingerprint_raw() {
-        raw_fingerprint_data = fingerprint.get().to_vec();
-    };
-
-    // if let Ok(Fingerprint) = c.get_fingerprint_base64() {
-    //     encoded_fingerprint = Fingerprint.get().unwrap_or_default().to_string();
-    // }
+    let text_fingerprint = c.fingerprint();
+    let raw_fingerprint = c.raw_fingerprint();
 
     // Base64-encode the raw fingerprint (more efficient for database storage)
-    let encoded = if !raw_fingerprint_data.is_empty() {
-        // Convert Vec<u32> to bytes before encoding
-        let bytes: Vec<u8> = raw_fingerprint_data
-            .iter()
-            .flat_map(|&x| x.to_le_bytes())
-            .collect();
+    let encoded = raw_fingerprint.as_ref().map_or(String::new(), |v| {
+        // Convert Vec<i32> to bytes before encoding
+        let bytes: Vec<u8> = v.iter().flat_map(|&x| x.to_le_bytes()).collect();
         general_purpose::STANDARD.encode(bytes)
-    } else {
-        String::new()
-    };
+    });
 
-    // println!(
-    //     "Fingerprint generated: {}",
-    //     text_fingerprint
-    //         .as_ref()
-    //         .unwrap_or(&"did not unwrap fingerprint".to_string())
-    // );
-    // println!(
-    //     "  Length (raw): {} bytes",
-    //     raw_fingerprint.as_ref().map_or(0, |v| v.len())
-    // );
-    // println!("  Encoded (B64): {} chars", encoded.len());
-
-    // Return the encoded version for database storage
-    Ok((text_fingerprint, encoded))
+    Ok((text_fingerprint.unwrap_or_default(), encoded))
 }
+
+// pub fn get_chromaprint_rust_fingerprint<P: AsRef<Path>>(file_path: P) -> Result<(String, String)> {
+//     let path_str = file_path.as_ref().to_string_lossy().to_string();
+//     println!("Generating Chromaprint fingerprint for: {}", path_str);
+
+//     // Get PCM data (reuse your existing function)
+//     let pcm_data = convert_to_raw_pcm(&path_str)?;
+//     println!("Got PCM data, length: {} bytes", pcm_data.len());
+
+//     // Convert to i16 samples
+//     let samples: Vec<i16> = pcm_data
+//         .chunks(4)
+//         .filter_map(|chunk| {
+//             if chunk.len() == 4 {
+//                 let bytes = [chunk[0], chunk[1], chunk[2], chunk[3]];
+//                 let float = f32::from_le_bytes(bytes);
+//                 Some((float * 32767.0) as i16)
+//             } else {
+//                 None
+//             }
+//         })
+//         .collect();
+
+//     println!("Converted to {} i16 samples", samples.len());
+
+//     let mut c = ChromaprintContext::new(chromaprint_rust::Algorithm::default());
+//     let _ = c.start(48000, 1);
+//     let _ = c.feed(&samples);
+//     let _ = c.finish();
+
+//     let mut text_fingerprint = String::new();
+//     let mut raw_fingerprint_data: Vec<u32> = Vec::new();
+//     // let mut encoded_fingerprint = String::new();
+
+//     // Get both fingerprint formats
+//     if let Ok(fingerprint) = c.get_fingerprint_hash() {
+//         let fingerprint = fingerprint.get();
+//         text_fingerprint = fingerprint.to_string();
+//     };
+//     if let Ok(fingerprint) = c.get_fingerprint_raw() {
+//         raw_fingerprint_data = fingerprint.get().to_vec();
+//     };
+
+//     // if let Ok(Fingerprint) = c.get_fingerprint_base64() {
+//     //     encoded_fingerprint = Fingerprint.get().unwrap_or_default().to_string();
+//     // }
+
+//     // Base64-encode the raw fingerprint (more efficient for database storage)
+//     let encoded = if !raw_fingerprint_data.is_empty() {
+//         // Convert Vec<u32> to bytes before encoding
+//         let bytes: Vec<u8> = raw_fingerprint_data
+//             .iter()
+//             .flat_map(|&x| x.to_le_bytes())
+//             .collect();
+//         general_purpose::STANDARD.encode(bytes)
+//     } else {
+//         String::new()
+//     };
+
+//     Ok((text_fingerprint, encoded))
+// }

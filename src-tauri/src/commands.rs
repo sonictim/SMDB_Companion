@@ -168,7 +168,7 @@ pub async fn search(
         )
         .unwrap();
         counter += 1;
-        state.db.dupe_search(&pref, &app);
+        state.db.dupe_search(&pref, &enabled, &app);
 
         // Emit progress update
     }

@@ -152,7 +152,8 @@ impl Preferences {
             } else {
                 b.get_filename() == b.root.as_ref()
             };
-            b_root.cmp(&a_root)
+            // Reverse the comparison to prioritize matches
+            a_root.cmp(&b_root).reverse()
         });
 
         vec.sort_by(|a, b| {
@@ -564,29 +565,29 @@ impl FileRecord {
         let mut name = Cow::Borrowed(self.get_filestem());
 
         // Optimize tag processing with minimal allocations
-        if enabled.audiosuite {
-            if let Some((base, _)) = pref.tags.iter().find_map(|tag| name.split_once(&**tag)) {
-                name = Cow::Owned(base.to_string());
-            }
+        if let Some((base, _)) = pref.tags.iter().find_map(|tag| name.split_once(&**tag)) {
+            name = Cow::Owned(base.to_string());
         }
+        // if enabled.audiosuite {
+        // }
 
         // Use const array to avoid repeated allocations
         const COPY_TAGS: [&str; 6] = [" copy.", " Copy.", " COPY.", ".copy.", ".Copy.", ".COPY."];
 
-        if enabled.filename {
-            // Find and split with minimal allocations
-            if let Some((base, _)) = COPY_TAGS.iter().find_map(|&tag| name.split_once(tag)) {
-                name = Cow::Owned(base.to_string());
-            }
-
-            // Efficient regex capture
-            name = Cow::Owned(
-                FILENAME_REGEX
-                    .captures(&name)
-                    .and_then(|caps| caps.name("base").map(|m| m.as_str().to_string()))
-                    .unwrap_or_else(|| name.into_owned()),
-            );
+        // Find and split with minimal allocations
+        if let Some((base, _)) = COPY_TAGS.iter().find_map(|&tag| name.split_once(tag)) {
+            name = Cow::Owned(base.to_string());
         }
+
+        // Efficient regex capture
+        name = Cow::Owned(
+            FILENAME_REGEX
+                .captures(&name)
+                .and_then(|caps| caps.name("base").map(|m| m.as_str().to_string()))
+                .unwrap_or_else(|| name.into_owned()),
+        );
+        // if enabled.filename {
+        // }
 
         // Minimize string allocations for root
         self.root = if pref.ignore_filetype {
@@ -1053,7 +1054,7 @@ impl Database {
         .ok();
     }
 
-    fn dupe_search(&mut self, pref: &Preferences, app: &AppHandle) {
+    fn dupe_search(&mut self, pref: &Preferences, enabled: &Enabled, app: &AppHandle) {
         println!("Starting Duplicate Search");
 
         let mut file_groups: HashMap<Vec<Arc<str>>, Vec<FileRecord>> =
@@ -1120,17 +1121,22 @@ impl Database {
                 pref.sort_vec(&mut records);
 
                 records.iter_mut().enumerate().for_each(|(i, record)| {
-                    if i > 0 {
-                        record.algorithm.remove(&A::Keep);
-                    }
-
                     if &*record.root == record.get_filename()
                         || &*record.root == record.get_filestem()
                     {
                         record.algorithm.insert(A::Basic);
+                        if i > 0 {
+                            record.algorithm.remove(&A::Keep);
+                        }
                     } else if pref.check_tags(record.get_filestem()) {
                         record.algorithm.insert(A::Tags);
+                        if i > 0 && enabled.audiosuite {
+                            record.algorithm.remove(&A::Keep);
+                        }
                     } else {
+                        if i > 0 && enabled.filename {
+                            record.algorithm.remove(&A::Keep);
+                        }
                         record.algorithm.insert(A::SimilarFilename);
                     }
                 });
@@ -1324,7 +1330,13 @@ impl Database {
                     .ok();
                 }
 
-                if records.len() < 2 {
+                if records.len() < 2
+                // || records
+                //     .iter()
+                //     .filter(|r| !r.algorithm.contains(&A::Keep))
+                //     .count()
+                //     < 2
+                {
                     return records;
                 }
                 pref.sort_vec(&mut records);
@@ -1358,8 +1370,9 @@ impl Database {
     }
 
     async fn similar_match(&mut self, pref: &Preferences, app: &AppHandle) -> Result<(), String> {
+        // Use lower default threshold if needed
         let threshold = pref.similarity_threshold / 100.0;
-        // Similarity-based comparison
+
         app.emit(
             "search-sub-status",
             StatusUpdate {
@@ -1370,12 +1383,10 @@ impl Database {
         )
         .ok();
 
-        println!(
-            "Starting similarity-based audio comparison with threshold {}",
-            pref.similarity_threshold
-        );
+        // Keep track of all records, not just ones with fingerprints
+        let all_records = self.records.clone();
 
-        // First, filter records that have valid raw fingerprints
+        // Filter records with valid fingerprints
         let records_with_fingerprints: Vec<&FileRecord> = self
             .records
             .iter()
@@ -1387,187 +1398,299 @@ impl Database {
             })
             .collect();
 
-        if *self.abort.read().await {
-            return Err("Aborted".to_string());
-        };
+        println!(
+            "Found {} records with valid fingerprints",
+            records_with_fingerprints.len()
+        );
 
-        let total_records = records_with_fingerprints.len();
-        println!("Found {} records with valid fingerprints", total_records);
+        // USE the build_similarity_groups function!
+        let similarity_groups = build_similarity_groups(&records_with_fingerprints, threshold);
 
-        // Group similar fingerprints
-        let mut processed = HashSet::new();
-        let mut similar_groups: Vec<Vec<FileRecord>> = Vec::new();
+        // Process groups
+        let mut processed_records = Vec::with_capacity(self.records.len());
+        let mut processed_ids = HashSet::new();
 
-        // Process each record
-        for i in 0..total_records {
-            let idx = records_with_fingerprints[i].id;
-            if *self.abort.read().await {
-                return Err("Aborted".to_string());
-            };
-            // Skip if already processed
-            if processed.contains(&idx) {
-                continue;
-            }
-
-            if i % RECORD_DIVISOR == 0 || i == 0 || i == total_records - 1 {
-                app.emit(
-                    "search-sub-status",
-                    StatusUpdate {
-                        stage: "similarity".into(),
-                        progress: ((i + 1) * 100 / total_records) as u64,
-                        message: format!("Comparing fingerprints: {}/{}", i + 1, total_records),
-                    },
-                )
-                .ok();
-            }
-
-            let record_i = records_with_fingerprints[i];
-            let raw_fp_i = record_i.audio_fingerprint_raw.as_ref().unwrap();
-
-            // Skip empty fingerprints
-            if raw_fp_i.is_empty() {
-                continue;
-            }
-
-            // Decode the base64 fingerprint
-            let fp_bytes_i = match general_purpose::STANDARD.decode(raw_fp_i.as_ref()) {
-                Ok(bytes) => bytes,
-                Err(_) => continue,
-            };
-
-            // Convert bytes to i32 array
-            let mut fp_i = Vec::with_capacity(fp_bytes_i.len() / 4);
-            for chunk in fp_bytes_i.chunks_exact(4) {
-                if chunk.len() == 4 {
-                    let mut array = [0u8; 4];
-                    array.copy_from_slice(chunk);
-                    fp_i.push(u32::from_le_bytes(array));
-                }
-            }
-
-            let mut group = vec![record_i.clone()];
-            processed.insert(idx);
-
-            // Compare with all remaining records
-            for j in (i + 1)..total_records {
-                if *self.abort.read().await {
-                    return Err("Aborted".to_string());
-                };
-                let record_j = records_with_fingerprints[j];
-                let j_idx = record_j.id;
-
-                if processed.contains(&j_idx) {
-                    continue;
-                }
-
-                if let Some(raw_fp_j) = &record_j.audio_fingerprint_raw {
-                    // Decode fingerprint
-                    let fp_bytes_j = match general_purpose::STANDARD.decode(raw_fp_j.as_ref()) {
-                        Ok(bytes) => bytes,
-                        Err(_) => continue,
-                    };
-
-                    // Convert bytes to i32 array
-                    let mut fp_j = Vec::with_capacity(fp_bytes_j.len() / 4);
-                    for chunk in fp_bytes_j.chunks_exact(4) {
-                        if chunk.len() == 4 {
-                            let mut array = [0u8; 4];
-                            array.copy_from_slice(chunk);
-                            fp_j.push(u32::from_le_bytes(array));
-                        }
-                    }
-
-                    // Calculate similarity
-                    let similarity = calculate_similarity(&fp_i, &fp_j);
-
-                    // Debug print some similarities to check
-                    if j % 100 == 0 {
-                        println!(
-                            "Similarity between {} and {}: {}",
-                            record_i.get_filename(),
-                            record_j.get_filename(),
-                            similarity
-                        );
-                    }
-
-                    if similarity >= threshold {
-                        group.push(record_j.clone());
-                        processed.insert(j_idx);
-                    }
-                }
-            }
-
-            // Only add groups with more than one record
+        // Add all records from similarity groups
+        for group in similarity_groups.values() {
             if group.len() > 1 {
-                println!("Found similar group with {} records", group.len());
-                similar_groups.push(group);
-            }
-        }
+                // Sort the group by your preservation rules
+                let mut records = group
+                    .iter()
+                    .filter_map(|(id, _)| all_records.iter().find(|r| r.id == *id).cloned())
+                    .collect::<Vec<_>>();
 
-        println!("Found {} groups with similar audio", similar_groups.len());
+                pref.sort_vec(&mut records);
 
-        // Process the groups
-        let mut result_records = Vec::with_capacity(self.records.len());
-
-        // First add all records that weren't processed (no fingerprints or not in any group)
-        for record in &self.records {
-            if !processed.contains(&record.id) {
-                result_records.push(record.clone());
-            }
-        }
-
-        // Process each group
-        let groups_count = similar_groups.len();
-        for (i, mut group) in similar_groups.into_iter().enumerate() {
-            if *self.abort.read().await {
-                return Err("Aborted".to_string());
-            };
-            if i % RECORD_DIVISOR == 0 || i == 0 || i == groups_count - 1 {
-                app.emit(
-                    "search-sub-status",
-                    StatusUpdate {
-                        stage: "marking".into(),
-                        progress: ((i + 1) * 100 / groups_count) as u64,
-                        message: format!(
-                            "Processing similar audio group: {}/{}",
-                            i + 1,
-                            groups_count
-                        ),
-                    },
-                )
-                .ok();
-            }
-
-            // Sort according to preservation rules
-            pref.sort_vec(&mut group);
-
-            // Mark all but the first as duplicates
-            for (idx, mut record) in group.into_iter().enumerate() {
-                if idx > 0 {
-                    record.algorithm.remove(&A::Keep);
+                // Mark all but first as duplicates
+                for (idx, mut record) in records.into_iter().enumerate() {
+                    if idx > 0 {
+                        record.algorithm.remove(&A::Keep);
+                    }
+                    record.algorithm.insert(A::Waveforms);
+                    // Insert ID into processed_ids before moving record to processed_records
+                    let id = record.id;
+                    processed_records.push(record);
+                    processed_ids.insert(id);
                 }
-                record.algorithm.insert(A::Waveforms);
-                result_records.push(record);
             }
         }
 
-        self.records = result_records;
+        // Add any records not in a group (CRITICAL!)
+        for record in all_records {
+            if !processed_ids.contains(&record.id) {
+                processed_records.push(record);
+            }
+        }
 
-        app.emit(
-            "search-sub-status",
-            StatusUpdate {
-                stage: "complete".into(),
-                progress: 100,
-                message: format!(
-                    "Similarity analysis complete: found {} duplicate groups",
-                    groups_count
-                ),
-            },
-        )
-        .ok();
+        self.records = processed_records;
 
         Ok(())
     }
+    // async fn similar_match_old(
+    //     &mut self,
+    //     pref: &Preferences,
+    //     app: &AppHandle,
+    // ) -> Result<(), String> {
+    //     let threshold = pref.similarity_threshold / 100.0;
+
+    //     app.emit(
+    //         "search-sub-status",
+    //         StatusUpdate {
+    //             stage: "similarity".into(),
+    //             progress: 0,
+    //             message: "Starting similarity-based audio comparison...".into(),
+    //         },
+    //     )
+    //     .ok();
+
+    //     // IMPORTANT: Preserve records without valid fingerprints
+    //     let records_without_fingerprints: Vec<FileRecord> = self
+    //         .records
+    //         .iter()
+    //         .filter(|record| {
+    //             record.audio_fingerprint_raw.is_none()
+    //                 || record
+    //                     .audio_fingerprint_raw
+    //                     .as_ref()
+    //                     .map_or(true, |fp| fp.is_empty())
+    //         })
+    //         .cloned()
+    //         .collect();
+
+    //     println!(
+    //         "Found {} records without valid fingerprints",
+    //         records_without_fingerprints.len()
+    //     );
+
+    //     // Filter records with valid fingerprints
+    //     let records_with_fingerprints: Vec<&FileRecord> = self
+    //         .records
+    //         .iter()
+    //         .filter(|record| {
+    //             record
+    //                 .audio_fingerprint_raw
+    //                 .as_ref()
+    //                 .is_some_and(|fp| !fp.is_empty())
+    //         })
+    //         .collect();
+
+    //     if *self.abort.read().await {
+    //         return Err("Aborted".to_string());
+    //     };
+
+    //     let total_records = records_with_fingerprints.len();
+    //     println!("Found {} records with valid fingerprints", total_records);
+
+    //     // Group similar fingerprints
+    //     let mut processed = HashSet::new();
+    //     let mut similar_groups: Vec<Vec<FileRecord>> = Vec::new();
+
+    //     // Process each record
+    //     for i in 0..total_records {
+    //         let idx = records_with_fingerprints[i].id;
+    //         if *self.abort.read().await {
+    //             return Err("Aborted".to_string());
+    //         };
+    //         // Skip if already processed
+    //         if processed.contains(&idx) {
+    //             continue;
+    //         }
+
+    //         if i % RECORD_DIVISOR == 0 || i == 0 || i == total_records - 1 {
+    //             app.emit(
+    //                 "search-sub-status",
+    //                 StatusUpdate {
+    //                     stage: "similarity".into(),
+    //                     progress: ((i + 1) * 100 / total_records) as u64,
+    //                     message: format!("Comparing fingerprints: {}/{}", i + 1, total_records),
+    //                 },
+    //             )
+    //             .ok();
+    //         }
+
+    //         let record_i = records_with_fingerprints[i];
+    //         let raw_fp_i = record_i.audio_fingerprint_raw.as_ref().unwrap();
+
+    //         // Skip empty fingerprints
+    //         if raw_fp_i.is_empty() {
+    //             continue;
+    //         }
+
+    //         // Decode the base64 fingerprint
+    //         let fp_bytes_i = match general_purpose::STANDARD.decode(raw_fp_i.as_ref()) {
+    //             Ok(bytes) => bytes,
+    //             Err(_) => continue,
+    //         };
+
+    //         // Convert bytes to i32 array
+    //         let mut fp_i = Vec::with_capacity(fp_bytes_i.len() / 4);
+    //         for chunk in fp_bytes_i.chunks_exact(4) {
+    //             if chunk.len() == 4 {
+    //                 let mut array = [0u8; 4];
+    //                 array.copy_from_slice(chunk);
+    //                 fp_i.push(u32::from_le_bytes(array));
+    //             }
+    //         }
+
+    //         let mut group = vec![record_i.clone()];
+    //         processed.insert(idx);
+
+    //         // Compare with all remaining records
+    //         for j in (i + 1)..total_records {
+    //             if *self.abort.read().await {
+    //                 return Err("Aborted".to_string());
+    //             };
+    //             let record_j = records_with_fingerprints[j];
+    //             let j_idx = record_j.id;
+
+    //             if processed.contains(&j_idx) {
+    //                 continue;
+    //             }
+
+    //             if let Some(raw_fp_j) = &record_j.audio_fingerprint_raw {
+    //                 // Decode fingerprint
+    //                 let fp_bytes_j = match general_purpose::STANDARD.decode(raw_fp_j.as_ref()) {
+    //                     Ok(bytes) => bytes,
+    //                     Err(_) => continue,
+    //                 };
+
+    //                 // Convert bytes to i32 array
+    //                 let mut fp_j = Vec::with_capacity(fp_bytes_j.len() / 4);
+    //                 for chunk in fp_bytes_j.chunks_exact(4) {
+    //                     if chunk.len() == 4 {
+    //                         let mut array = [0u8; 4];
+    //                         array.copy_from_slice(chunk);
+    //                         fp_j.push(u32::from_le_bytes(array));
+    //                     }
+    //                 }
+
+    //                 // Calculate similarity
+    //                 let similarity = calculate_similarity(&fp_i, &fp_j);
+
+    //                 // Debug print some similarities to check
+    //                 if j % 100 == 0 {
+    //                     println!(
+    //                         "Similarity between {} and {}: {}",
+    //                         record_i.get_filename(),
+    //                         record_j.get_filename(),
+    //                         similarity
+    //                     );
+    //                 }
+
+    //                 if similarity >= threshold {
+    //                     group.push(record_j.clone());
+    //                     processed.insert(j_idx);
+    //                 }
+    //             }
+    //         }
+
+    //         // Only add groups with more than one record
+    //         if group.len() > 1 {
+    //             println!("Found similar group with {} records", group.len());
+    //             similar_groups.push(group);
+    //         }
+    //         // similar_groups.push(group);
+    //     }
+
+    //     println!("Found {} groups with similar audio", similar_groups.len());
+
+    //     // Process the groups
+    //     let mut result_records = Vec::with_capacity(self.records.len());
+
+    //     // First add all records that weren't processed (no fingerprints or not in any group)
+    //     for record in &self.records {
+    //         if !processed.contains(&record.id) {
+    //             result_records.push(record.clone());
+    //         }
+    //     }
+
+    //     // Process each group
+    //     let groups_count = similar_groups.len();
+    //     for (i, mut group) in similar_groups.into_iter().enumerate() {
+    //         if *self.abort.read().await {
+    //             return Err("Aborted".to_string());
+    //         };
+    //         if i % RECORD_DIVISOR == 0 || i == 0 || i == groups_count - 1 {
+    //             app.emit(
+    //                 "search-sub-status",
+    //                 StatusUpdate {
+    //                     stage: "marking".into(),
+    //                     progress: ((i + 1) * 100 / groups_count) as u64,
+    //                     message: format!(
+    //                         "Processing similar audio group: {}/{}",
+    //                         i + 1,
+    //                         groups_count
+    //                     ),
+    //                 },
+    //             )
+    //             .ok();
+    //         }
+
+    //         // Sort according to preservation rules
+    //         pref.sort_vec(&mut group);
+
+    //         // Mark all but the first as duplicates
+    //         for (idx, mut record) in group.into_iter().enumerate() {
+    //             if idx > 0 {
+    //                 record.algorithm.remove(&A::Keep);
+    //             }
+    //             record.algorithm.insert(A::Waveforms);
+    //             result_records.push(record);
+    //         }
+    //     }
+
+    //     // let mut final_records = result_records;
+
+    //     // final_records.extend(records_without_fingerprints);
+
+    //     // self.records = final_records;
+
+    //     self.records = result_records;
+    //     println!("all done! {} records marked", self.records.len());
+    //     // Add debug info
+    //     // println!(
+    //     //     "Similar matching complete: {} total records, {} with fingerprints, {} similar groups, {} final records",
+    //     //     self.records.len(),
+    //     //     records_with_fingerprints.len(),
+    //     //     similar_groups.len(),
+    //     //     final_records.len()
+    //     // );
+
+    //     app.emit(
+    //         "search-sub-status",
+    //         StatusUpdate {
+    //             stage: "complete".into(),
+    //             progress: 100,
+    //             message: format!(
+    //                 "Similarity analysis complete: found {} duplicate groups",
+    //                 groups_count
+    //             ),
+    //         },
+    //     )
+    //     .ok();
+
+    //     Ok(())
+    // }
 
     async fn wave_search_chromaprint(
         &mut self,
@@ -1893,7 +2016,7 @@ impl Database {
                         }
 
                         // 9. IO OPTIMIZATION: Use memory-mapped files for large files
-                        match audiohash::get_chromaprint_rust_fingerprint(&record.path) {
+                        match audiohash::get_chromaprint_fingerprint(&record.path) {
                             Ok((mut fingerprint, mut raw)) => {
                                 if raw.is_empty() {
                                     // 10. FAST FALLBACK: Use quick hash for small files
@@ -2142,16 +2265,105 @@ fn calculate_similarity(fp1: &[u32], fp2: &[u32]) -> f64 {
         return 0.0;
     }
 
-    let mut matching_bits = 0;
-    let total_bits = min_len * 32; // 32 bits per i32
+    // Try different offsets for better matching
+    const MAX_OFFSET: usize = 3;
+    let mut best_similarity = 0.0;
 
-    for i in 0..min_len {
-        let xor_result = fp1[i] ^ fp2[i];
-        // Count matching bits (1s in the result of bitwise XOR represent differences)
-        matching_bits += 32 - xor_result.count_ones() as usize;
+    for offset in 0..=MAX_OFFSET {
+        if offset >= min_len {
+            break;
+        }
+
+        let matching_len = min_len - offset;
+        let mut matching_bits = 0;
+        let total_bits = matching_len * 32;
+
+        for i in 0..matching_len {
+            let xor_result = fp1[i] ^ fp2[i + offset];
+            matching_bits += 32 - xor_result.count_ones() as usize;
+        }
+
+        let similarity = matching_bits as f64 / total_bits as f64;
+        best_similarity = f64::max(best_similarity, similarity);
+
+        // Try the reverse offset too
+        if offset > 0 && offset < fp2.len() {
+            let matching_bits = (0..matching_len)
+                .map(|i| 32 - (fp1[i + offset] ^ fp2[i]).count_ones() as usize)
+                .sum::<usize>();
+
+            let similarity = matching_bits as f64 / total_bits as f64;
+            best_similarity = f64::max(best_similarity, similarity);
+        }
     }
 
-    matching_bits as f64 / total_bits as f64
+    best_similarity
+}
+
+// The group-building functionality should be moved to a method or function
+fn build_similarity_groups(
+    records_with_fingerprints: &[&FileRecord],
+    threshold: f64,
+) -> HashMap<usize, Vec<(usize, Vec<u32>)>> {
+    // Create multi-level grouping
+    let mut groups: HashMap<usize, Vec<(usize, Vec<u32>)>> = HashMap::new();
+    let mut next_group_id = 0;
+    let total_records = records_with_fingerprints.len();
+
+    // First pass - decode all fingerprints
+    let decoded_fps: Vec<Option<Vec<u32>>> = records_with_fingerprints
+        .par_iter()
+        .map(|record| {
+            if let Some(raw_fp) = &record.audio_fingerprint_raw {
+                if let Ok(fp_bytes) = general_purpose::STANDARD.decode(raw_fp.as_ref()) {
+                    let mut fp = Vec::with_capacity(fp_bytes.len() / 4);
+                    for chunk in fp_bytes.chunks_exact(4) {
+                        if chunk.len() == 4 {
+                            let mut array = [0u8; 4];
+                            array.copy_from_slice(chunk);
+                            fp.push(u32::from_le_bytes(array));
+                        }
+                    }
+                    return Some(fp);
+                }
+            }
+            None
+        })
+        .collect();
+
+    // Second pass - build groups with similarity
+    for i in 0..total_records {
+        let idx = records_with_fingerprints[i].id;
+
+        if let Some(ref fp_i) = decoded_fps[i] {
+            let mut found_group = None;
+
+            // Try to find an existing group that this record belongs to
+            for (&group_id, group_members) in &groups {
+                for (_, group_fp) in group_members {
+                    let similarity = calculate_similarity(fp_i, group_fp);
+                    if similarity >= threshold {
+                        found_group = Some(group_id);
+                        break;
+                    }
+                }
+                if found_group.is_some() {
+                    break;
+                }
+            }
+
+            // If we found a matching group, add the record to it
+            if let Some(group_id) = found_group {
+                groups.get_mut(&group_id).unwrap().push((idx, fp_i.clone()));
+            } else {
+                // If no matching group, create a new one
+                groups.insert(next_group_id, vec![(idx, fp_i.clone())]);
+                next_group_id += 1;
+            }
+        }
+    }
+
+    groups
 }
 
 fn checkduration(duration: &str, min_dur: f64) -> bool {
