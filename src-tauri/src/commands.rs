@@ -104,7 +104,7 @@ pub async fn search(
     // Emit initial status
     app.emit(
         "search-status",
-        SearchStatus {
+        StatusUpdate {
             stage: "starting".into(),
             progress: counter * 100 / total,
             message: "Starting search...".into(),
@@ -121,7 +121,7 @@ pub async fn search(
 
         app.emit(
             "search-status",
-            SearchStatus {
+            StatusUpdate {
                 stage: "starting".into(),
                 progress: counter * 100 / total,
                 message: "Gathering records from database...".into(),
@@ -140,7 +140,7 @@ pub async fn search(
         }
         app.emit(
             "search-status",
-            SearchStatus {
+            StatusUpdate {
                 stage: "compare".into(),
                 progress: counter * 100 / total,
                 message: format!("Comparing records against {}", enabled.compare_db),
@@ -160,7 +160,7 @@ pub async fn search(
         }
         app.emit(
             "search-status",
-            SearchStatus {
+            StatusUpdate {
                 stage: "dupes".into(),
                 progress: counter * 100 / total,
                 message: "Performing Duplicate Search".into(),
@@ -181,7 +181,7 @@ pub async fn search(
 
         app.emit(
             "search-status",
-            SearchStatus {
+            StatusUpdate {
                 stage: "basic".into(),
                 progress: counter * 100 / total,
                 message: "Analyzing audio content for waveform analysis".into(),
@@ -205,7 +205,7 @@ pub async fn search(
     // Final update
     app.emit(
         "search-status",
-        SearchStatus {
+        StatusUpdate {
             stage: "complete".into(),
             progress: counter * 100 / total,
             message: "Search completed!  Gathering Results".into(),
@@ -227,16 +227,58 @@ pub async fn remove_records(
     records: Vec<usize>,
     delete: Delete,
     files: Vec<&str>,
-) -> Result<String, String> {
+    app: AppHandle,
+) -> Result<Arc<str>, String> {
     println!("Removing Records");
     let mut state = state.lock().await;
     if clone {
+        app.emit(
+            "remove-status",
+            StatusUpdate {
+                stage: "starting".into(),
+                progress: 20,
+                message: "Creating Safety Copy of Current Database...".into(),
+            },
+        )
+        .ok();
         state.db = state.db.create_clone(&clone_tag).await;
     }
-    let _ = state.db.remove(&records).await;
-    let _ = delete.delete_files(files);
+    app.emit(
+        "remove-status",
+        StatusUpdate {
+            stage: "starting".into(),
+            progress: 50,
+            message: "Removing Records from {}...".into(),
+        },
+    )
+    .ok();
+    let _ = state.db.remove(&records, &app).await;
+    app.emit(
+        "remove-status",
+        StatusUpdate {
+            stage: "starting".into(),
+            progress: 80,
+            message: match delete {
+                Delete::Trash => "Moving files to Trash",
+                Delete::Delete => "Deleting Files",
+                Delete::Keep => "Cleaning up....",
+            }
+            .into(),
+        },
+    )
+    .ok();
+    let _ = delete.delete_files(files, &app);
     println!("Remove Ended");
-    Ok(String::from("Remove Success"))
+    app.emit(
+        "remove-status",
+        StatusUpdate {
+            stage: "complete".into(),
+            progress: 100,
+            message: "Success! Removal is complete".into(),
+        },
+    )
+    .ok();
+    Ok(state.db.get_name().unwrap_or(Arc::from("Select Database")))
 }
 
 #[tauri::command]

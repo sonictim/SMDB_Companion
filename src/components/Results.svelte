@@ -6,9 +6,11 @@
     OctagonX,
     Volume2,
     TriangleAlert,
+    Loader,
   } from "lucide-svelte";
   import { invoke } from "@tauri-apps/api/core";
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
+  import { listen } from "@tauri-apps/api/event";
   import VirtualList from "svelte-virtual-list";
   import Select from "./prefs/Select.svelte";
   import { algorithmsStore, preferencesStore } from "../store";
@@ -33,12 +35,15 @@
   $: results = $resultsStore;
   $: metadata = $metadataStore;
 
+  let processing = false;
   let loading = true;
   // let items: FileRecord[] = [];
   let total: number = 0;
   let selectedItems = new Set<number>();
   // let checkedItems = new Set<FileRecord>();
   let currentFilter = "Relevant";
+  let idsToRemove: number[] = [];
+  let filesToRemove: string[] = [];
   let filteredItems: FileRecord[] = [];
   let enableSelections = false;
 
@@ -323,55 +328,60 @@
     }
 
     // Filter out items that have "Keep" in their algorithm
-    const idsToRemove = filteredItems
+    idsToRemove = filteredItems
       .filter((item) => !item.algorithm.includes("Keep")) // Only keep items without "Keep"
       .map((item) => item.id); // Extract the ids
-    const filesToRemove = filteredItems
+    filesToRemove = filteredItems
       .filter((item) => !item.algorithm.includes("Keep")) // Only keep items without "Keep"
       .map((item) => item.path + "/" + item.root); // Extract the ids
 
     if (idsToRemove.length > 0) {
+      processing = true;
       // Call the backend function to remove the records by passing the ids
-      await invoke("remove_records", {
+      await invoke<string>("remove_records", {
         records: idsToRemove,
         clone: pref.safety_db,
         cloneTag: pref.safety_db_tag,
         delete: pref.erase_files,
         files: filesToRemove,
       })
-        .then(async () => {
+        .then((updatedDb) => {
           console.log("Successfully removed records with IDs:", idsToRemove);
+          selectedDb = updatedDb;
           // Optionally, update the filteredItems to remove the items locally
-          filteredItems = filteredItems.filter(
-            (item) => !idsToRemove.includes(item.id),
-          );
-          if (filteredItems.length == 0) activeTab = "search";
-          selectedDb = await invoke<string>("get_db_name");
         })
         .catch((error) => {
           console.error("Error removing records:", error);
+          processing = false;
         });
     }
   }
   async function removeSelected() {
     if (selectedItems.size > 0) {
-      const filesToRemove: string[] = [];
-      // const filesToRemove = filteredItems
-      //   .filter((item) => !item.algorithm.includes("Keep")) // Only keep items without "Keep"
-      //   .map((item) => item.path + "/" + item.root); // Extract the ids
+      processing = true;
+      idsToRemove = Array.from(selectedItems.values());
 
-      await invoke("remove_records", {
-        records: selectedItems,
+      filesToRemove = filteredItems
+        .filter(
+          (item) =>
+            !selectedItems.has(item.id) || !item.algorithm.includes("Keep"),
+        ) // Only keep items without "Keep"
+        .map((item) => item.path + "/" + item.root);
+
+      await invoke<string>("remove_records", {
+        records: idsToRemove,
         clone: pref.safety_db,
         cloneTag: pref.safety_db_tag,
         delete: pref.erase_files,
         files: filesToRemove,
       })
-        .then(() => {
+        .then((newDbName) => {
           console.log("Successfully removed records with IDs:", selectedItems);
+          selectedDb = newDbName;
         })
         .catch((error) => {
           console.error("Error removing records:", error);
+          activeTab = "search";
         });
     }
   }
@@ -401,6 +411,44 @@
       mark_dirty: !p.mark_dirty,
     }));
   }
+
+  // Add these variables for search status
+  let removeProgress = 0;
+  let removeMessage = "Initializing...";
+  let removeStage = "";
+  let unlistenRemoveFn: () => void;
+
+  // Setup event listener when component mounts
+  onMount(async () => {
+    unlistenRemoveFn = await listen<{
+      progress: number;
+      message: string;
+      stage: string;
+    }>("remove-status", (event) => {
+      const status = event.payload;
+      removeProgress = status.progress;
+      removeMessage = status.message;
+      removeStage = status.stage;
+      console.log(
+        `Remove status: ${status.stage} - ${status.progress}% - ${status.message}`,
+      );
+      if (status.stage === "complete") {
+        //         filteredItems = filteredItems.filter(
+        //   (item) => !idsToRemove.includes(item.id),
+        // );
+        // if (filteredItems.length == 0) activeTab = "search";
+        // selectedDb = await invoke<string>("get_db_name");
+        processing = false;
+        fetchData();
+        activeTab = "search";
+      }
+    });
+  });
+
+  // Cleanup event listener when component unmounts
+  onDestroy(() => {
+    if (unlistenRemoveFn) unlistenRemoveFn();
+  });
 </script>
 
 <div class="block">
@@ -513,6 +561,20 @@
   >
     {#if loading}
       <p class="ellipsis">Loading data...</p>
+    {:else if processing}
+      <div class="block inner">
+        <span>
+          <Loader
+            size={24}
+            class="spinner ml-2"
+            style="color: var(--accent-color)"
+          />
+          {removeMessage}
+        </span>
+        <div class="progress-container">
+          <div class="progress-bar" style="width: {removeProgress}%"></div>
+        </div>
+      </div>
     {:else}
       <div class="grid-header">
         <div

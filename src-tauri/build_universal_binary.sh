@@ -59,3 +59,35 @@ echo "Checking library architecture:"
 lipo -info ./resources/libchromaprint.a
 
 cargo tauri build --target universal-apple-darwin
+
+
+
+# Define destination directory
+DEST_DIR="/Users/tfarrell/Documents/Website/smdbc.com/private/beta"
+
+# Create destination directory if it doesn't exist
+mkdir -p "$DEST_DIR"
+
+# Find the DMG file in the output directory
+DMG_PATH=$(find ./target/universal-apple-darwin/release/bundle/dmg -name "*.dmg" 2>/dev/null)
+
+if [ -z "$DMG_PATH" ]; then
+  echo "Error: No DMG file found in the output directory."
+  exit 1
+fi
+
+# Copy the DMG file to the destination
+echo "Copying DMG file to $DEST_DIR..."
+cp "$DMG_PATH" "$DEST_DIR/"
+
+# Get just the filename
+DMG_FILENAME=$(basename "$DMG_PATH")
+
+# Check if the copy was successful
+if [ $? -eq 0 ]; then
+  echo "Successfully copied $DMG_FILENAME to $DEST_DIR"
+  echo "Full path: $DEST_DIR/$DMG_FILENAME"
+else
+  echo "Failed to copy the DMG file to $DEST_DIR"
+  exit 1
+fi

@@ -112,10 +112,6 @@
         }));
     }
 
-    function checkDB(): boolean {
-        return selectedDb === "Select Database";
-    }
-
     // Don't create a local snapshot - use the store directly when needed
     // Remove this line: $: prefs = $preferencesStore;
 
@@ -205,6 +201,7 @@
 
     // Setup event listener when component mounts
     onMount(async () => {
+        selectedDb = await invoke<string>("get_db_name");
         unlistenFn = await listen<{
             progress: number;
             message: string;
@@ -495,21 +492,5 @@
 
     :global(.checkbox.inactive) {
         color: var(--inactive-color);
-    }
-
-    /* Add these styles */
-    .progress-container {
-        width: 100%;
-        height: 6px;
-        background-color: var(--secondary-bg);
-        border-radius: 3px;
-        margin: 8px 0;
-        overflow: hidden;
-    }
-
-    .progress-bar {
-        height: 100%;
-        background-color: var(--accent-color);
-        transition: width 0.3s ease;
     }
 </style>

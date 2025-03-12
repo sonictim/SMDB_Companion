@@ -439,7 +439,7 @@ fn generate_license_key_old(name: &str, email: &str) -> Arc<str> {
 }
 
 #[derive(Clone, serde::Serialize)]
-struct SearchStatus {
+struct StatusUpdate {
     stage: String,
     progress: u64,
     message: String,
@@ -484,6 +484,7 @@ pub struct FileRecord {
 
 impl FileRecord {
     pub fn new(row: &SqliteRow, enabled: &Enabled, pref: &Preferences, is_compare: bool) -> Self {
+        let _ = is_compare;
         let id = row.get::<u32, _>(0) as usize;
         let path_str: &str = row.get(1);
         let path = PathBuf::from(path_str);
@@ -815,11 +816,23 @@ impl Database {
         Ok(0)
     }
 
-    pub async fn remove(&self, ids: &[usize]) -> Result<(), sqlx::Error> {
-        const BATCH_SIZE: usize = 1000; // Define the batch size
+    pub async fn remove(&self, ids: &[usize], app: &AppHandle) -> Result<(), sqlx::Error> {
+        const BATCH_SIZE: usize = 12321; // Define the batch size
+        let _ = app;
+        let mut counter = 0;
         if let Some(pool) = self.get_pool().await {
             // Iterate over chunks of IDs
             for chunk in ids.chunks(BATCH_SIZE) {
+                app.emit(
+                    "remove-status",
+                    StatusUpdate {
+                        stage: "removing".into(),
+                        progress: (counter * 100 / ids.len()) as u64,
+                        message: format!("removing records...  {}/{}", counter, ids.len()),
+                    },
+                )
+                .ok();
+                counter += BATCH_SIZE;
                 // Create placeholders for each ID in the chunk
                 let placeholders = std::iter::repeat("?")
                     .take(chunk.len())
@@ -838,6 +851,15 @@ impl Database {
                 // Execute the query
                 query_builder.execute(&pool).await?;
             }
+            app.emit(
+                "remove-status",
+                StatusUpdate {
+                    stage: "complete".into(),
+                    progress: 100,
+                    message: "Records successfully removed".into(),
+                },
+            )
+            .ok();
         }
         Ok(())
     }
@@ -871,7 +893,7 @@ impl Database {
                 if count % RECORD_DIVISOR == 0 {
                     app.emit(
                         "search-sub-status",
-                        SearchStatus {
+                        StatusUpdate {
                             stage: "gather".into(),
                             progress: (count * 100 / rows.len()) as u64,
                             message: format!(
@@ -888,7 +910,7 @@ impl Database {
             .collect();
         app.emit(
             "search-sub-status",
-            SearchStatus {
+            StatusUpdate {
                 stage: "gather".into(),
                 progress: 100,
                 message: "Complete".into(),
@@ -951,7 +973,7 @@ impl Database {
 
         app.emit(
             "search-sub-status",
-            SearchStatus {
+            StatusUpdate {
                 stage: "compare".into(),
                 progress: 0,
                 message: "Gathering Records".into(),
@@ -973,7 +995,7 @@ impl Database {
                 if count % RECORD_DIVISOR == 0 {
                     app.emit(
                         "search-sub-status",
-                        SearchStatus {
+                        StatusUpdate {
                             stage: "compare".into(),
                             progress: (count * 100 / total) as u64,
                             message: format!("Processing Records into Memory: {}/{}", count, total),
@@ -987,7 +1009,7 @@ impl Database {
             .collect();
         app.emit(
             "search-sub-status",
-            SearchStatus {
+            StatusUpdate {
                 stage: "compare".into(),
                 progress: 100,
                 message: format!("Processing Records into Memory: {}/{}", total, total),
@@ -1006,7 +1028,7 @@ impl Database {
                 if count % RECORD_DIVISOR == 0 {
                     app.emit(
                         "search-sub-status",
-                        SearchStatus {
+                        StatusUpdate {
                             stage: "compare".into(),
                             progress: (count * 100 / total) as u64,
                             message: format!("Comparing against Database: {}/{}", count, total),
@@ -1022,7 +1044,7 @@ impl Database {
             });
         app.emit(
             "search-sub-status",
-            SearchStatus {
+            StatusUpdate {
                 stage: "compare".into(),
                 progress: 100,
                 message: format!("Comparing against Database: {}/{}", total, total),
@@ -1046,7 +1068,7 @@ impl Database {
             if count % RECORD_DIVISOR == 0 {
                 app.emit(
                     "search-sub-status",
-                    SearchStatus {
+                    StatusUpdate {
                         stage: "dupes".into(),
                         progress: (count * 100 / total) as u64,
                         message: format!("Oraginizing Records: {}/{}", count, total),
@@ -1066,7 +1088,7 @@ impl Database {
         }
         app.emit(
             "search-sub-status",
-            SearchStatus {
+            StatusUpdate {
                 stage: "dupes".into(),
                 progress: 100,
                 message: format!("Oraginizing Records: {}/{}", total, total),
@@ -1084,7 +1106,7 @@ impl Database {
                 if count % RECORD_DIVISOR == 0 {
                     app.emit(
                         "search-sub-status",
-                        SearchStatus {
+                        StatusUpdate {
                             stage: "dupes".into(),
                             progress: (count * 100 / total) as u64,
                             message: format!("Marking Duplicates: {}/{}", count, total),
@@ -1119,7 +1141,7 @@ impl Database {
 
         app.emit(
             "search-sub-status",
-            SearchStatus {
+            StatusUpdate {
                 stage: "dupes".into(),
                 progress: 100,
                 message: format!("Marking Duplicates: {}/{}", total, total),
@@ -1188,7 +1210,7 @@ impl Database {
     //         }
     //         app.emit(
     //             "search-sub-status",
-    //             SearchStatus {
+    //             StatusUpdate {
     //                 stage: "fingerprinting".into(),
     //                 progress: (i * 100 / records_to_fingerprint.len()) as u64,
     //                 message: format!("Gathering Audio Fingerprint from {}", record.get_filename()),
@@ -1226,13 +1248,20 @@ impl Database {
     async fn exact_match(&mut self, pref: &Preferences, app: &AppHandle) -> Result<(), String> {
         app.emit(
             "search-sub-status",
-            SearchStatus {
+            StatusUpdate {
                 stage: "grouping".into(),
                 progress: 0,
                 message: "Grouping identical audio fingerprints...".into(),
             },
         )
         .ok();
+
+        let records_without_fingerprints: Vec<FileRecord> = self
+            .records
+            .iter()
+            .filter(|record| record.audio_fingerprint.is_none())
+            .cloned()
+            .collect();
 
         let mut file_groups: HashMap<Arc<str>, Vec<FileRecord>> =
             HashMap::with_capacity(self.records.len() / 2);
@@ -1245,7 +1274,7 @@ impl Database {
             if i % RECORD_DIVISOR == 0 || i == 0 || i == self.records.len() - 1 {
                 app.emit(
                     "search-sub-status",
-                    SearchStatus {
+                    StatusUpdate {
                         stage: "grouping".into(),
                         progress: ((i + 1) * 100 / self.records.len()) as u64,
                         message: format!(
@@ -1269,7 +1298,7 @@ impl Database {
         println!("Marking duplicate audio files");
         app.emit(
             "search-sub-status",
-            SearchStatus {
+            StatusUpdate {
                 stage: "marking".into(),
                 progress: 0,
                 message: "Marking duplicate audio files...".into(),
@@ -1286,7 +1315,7 @@ impl Database {
                 if i % RECORD_DIVISOR == 0 || i == 0 || i == group_count - 1 {
                     app.emit(
                         "search-sub-status",
-                        SearchStatus {
+                        StatusUpdate {
                             stage: "marking".into(),
                             progress: ((i + 1) * 100 / group_count) as u64,
                             message: format!("Processing group: {}/{}", i + 1, group_count),
@@ -1311,11 +1340,13 @@ impl Database {
             })
             .collect();
 
-        self.records = processed_records;
+        let mut final_records = processed_records;
+        final_records.extend(records_without_fingerprints);
+        self.records = final_records;
 
         app.emit(
             "search-sub-status",
-            SearchStatus {
+            StatusUpdate {
                 stage: "complete".into(),
                 progress: 100,
                 message: "Exact Audio fingerprint analysis complete".into(),
@@ -1331,7 +1362,7 @@ impl Database {
         // Similarity-based comparison
         app.emit(
             "search-sub-status",
-            SearchStatus {
+            StatusUpdate {
                 stage: "similarity".into(),
                 progress: 0,
                 message: "Starting similarity-based audio comparison...".into(),
@@ -1381,7 +1412,7 @@ impl Database {
             if i % RECORD_DIVISOR == 0 || i == 0 || i == total_records - 1 {
                 app.emit(
                     "search-sub-status",
-                    SearchStatus {
+                    StatusUpdate {
                         stage: "similarity".into(),
                         progress: ((i + 1) * 100 / total_records) as u64,
                         message: format!("Comparing fingerprints: {}/{}", i + 1, total_records),
@@ -1494,7 +1525,7 @@ impl Database {
             if i % RECORD_DIVISOR == 0 || i == 0 || i == groups_count - 1 {
                 app.emit(
                     "search-sub-status",
-                    SearchStatus {
+                    StatusUpdate {
                         stage: "marking".into(),
                         progress: ((i + 1) * 100 / groups_count) as u64,
                         message: format!(
@@ -1524,7 +1555,7 @@ impl Database {
 
         app.emit(
             "search-sub-status",
-            SearchStatus {
+            StatusUpdate {
                 stage: "complete".into(),
                 progress: 100,
                 message: format!(
@@ -1604,7 +1635,7 @@ impl Database {
     //             if !fingerprints_to_store.is_empty() && pref.store_waveforms {
     //                 app.emit(
     //                     "search-sub-status",
-    //                     SearchStatus {
+    //                     StatusUpdate {
     //                         stage: "saving".into(),
     //                         progress: 100,
     //                         message: "Cancelled - saving already processed fingerprints...".into(),
@@ -1681,7 +1712,7 @@ impl Database {
     //             if let Some(ref pool) = db_pool {
     //                 app.emit(
     //                     "search-sub-status",
-    //                     SearchStatus {
+    //                     StatusUpdate {
     //                         stage: "saving".into(),
     //                         progress: (processed * 100 / total_to_process) as u64,
     //                         message: "Saving batch of fingerprints...".into(),
@@ -1699,7 +1730,7 @@ impl Database {
     //         processed += batch.len();
     //         app.emit(
     //             "search-sub-status",
-    //             SearchStatus {
+    //             StatusUpdate {
     //                 stage: "fingerprinting".into(),
     //                 progress: (processed * 100 / total_to_process) as u64,
     //                 message: format!("Fingerprinted {}/{} files", processed, total_to_process),
@@ -1713,7 +1744,7 @@ impl Database {
     //         if let Some(ref pool) = db_pool {
     //             app.emit(
     //                 "search-sub-status",
-    //                 SearchStatus {
+    //                 StatusUpdate {
     //                     stage: "saving".into(),
     //                     progress: 100,
     //                     message: "Saving final fingerprints...".into(),
@@ -1817,7 +1848,7 @@ impl Database {
                     if !fingerprints_to_store.is_empty() && pref.store_waveforms {
                         app.emit(
                             "search-sub-status",
-                            SearchStatus {
+                            StatusUpdate {
                                 stage: "saving".into(),
                                 progress: 100,
                                 message: "Cancelled - saving checkpoint...".into(),
@@ -1908,7 +1939,7 @@ impl Database {
                     if processed % PROGRESS_INTERVAL == 0 || processed == total_to_process {
                         app.emit(
                             "search-sub-status",
-                            SearchStatus {
+                            StatusUpdate {
                                 stage: "saving".into(),
                                 progress: (processed * 100 / total_to_process) as u64,
                                 message: format!(
@@ -1941,7 +1972,7 @@ impl Database {
 
                 app.emit(
                     "search-sub-status",
-                    SearchStatus {
+                    StatusUpdate {
                         stage: "fingerprinting".into(),
                         progress: (processed * 100 / total_to_process) as u64,
                         message: format!(
@@ -1976,7 +2007,7 @@ async fn store_fingerprints_batch_optimized(
     // Emit status before starting DB operations
     app.emit(
         "search-sub-status",
-        SearchStatus {
+        StatusUpdate {
             stage: "db-storage".into(),
             progress: 0,
             message: format!("Storing {} fingerprints in database...", fingerprints.len()),
@@ -2008,7 +2039,7 @@ async fn store_fingerprints_batch_optimized(
                     if i % 25 == 0 || i == total - 1 {
                         app.emit(
                             "search-sub-status",
-                            SearchStatus {
+                            StatusUpdate {
                                 stage: "db-storage".into(),
                                 progress: ((i + 1) * 100 / total) as u64,
                                 message: format!("Storing fingerprints in DB: {}/{}", i + 1, total),
@@ -2052,7 +2083,7 @@ async fn store_fingerprints_batch_optimized(
         // Final update before commit
         app.emit(
             "search-sub-status",
-            SearchStatus {
+            StatusUpdate {
                 stage: "db-storage".into(),
                 progress: 99,
                 message: "Committing transaction to database...".to_owned(),
@@ -2066,7 +2097,7 @@ async fn store_fingerprints_batch_optimized(
         // Confirm completion
         app.emit(
             "search-sub-status",
-            SearchStatus {
+            StatusUpdate {
                 stage: "db-storage".into(),
                 progress: 100,
                 message: "Database update complete".to_owned(),
@@ -2155,7 +2186,11 @@ pub enum Delete {
 }
 
 impl Delete {
-    pub fn delete_files(&self, files: Vec<&str>) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn delete_files(
+        &self,
+        files: Vec<&str>,
+        app: &AppHandle,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         println!("Removing Files");
 
         // Filter valid files directly and collect them into a Vec
