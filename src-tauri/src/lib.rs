@@ -482,7 +482,7 @@ pub struct FileRecord {
     pub root: Arc<str>,
     pub duration: Arc<str>,
     pub data: HashMap<Arc<str>, Arc<str>>,
-    pub fingerprint: Option<AudioFingerprint>,
+    pub fingerprint: Option<Arc<str>>,
     // pub audio_fingerprint: Option<Arc<str>>,
     // pub audio_fingerprint_raw: Option<Arc<str>>,
     // pub audio_fingerprint_exact: Option<Arc<str>>,
@@ -531,35 +531,15 @@ impl FileRecord {
             }
         }
 
-        let fingerprint = {
-            let text = row.try_get::<&str, _>("_fingerprint").unwrap_or_default();
-            let raw = row
-                .try_get::<&str, _>("_fingerprint_raw")
-                .unwrap_or_default();
-            let exact = row
-                .try_get::<&str, _>("_fingerprint_exact")
-                .unwrap_or_default();
+        let fingerprint = row.try_get::<&str, _>("_fingerprint").ok();
 
-            if text.is_empty() || raw.is_empty() || exact.is_empty() {
-                None
-            } else {
-                Some(AudioFingerprint {
-                    text: Arc::from(text),
-                    raw: Arc::from(raw),
-                    exact: Arc::from(exact),
-                })
-            }
-        };
-        // Get audio fingerprint if it exists
-
-        // Create the record
         let mut record = Self {
             id,
             path,
             root: Arc::default(),
             duration: Arc::from(duration_str),
             data,
-            fingerprint,
+            fingerprint: fingerprint.map(Arc::from),
             algorithm,
         };
 
@@ -1207,57 +1187,60 @@ impl Database {
     //     ))
     // }
 
-    async fn gather_fingerprints(
-        &mut self,
-        pref: &Preferences,
-        app: &AppHandle,
-    ) -> Result<(), String> {
-        println!("Starting Waveform Search");
+    // async fn gather_fingerprints(
+    //     &mut self,
+    //     pref: &Preferences,
+    //     app: &AppHandle,
+    // ) -> Result<(), String> {
+    //     println!("Starting Waveform Search");
 
-        // Count how many files need fingerprinting
-        let records_to_fingerprint: Vec<usize> = self
-            .records
-            .par_iter()
-            .enumerate()
-            .filter(|(_, record)| record.fingerprint.is_none())
-            .map(|(i, _)| i)
-            .collect();
+    //     // Count how many files need fingerprinting
+    //     let records_to_fingerprint: Vec<usize> = self
+    //         .records
+    //         .par_iter()
+    //         .enumerate()
+    //         .filter(|(_, record)| record.fingerprint.is_none())
+    //         .map(|(i, _)| i)
+    //         .collect();
 
-        // Get pool outside the loop to avoid simultaneous mutable and immutable borrows
-        let pool = if pref.store_waveforms {
-            self.get_pool().await
-        } else {
-            None
-        };
+    //     // Get pool outside the loop to avoid simultaneous mutable and immutable borrows
+    //     let pool = if pref.store_waveforms {
+    //         self.get_pool().await
+    //     } else {
+    //         None
+    //     };
 
-        // Can't use async in for_each, so use a standard for loop instead
-        for (i, &record_idx) in records_to_fingerprint.iter().enumerate() {
-            let record = &mut self.records[record_idx];
-            if *self.abort.read().await {
-                continue;
-            }
-            app.emit(
-                "search-sub-status",
-                StatusUpdate {
-                    stage: "fingerprinting".into(),
-                    progress: (i * 100 / records_to_fingerprint.len()) as u64,
-                    message: format!("Gathering Audio Fingerprint from {}", record.get_filename()),
-                },
-            )
-            .ok();
+    //     // Can't use async in for_each, so use a standard for loop instead
+    //     for (i, &record_idx) in records_to_fingerprint.iter().enumerate() {
+    //         let record = &mut self.records[record_idx];
+    //         if *self.abort.read().await {
+    //             continue;
+    //         }
+    //         app.emit(
+    //             "search-sub-status",
+    //             StatusUpdate {
+    //                 stage: "fingerprinting".into(),
+    //                 progress: (i * 100 / records_to_fingerprint.len()) as u64,
+    //                 message: format!("Gathering Audio Fingerprint from {}", record.get_filename()),
+    //             },
+    //         )
+    //         .ok();
 
-            record.fingerprint = AudioFingerprint::new(record.get_filepath()).await.ok();
-            if pref.store_waveforms {
-                if let Some(fingerprint) = &record.fingerprint {
-                    if let Some(pool) = &pool {
-                        fingerprint.store(pool, record.id).await;
-                    }
-                }
-            };
-        }
+    //         record.fingerprint = AudioFingerprint::new(record.get_filepath())
+    //             .await
+    //             .ok()
+    //             .map(|fp| Arc::from(fp));
+    //         if pref.store_waveforms {
+    //             if let Some(fingerprint) = &record.fingerprint {
+    //                 if let Some(pool) = &pool {
+    //                     fingerprint.store(pool, record.id).await;
+    //                 }
+    //             }
+    //         };
+    //     }
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
     async fn exact_match(&mut self, pref: &Preferences, app: &AppHandle) -> Result<(), String> {
         app.emit(
@@ -1301,9 +1284,9 @@ impl Database {
                 .ok();
             }
 
-            if let Some(hash) = &record.fingerprint {
+            if let Some(fingerprint) = &record.fingerprint {
                 file_groups
-                    .entry(hash.exact.clone())
+                    .entry(fingerprint.clone())
                     .or_default()
                     .push(record.clone());
             }
@@ -1409,12 +1392,7 @@ impl Database {
         let records_with_fingerprints: Vec<&FileRecord> = self
             .records
             .iter()
-            .filter(|record| {
-                record
-                    .fingerprint
-                    .as_ref()
-                    .is_some_and(|fp| !fp.raw.is_empty())
-            })
+            .filter(|record| record.fingerprint.as_ref().is_some_and(|fp| !fp.is_empty()))
             .collect();
 
         println!(
@@ -1458,8 +1436,7 @@ impl Database {
                     }
 
                     if let Some(raw_fp) = &record.fingerprint {
-                        if let Ok(fp_bytes) = general_purpose::STANDARD.decode(raw_fp.raw.as_ref())
-                        {
+                        if let Ok(fp_bytes) = general_purpose::STANDARD.decode(raw_fp.as_ref()) {
                             // Decode fingerprint...
                             let mut fp = Vec::with_capacity(fp_bytes.len() / 4);
                             for chunk in fp_bytes.chunks_exact(4) {
@@ -1863,7 +1840,7 @@ impl Database {
         app: &AppHandle,
     ) -> Result<(), String> {
         println!("Starting Waveform Search");
-        self.gather_fingerprints(pref, app).await?;
+        self.gather_fingerprints3(pref, app).await?;
         if *self.abort.read().await {
             return Err("Aborted".to_string());
         };
@@ -2047,280 +2024,242 @@ impl Database {
     //     Ok(())
     // }
 
-    // async fn gather_fingerprints3(
-    //     &mut self,
-    //     pref: &Preferences,
-    //     app: &AppHandle,
-    // ) -> Result<(), String> {
-    //     println!("Starting fingerprint collection");
+    async fn gather_fingerprints3(
+        &mut self,
+        pref: &Preferences,
+        app: &AppHandle,
+    ) -> Result<(), String> {
+        println!("Starting fingerprint collection");
 
-    //     // MORE AGGRESSIVE OPTIMIZATIONS
-    //     const BATCH_SIZE: usize = 100; // Larger batch size for fewer transactions
-    //     const STORAGE_INTERVAL: usize = 250; // Store every 250 records processed
-    //     const PROGRESS_INTERVAL: usize = RECORD_DIVISOR * 5; // Less frequent progress updates
+        // MORE AGGRESSIVE OPTIMIZATIONS
+        const BATCH_SIZE: usize = 100; // Larger batch size for fewer transactions
+        const STORAGE_INTERVAL: usize = 250; // Store every 250 records processed
+        const PROGRESS_INTERVAL: usize = RECORD_DIVISOR * 5; // Less frequent progress updates
 
-    //     // 1. PRE-FILTERING OPTIMIZATION: Use indexed access for faster filtering
-    //     let mut records_needing_fingerprints = BitSet::with_capacity(self.records.len());
-    //     for (idx, record) in self.records.iter().enumerate() {
-    //         // Skip invalid paths completely - no need to fingerprint them
-    //         // if record.algorithm.contains(&Algorithm::InvalidPath) {
-    //         //     continue;
-    //         // }
+        // 1. PRE-FILTERING OPTIMIZATION: Use indexed access for faster filtering
+        let mut records_needing_fingerprints = BitSet::with_capacity(self.records.len());
+        for (idx, record) in self.records.iter().enumerate() {
+            // Skip invalid paths completely - no need to fingerprint them
+            // if record.algorithm.contains(&Algorithm::InvalidPath) {
+            //     continue;
+            // }
 
-    //         let path = PathBuf::from(record.get_filepath());
-    //         if !path.is_file() {
-    //             // Skip non-file paths
-    //             continue;
-    //         }
+            let path = PathBuf::from(record.get_filepath());
+            if !path.is_file() {
+                // Skip non-file paths
+                continue;
+            }
 
-    //         if record.fingerprint.is_none() {
-    //             records_needing_fingerprints.insert(idx);
-    //         }
-    //     }
+            if record.fingerprint.is_none() {
+                records_needing_fingerprints.insert(idx);
+            }
+        }
 
-    //     if records_needing_fingerprints.is_empty() {
-    //         println!("No fingerprints needed - all files already processed");
-    //         return Ok(());
-    //     }
+        if records_needing_fingerprints.is_empty() {
+            println!("No fingerprints needed - all files already processed");
+            return Ok(());
+        }
 
-    //     let total_to_process = records_needing_fingerprints.len();
-    //     println!("Found {} files requiring fingerprinting", total_to_process);
+        let total_to_process = records_needing_fingerprints.len();
+        println!("Found {} files requiring fingerprinting", total_to_process);
 
-    //     // 2. CHECKPOINT OPTIMIZATION: Save progress marker to restart from
-    //     let mut checkpoint_file = std::env::temp_dir();
-    //     checkpoint_file.push("smdb_fingerprint_progress.json");
+        // 2. CHECKPOINT OPTIMIZATION: Save progress marker to restart from
+        let mut checkpoint_file = std::env::temp_dir();
+        checkpoint_file.push("smdb_fingerprint_progress.json");
 
-    //     let mut start_from = 0;
-    //     if checkpoint_file.exists() && pref.store_waveforms {
-    //         if let Ok(contents) = std::fs::read_to_string(&checkpoint_file) {
-    //             if let Ok(checkpoint) = serde_json::from_str::<usize>(&contents) {
-    //                 if checkpoint < total_to_process {
-    //                     start_from = checkpoint;
-    //                     println!(
-    //                         "Resuming from checkpoint: {} of {}",
-    //                         start_from, total_to_process
-    //                     );
-    //                 }
-    //             }
-    //         }
-    //     }
+        let mut start_from = 0;
+        if checkpoint_file.exists() && pref.store_waveforms {
+            if let Ok(contents) = std::fs::read_to_string(&checkpoint_file) {
+                if let Ok(checkpoint) = serde_json::from_str::<usize>(&contents) {
+                    if checkpoint < total_to_process {
+                        start_from = checkpoint;
+                        println!(
+                            "Resuming from checkpoint: {} of {}",
+                            start_from, total_to_process
+                        );
+                    }
+                }
+            }
+        }
 
-    //     // 3. MEMORY OPTIMIZATION: Store fingerprints more frequently in smaller chunks
-    //     let mut fingerprints_to_store = Vec::with_capacity(STORAGE_INTERVAL);
-    //     let mut processed = start_from;
+        // 3. MEMORY OPTIMIZATION: Store fingerprints more frequently in smaller chunks
+        let mut fingerprints_to_store = Vec::with_capacity(STORAGE_INTERVAL);
+        let mut processed = start_from;
 
-    //     // 4. CONNECTION POOL OPTIMIZATION: Get connection pool once, with retry logic
-    //     let db_pool = if pref.store_waveforms {
-    //         match self.get_pool().await {
-    //             Some(pool) => Some(pool),
-    //             None => {
-    //                 // Retry connection once after a short delay
-    //                 std::thread::sleep(std::time::Duration::from_millis(100));
-    //                 self.get_pool().await
-    //             }
-    //         }
-    //     } else {
-    //         None
-    //     };
+        // 4. CONNECTION POOL OPTIMIZATION: Get connection pool once, with retry logic
+        let db_pool = if pref.store_waveforms {
+            match self.get_pool().await {
+                Some(pool) => Some(pool),
+                None => {
+                    // Retry connection once after a short delay
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    self.get_pool().await
+                }
+            }
+        } else {
+            None
+        };
 
-    //     // 5. CPU UTILIZATION OPTIMIZATION: Limit parallelism based on available cores
-    //     let cpu_count = num_cpus::get();
-    //     let thread_count = std::cmp::min(cpu_count, 8); // Cap at 8 threads to avoid I/O thrashing
-    //     let thread_pool = rayon::ThreadPoolBuilder::new()
-    //         .num_threads(thread_count)
-    //         .build()
-    //         .unwrap_or_else(|_| rayon::ThreadPoolBuilder::new().build().unwrap());
+        // 5. CPU UTILIZATION OPTIMIZATION: Limit parallelism based on available cores
+        let cpu_count = num_cpus::get();
+        let thread_count = std::cmp::min(cpu_count, 8); // Cap at 8 threads to avoid I/O thrashing
+        let thread_pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(thread_count)
+            .build()
+            .unwrap_or_else(|_| rayon::ThreadPoolBuilder::new().build().unwrap());
 
-    //     println!("Processing with {} threads", thread_count);
+        println!("Processing with {} threads", thread_count);
 
-    //     // 6. BATCH PROCESSING OPTIMIZATION: Process in chunks
-    //     for chunk_idx in (start_from..total_to_process).step_by(BATCH_SIZE) {
-    //         // Check abort with non-blocking access
-    //         if let Ok(guard) = self.abort.try_read() {
-    //             if *guard {
-    //                 // Handle cancellation with checkpoint
-    //                 if !fingerprints_to_store.is_empty() && pref.store_waveforms {
-    //                     app.emit(
-    //                         "search-sub-status",
-    //                         StatusUpdate {
-    //                             stage: "saving".into(),
-    //                             progress: 100,
-    //                             message: "Cancelled - saving checkpoint...".into(),
-    //                         },
-    //                     )
-    //                     .ok();
+        // 6. BATCH PROCESSING OPTIMIZATION: Process in chunks
+        for chunk_idx in (start_from..total_to_process).step_by(BATCH_SIZE) {
+            // Check abort with non-blocking access
+            if let Ok(guard) = self.abort.try_read() {
+                if *guard {
+                    // Handle cancellation with checkpoint
+                    if !fingerprints_to_store.is_empty() && pref.store_waveforms {
+                        app.emit(
+                            "search-sub-status",
+                            StatusUpdate {
+                                stage: "saving".into(),
+                                progress: 100,
+                                message: "Cancelled - saving checkpoint...".into(),
+                            },
+                        )
+                        .ok();
 
-    //                     // Store current fingerprints
-    //                     if let Some(ref pool) = db_pool {
-    //                         store_fingerprints_batch_optimized(pool, &fingerprints_to_store, app)
-    //                             .await;
-    //                     }
+                        // Store current fingerprints
+                        if let Some(ref pool) = db_pool {
+                            store_fingerprints_batch_optimized(pool, &fingerprints_to_store, app)
+                                .await;
+                        }
 
-    //                     // Save checkpoint
-    //                     let _ = std::fs::write(&checkpoint_file, processed.to_string());
-    //                 }
-    //                 return Err("Aborted".to_string());
-    //             }
-    //         }
+                        // Save checkpoint
+                        let _ = std::fs::write(&checkpoint_file, processed.to_string());
+                    }
+                    return Err("Aborted".to_string());
+                }
+            }
 
-    //         // Calculate end of current chunk (capped at total)
-    //         let end_idx = std::cmp::min(chunk_idx + BATCH_SIZE, total_to_process);
-    //         // Extract indices from BitSet for the current chunk's range
-    //         let current_indices: Vec<usize> = (chunk_idx..end_idx)
-    //             .filter(|&idx| records_needing_fingerprints.contains(idx))
-    //             .collect();
+            // Calculate end of current chunk (capped at total)
+            let end_idx = std::cmp::min(chunk_idx + BATCH_SIZE, total_to_process);
+            // Extract indices from BitSet for the current chunk's range
+            let current_indices: Vec<usize> = (chunk_idx..end_idx)
+                .filter(|&idx| records_needing_fingerprints.contains(idx))
+                .collect();
 
-    //         // 7. PARALLEL PROCESSING OPTIMIZATION: Use thread pool for controlled parallelism
-    //         let batch_results: Vec<_> = thread_pool.install(|| {
-    //             current_indices
-    //                 .par_iter()
-    //                 .filter_map(|&idx| {
-    //                     let record = &self.records[idx];
+            // 7. PARALLEL PROCESSING OPTIMIZATION: Use thread pool for controlled parallelism
+            let batch_results: Vec<_> = thread_pool.install(|| {
+                current_indices
+                    .par_iter()
+                    .filter_map(|&idx| {
+                        let record = &self.records[idx];
 
-    //                     // Skip invalid paths
-    //                     if record.algorithm.contains(&Algorithm::InvalidPath) {
-    //                         return None;
-    //                     }
+                        // Skip invalid paths
+                        if record.algorithm.contains(&Algorithm::InvalidPath) {
+                            return None;
+                        }
 
-    //                     // 8. FAST PATH OPTIMIZATION: Skip if already has fingerprints
-    //                     if record.fingerprint.is_some() {
-    //                         return None;
-    //                     }
+                        // 8. FAST PATH OPTIMIZATION: Skip if already has fingerprints
+                        if record.fingerprint.is_some() {
+                            return None;
+                        }
 
-    //                     // 9. IO OPTIMIZATION: Use memory-mapped files for large files
+                        record.fingerprint = audiohash::get_chromaprint_fingerprint(&record.path);
+                    })
+                    .collect()
+            });
 
-    //                     // With this
-    //                     let exact = match audiohash::hash_audio_content(
-    //                         record.get_filepath(),
-    //                         pref.ignore_filetype,
-    //                     ) {
-    //                         Ok(hash) => {
-    //                             if hash.is_empty() {
-    //                                 println!(
-    //                                     "Warning: Empty hash generated for {}",
-    //                                     record.get_filepath()
-    //                                 );
-    //                                 hash
-    //                             } else {
-    //                                 hash
-    //                             }
-    //                         }
-    //                         Err(e) => {
-    //                             println!(
-    //                                 "Error generating hash for {}: {}",
-    //                                 record.get_filepath(),
-    //                                 e
-    //                             );
-    //                             String::new()
-    //                         }
-    //                     };
-    //                     match audiohash::get_chromaprint_fingerprint(&record.path) {
-    //                         Ok((mut fingerprint, mut raw)) => {
-    //                             if raw.is_empty() && !exact.is_empty() {
-    //                                 // 10. FAST FALLBACK: Use quick hash for small files
-    //                                 fingerprint = exact.clone();
-    //                                 raw = exact.clone();
-    //                             }
+            // 11. IN-MEMORY UPDATE OPTIMIZATION: Update records directly
+            for (idx, fingerprint) in &batch_results {
+                let record = &mut self.records[*idx];
+                record.fingerprint = Some(Arc::from(fingerprint.as_str()));
+                // record.fingerprint_raw = Some(Arc::from(raw.as_str()));
+                // record.audio_fingerprint_exact = Some(Arc::from(exact.as_str()));
+            }
 
-    //                             Some((idx, fingerprint, raw, exact))
-    //                         }
-    //                         Err(_) => None,
-    //                     }
-    //                 })
-    //                 .collect()
-    //         });
+            // Add to storage queue
+            fingerprints_to_store.extend(batch_results.iter().map(|(idx, fp, raw, exact)| {
+                (
+                    self.records[*idx].id,
+                    fp.clone(),
+                    raw.clone(),
+                    exact.clone(),
+                )
+            }));
 
-    //         // 11. IN-MEMORY UPDATE OPTIMIZATION: Update records directly
-    //         for (idx, fingerprint, raw, exact) in &batch_results {
-    //             let record = &mut self.records[*idx];
-    //             record.fingerprint.standard = Some(Arc::from(fingerprint.as_str()));
-    //             record.fingerprint_raw = Some(Arc::from(raw.as_str()));
-    //             record.audio_fingerprint_exact = Some(Arc::from(exact.as_str()));
-    //         }
+            // 12. STORAGE OPTIMIZATION: Store in smaller, more frequent batches
+            println!(
+                "Storage conditions: store_waveforms={}, empty={}, interval={}, processed={}, total={}, store_waveforms={}",
+                pref.store_waveforms,
+                fingerprints_to_store.is_empty(),
+                processed % STORAGE_INTERVAL,
+                processed,
+                total_to_process,
+                pref.store_waveforms
+            );
+            processed += batch_results.len();
+            if pref.store_waveforms
+                && !fingerprints_to_store.is_empty()
+                && (processed % STORAGE_INTERVAL == 0 || processed == total_to_process)
+            {
+                if let Some(ref pool) = db_pool {
+                    // Less frequent progress updates for storage
+                    if processed % PROGRESS_INTERVAL == 0 || processed == total_to_process {
+                        app.emit(
+                            "search-sub-status",
+                            StatusUpdate {
+                                stage: "saving".into(),
+                                progress: (processed * 100 / total_to_process) as u64,
+                                message: format!(
+                                    "Saving batch: {}/{} processed",
+                                    processed, total_to_process
+                                ),
+                            },
+                        )
+                        .ok();
+                    }
 
-    //         // Add to storage queue
-    //         fingerprints_to_store.extend(batch_results.iter().map(|(idx, fp, raw, exact)| {
-    //             (
-    //                 self.records[*idx].id,
-    //                 fp.clone(),
-    //                 raw.clone(),
-    //                 exact.clone(),
-    //             )
-    //         }));
+                    // 13. DATABASE OPTIMIZATION: Use optimized batch storage
+                    store_fingerprints_batch_optimized(pool, &fingerprints_to_store, app).await; // Pass app here
+                    fingerprints_to_store.clear();
 
-    //         // 12. STORAGE OPTIMIZATION: Store in smaller, more frequent batches
-    //         println!(
-    //             "Storage conditions: store_waveforms={}, empty={}, interval={}, processed={}, total={}, store_waveforms={}",
-    //             pref.store_waveforms,
-    //             fingerprints_to_store.is_empty(),
-    //             processed % STORAGE_INTERVAL,
-    //             processed,
-    //             total_to_process,
-    //             pref.store_waveforms
-    //         );
-    //         processed += batch_results.len();
-    //         if pref.store_waveforms
-    //             && !fingerprints_to_store.is_empty()
-    //             && (processed % STORAGE_INTERVAL == 0 || processed == total_to_process)
-    //         {
-    //             if let Some(ref pool) = db_pool {
-    //                 // Less frequent progress updates for storage
-    //                 if processed % PROGRESS_INTERVAL == 0 || processed == total_to_process {
-    //                     app.emit(
-    //                         "search-sub-status",
-    //                         StatusUpdate {
-    //                             stage: "saving".into(),
-    //                             progress: (processed * 100 / total_to_process) as u64,
-    //                             message: format!(
-    //                                 "Saving batch: {}/{} processed",
-    //                                 processed, total_to_process
-    //                             ),
-    //                         },
-    //                     )
-    //                     .ok();
-    //                 }
+                    // 14. CHECKPOINT OPTIMIZATION: Save progress periodically
+                    let _ = std::fs::write(&checkpoint_file, processed.to_string());
+                }
+            }
 
-    //                 // 13. DATABASE OPTIMIZATION: Use optimized batch storage
-    //                 store_fingerprints_batch_optimized(pool, &fingerprints_to_store, app).await; // Pass app here
-    //                 fingerprints_to_store.clear();
+            // 15. PROGRESS REPORTING OPTIMIZATION: Less frequent updates
+            if processed % 2 == 0 || processed == total_to_process {
+                // if processed % PROGRESS_INTERVAL == 0 || processed == total_to_process {
+                // Get current filename being processed (from last batch)
+                let current_file = if let Some(&idx) = current_indices.first() {
+                    self.records[idx].get_filename()
+                } else {
+                    "Unknown"
+                };
 
-    //                 // 14. CHECKPOINT OPTIMIZATION: Save progress periodically
-    //                 let _ = std::fs::write(&checkpoint_file, processed.to_string());
-    //             }
-    //         }
+                app.emit(
+                    "search-sub-status",
+                    StatusUpdate {
+                        stage: "fingerprinting".into(),
+                        progress: (processed * 100 / total_to_process) as u64,
+                        message: format!(
+                            "Processing: ({}/{}) {} ",
+                            processed, total_to_process, current_file
+                        ),
+                    },
+                )
+                .ok();
+            }
+        }
 
-    //         // 15. PROGRESS REPORTING OPTIMIZATION: Less frequent updates
-    //         if processed % 2 == 0 || processed == total_to_process {
-    //             // if processed % PROGRESS_INTERVAL == 0 || processed == total_to_process {
-    //             // Get current filename being processed (from last batch)
-    //             let current_file = if let Some(&idx) = current_indices.first() {
-    //                 self.records[idx].get_filename()
-    //             } else {
-    //                 "Unknown"
-    //             };
+        // Remove checkpoint file on successful completion
+        if processed >= total_to_process {
+            let _ = std::fs::remove_file(checkpoint_file);
+        }
 
-    //             app.emit(
-    //                 "search-sub-status",
-    //                 StatusUpdate {
-    //                     stage: "fingerprinting".into(),
-    //                     progress: (processed * 100 / total_to_process) as u64,
-    //                     message: format!(
-    //                         "Processing: ({}/{}) {} ",
-    //                         processed, total_to_process, current_file
-    //                     ),
-    //                 },
-    //             )
-    //             .ok();
-    //         }
-    //     }
-
-    //     // Remove checkpoint file on successful completion
-    //     if processed >= total_to_process {
-    //         let _ = std::fs::remove_file(checkpoint_file);
-    //     }
-
-    //     Ok(())
-    // }
+        Ok(())
+    }
 }
 
 // 16. OPTIMIZED DATABASE STORAGE: Efficient batch insertion

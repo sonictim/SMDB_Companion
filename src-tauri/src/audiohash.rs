@@ -680,12 +680,12 @@ fn read_mp3_audio_data(file: &File) -> Result<Vec<u8>> {
 //     (result, duration)
 // }
 
-pub fn get_chromaprint_fingerprint<P: AsRef<Path>>(file_path: P) -> Result<(String, String)> {
+pub fn get_chromaprint_fingerprint<P: AsRef<Path>>(file_path: P) -> Option<String> {
     let path_str = file_path.as_ref().to_string_lossy().to_string();
     println!("Generating Chromaprint fingerprint for: {}", path_str);
 
     // Get PCM data (reuse your existing function)
-    let pcm_data = convert_to_raw_pcm(&path_str)?;
+    let pcm_data = convert_to_raw_pcm(&path_str).unwrap_or_default();
     println!("Got PCM data, length: {} bytes", pcm_data.len());
 
     // Convert to i16 samples
@@ -710,17 +710,19 @@ pub fn get_chromaprint_fingerprint<P: AsRef<Path>>(file_path: P) -> Result<(Stri
     c.finish();
 
     // Get both fingerprint formats
-    let text_fingerprint = c.fingerprint();
-    let raw_fingerprint = c.raw_fingerprint();
+    // let text_fingerprint = c.fingerprint();
+    if let Some(fingerprint) = c.raw_fingerprint() {
+        // Convert Vec<i32> to bytes before encoding
+        let bytes: Vec<u8> = fingerprint.iter().flat_map(|&x| x.to_le_bytes()).collect();
+        let encoded = general_purpose::STANDARD.encode(bytes);
+
+        Some(encoded)
+    } else {
+        eprintln!("Failed to generate chromaprint fingerprint");
+        None
+    }
 
     // Base64-encode the raw fingerprint (more efficient for database storage)
-    let encoded = raw_fingerprint.as_ref().map_or(String::new(), |v| {
-        // Convert Vec<i32> to bytes before encoding
-        let bytes: Vec<u8> = v.iter().flat_map(|&x| x.to_le_bytes()).collect();
-        general_purpose::STANDARD.encode(bytes)
-    });
-
-    Ok((text_fingerprint.unwrap_or_default(), encoded))
 }
 
 // pub fn get_chromaprint_rust_fingerprint<P: AsRef<Path>>(file_path: P) -> Result<(String, String)> {
