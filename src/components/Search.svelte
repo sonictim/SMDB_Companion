@@ -255,7 +255,7 @@
     <div class="block" style="height: 40vh">
         <div class="header">
             <h2>Search Algorithms</h2>
-            {#if selectedDb == null}
+            {#if selectedDb == null || selectedDb == "" || selectedDb == "Select Database"}
                 <button class="cta-button inactive">
                     <Search size={18} />
                     <span>Search</span>
@@ -408,7 +408,7 @@
     <div class="block" style="height: 100%; margin-top: 20px">
         <div class="header">
             <h2>Metadata Replacement</h2>
-            {#if selectedDb == null}
+            {#if selectedDb == null || selectedDb == "" || selectedDb == "Select Database" || $metadata.find == "" || $metadata.find == null}
                 <button class="cta-button inactive" style="width: 125px">
                     <Search size={18} />
                     <span> Find </span>

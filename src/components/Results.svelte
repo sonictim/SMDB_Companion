@@ -388,14 +388,25 @@
 
   async function previewFile(record: FileRecord) {
     let filePath = record.path + "/" + record.root;
-    await invoke("open_quicklook", { filePath: filePath })
+    console.log("playing audio:", filePath);
+    await invoke("play_audio", { path: filePath })
       .then(() => {
-        console.log("QuickLook:", filePath);
+        console.log("Success:", filePath);
       })
       .catch((error) => {
-        console.error("Error calling quicklook:", error);
+        console.error("Error calling audio playback:", error);
       });
   }
+  // async function previewFile(record: FileRecord) {
+  //   let filePath = record.path + "/" + record.root;
+  //   await invoke("open_quicklook", { filePath: filePath })
+  //     .then(() => {
+  //       console.log("QuickLook:", filePath);
+  //     })
+  //     .catch((error) => {
+  //       console.error("Error calling quicklook:", error);
+  //     });
+  // }
 
   function handleFileEraseChange(event: Event) {
     const select = event.target as HTMLSelectElement;

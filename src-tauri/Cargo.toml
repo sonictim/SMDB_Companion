@@ -1,6 +1,6 @@
 [package]
 name = "SMDB_Companion"
-version = "0.5.7"
+version = "0.5.8"
 description = "Soundminer Database Cleanup Tool"
 authors = ["Tim Farrell"]
 edition = "2024"
@@ -61,6 +61,8 @@ symphonia = { version = "0.5.4", features = [
     "default",
 ] }
 dirs = "6.0.0"
+rodio = "0.17"
+bit-set = "0.8.0"
 
 [profile.dev]
 incremental = true # Compile your binary in smaller steps.

@@ -2,6 +2,7 @@ use crate::*;
 
 pub use rfd::FileDialog;
 use std::process::Command;
+use std::result::Result;
 pub use std::sync::Arc;
 use tauri::async_runtime::Mutex;
 use tauri::{AppHandle, Emitter};
@@ -169,6 +170,18 @@ pub async fn search(
         .unwrap();
         counter += 1;
         state.db.dupe_search(&pref, &enabled, &app);
+
+        app.emit(
+            "search-sub-status",
+            StatusUpdate {
+                stage: "starting".into(),
+                progress: 10,
+                message: "Sorting Records".into(),
+            },
+        )
+        .unwrap();
+
+        state.db.records.sort_by(|a, b| a.root.cmp(&b.root));
 
         // Emit progress update
     }
@@ -396,14 +409,10 @@ pub async fn get_results(
     state: State<'_, Mutex<AppState>>,
 ) -> Result<Vec<FileRecordFrontend>, String> {
     // Try to acquire lock without waiting
-    let state = match state.try_lock() {
+    let mut state = match state.try_lock() {
         Ok(guard) => guard,
         Err(_) => return Err("State is currently locked".into()),
     };
-
-    // Create a clone of the records to release the lock sooner
-    // (This step might be optional depending on your architecture)
-    // let records_snapshot = state.db.records.clone(); // Assuming records can be cloned efficiently
 
     // Use Rayon's parallel iterator to transform the records in parallel
     let results: Vec<FileRecordFrontend> = state
@@ -447,3 +456,16 @@ pub async fn cancel_search(state: State<'_, Mutex<AppState>>) -> Result<String, 
 
     Ok(String::from("Search Canceled"))
 }
+// #[tauri::command]
+// pub async fn play_audio(path: &str) -> Result<(), String> {
+//     // audiohash::rodio_play(path);
+
+//     let mut audio = audiohash::AudioManager::new();
+//     audio.play(path);
+//     Ok(())
+// }
+
+// #[tauri::command]
+// pub async fn stop_audio() {
+//     audiohash::rodio_stop();
+// }

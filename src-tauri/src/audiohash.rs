@@ -3,20 +3,22 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-// use std::thread;
-// use std::time::Duration;
+use std::thread;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use base64::{Engine as _, engine::general_purpose};
 use chromaprint::Chromaprint;
-use chromaprint_rust::Context as ChromaprintContext;
+// use chromaprint_rust::Context as ChromaprintContext;
 use claxon::FlacReader;
-// use crossbeam_channel::{bounded, unbounded};
+use crossbeam_channel::{bounded, unbounded};
 use hound::WavReader;
 use minimp3::{Decoder, Frame};
 use parking_lot::RwLock;
 use rayon::prelude::*;
+use serde::Serialize;
 use sha2::{Digest, Sha256};
+use sqlx::SqlitePool;
 use std::process::Command;
 
 use symphonia::core::audio::SampleBuffer;
@@ -25,6 +27,117 @@ use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
+
+use rodio::{Decoder as RodioDecoder, OutputStream, OutputStreamHandle, Sink};
+
+pub const TABLE: &str = "justinmetadata";
+
+#[derive(Default, Debug, Serialize, Clone, PartialEq)]
+pub struct AudioFingerprint {
+    pub text: Arc<str>,
+    pub raw: Arc<str>,
+    pub exact: Arc<str>,
+}
+
+impl AudioFingerprint {
+    pub async fn new(path: &str) -> Result<Self, String> {
+        let pcm_data = match convert_to_raw_pcm(path) {
+            Ok(data) => data,
+            Err(err) => {
+                eprintln!("Error converting to PCM: {}", err);
+                return Err(format!("Failed to convert audio: {}", err));
+            }
+        };
+        // println!("Got PCM data, length: {} bytes", pcm_data.len());
+
+        let mut hasher = Sha256::new();
+        hasher.update(&pcm_data);
+        let exact = hex::encode(hasher.finalize());
+
+        // Convert to i16 samples
+        let samples: Vec<i16> = pcm_data
+            .chunks(4)
+            .filter_map(|chunk| {
+                if chunk.len() == 4 {
+                    let bytes = [chunk[0], chunk[1], chunk[2], chunk[3]];
+                    let float = f32::from_le_bytes(bytes);
+                    Some((float * 32767.0) as i16)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        println!("Converted to {} i16 samples", samples.len());
+
+        let mut c = Chromaprint::new();
+        c.start(48000, 1);
+        c.feed(&samples);
+        c.finish();
+
+        // Get both fingerprint formats
+        let text = match c.fingerprint() {
+            Some(text) => text,
+            None => {
+                eprintln!("Failed to generate text fingerprint");
+                return Err("Failed to generate text fingerprint".into());
+            }
+        };
+
+        let raw = match c.raw_fingerprint() {
+            Some(raw_fingerprint) => {
+                // Convert Vec<i32> to bytes before encoding
+                let bytes: Vec<u8> = raw_fingerprint
+                    .iter()
+                    .flat_map(|&x| x.to_le_bytes())
+                    .collect();
+                general_purpose::STANDARD.encode(bytes)
+            }
+            None => {
+                eprintln!("Failed to generate raw fingerprint");
+                return Err("Failed to generate raw fingerprint".into());
+            }
+        };
+        Ok(Self {
+            text: Arc::from(text),
+            raw: Arc::from(raw),
+            exact: Arc::from(exact),
+        })
+    }
+
+    pub async fn store(&self, pool: &SqlitePool, row: usize) -> Result<(), sqlx::Error> {
+        // Create a parameterized query to update a specific column in a specific row
+        let result = sqlx::query(&format!(
+        "UPDATE {} SET _fingerprint = ?, _fingerprint_raw = ?, _fingerprint_exact = ? WHERE rowid = ?", 
+        TABLE
+    ))
+    .bind(self.text.as_ref())
+    .bind(self.raw.as_ref())
+    .bind(self.exact.as_ref())
+    .bind(row as i64)
+    .execute(pool)
+    .await;
+
+        match result {
+            Ok(result) => {
+                if result.rows_affected() == 0 {
+                    println!(
+                        "WARNING: No rows affected when updating fingerprints for ID {}",
+                        row
+                    );
+                } else {
+                    println!("Successfully updated fingerprints for ID {}", row);
+                }
+            }
+            Err(e) => {
+                println!("ERROR updating fingerprints for ID {}: {}", row, e);
+            }
+        }
+
+        // println!("Updated column '{}' in row {} with value '{}'", column_name, row_id, value);
+        Ok(())
+    }
+}
 
 // Process pool size for FFmpeg conversions
 // const MAX_FFMPEG_PROCESSES: usize = 4;
@@ -49,50 +162,50 @@ lazy_static::lazy_static! {
     static ref FFMPEG_PATH: Arc<String> = Arc::new(get_ffmpeg_path());
 }
 
-// pub fn process_files_in_parallel(
-//     file_paths: &[String],
-//     ignore_filetype: bool,
-// ) -> Vec<(String, Result<String>)> {
-//     // Create a work queue with bounded capacity
-//     let (sender, receiver) = bounded::<(String, bool)>(32);
-//     let (result_sender, result_receiver) = unbounded::<(String, Result<String>)>();
+pub fn process_files_in_parallel(
+    file_paths: &[String],
+    ignore_filetype: bool,
+) -> Vec<(String, Result<String>)> {
+    // Create a work queue with bounded capacity
+    let (sender, receiver) = bounded::<(String, bool)>(32);
+    let (result_sender, result_receiver) = unbounded::<(String, Result<String>)>();
 
-//     // Spawn worker threads based on CPU count
-//     let num_workers = num_cpus::get();
-//     let mut handles = Vec::with_capacity(num_workers);
+    // Spawn worker threads based on CPU count
+    let num_workers = num_cpus::get();
+    let mut handles = Vec::with_capacity(num_workers);
 
-//     for _ in 0..num_workers {
-//         let receiver = receiver.clone();
-//         let result_sender = result_sender.clone();
-//         let handle = thread::spawn(move || {
-//             while let Ok((path, ignore)) = receiver.recv() {
-//                 let hash_result = hash_audio_content(&path, ignore);
-//                 result_sender.send((path.to_string(), hash_result)).unwrap();
-//             }
-//         });
-//         handles.push(handle);
-//     }
+    for _ in 0..num_workers {
+        let receiver = receiver.clone();
+        let result_sender = result_sender.clone();
+        let handle = thread::spawn(move || {
+            while let Ok((path, ignore)) = receiver.recv() {
+                let hash_result = hash_audio_content(&path, ignore);
+                result_sender.send((path.to_string(), hash_result)).unwrap();
+            }
+        });
+        handles.push(handle);
+    }
 
-//     // Send work to the queue
-//     for path in file_paths {
-//         sender.send((path.clone(), ignore_filetype)).unwrap();
-//     }
-//     drop(sender); // Close sender to signal no more work
-//     drop(result_sender); // Close original sender
+    // Send work to the queue
+    for path in file_paths {
+        sender.send((path.clone(), ignore_filetype)).unwrap();
+    }
+    drop(sender); // Close sender to signal no more work
+    drop(result_sender); // Close original sender
 
-//     // Collect results
-//     let mut results = Vec::with_capacity(file_paths.len());
-//     while let Ok(result) = result_receiver.recv() {
-//         results.push(result);
-//     }
+    // Collect results
+    let mut results = Vec::with_capacity(file_paths.len());
+    while let Ok(result) = result_receiver.recv() {
+        results.push(result);
+    }
 
-//     // Wait for all threads to complete
-//     for handle in handles {
-//         handle.join().unwrap();
-//     }
+    // Wait for all threads to complete
+    for handle in handles {
+        handle.join().unwrap();
+    }
 
-//     results
-// }
+    results
+}
 
 pub fn hash_audio_content(file_path: &str, ignore_filetypes: bool) -> Result<String> {
     // Check if file exists and get its modified time
@@ -669,4 +782,61 @@ pub fn get_chromaprint_fingerprint<P: AsRef<Path>>(file_path: P) -> Result<(Stri
 //     };
 
 //     Ok((text_fingerprint, encoded))
+// }
+
+// pub struct AudioManager {
+//     _stream: OutputStream, // Underscore prevents "unused" warning
+//     stream_handle: OutputStreamHandle,
+//     sink: Option<Sink>, // Use Option to recreate when needed
+// }
+
+// impl AudioManager {
+//     pub fn new() -> Self {
+//         let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+//         println!("AudioManager initialized");
+//         Self {
+//             _stream,
+//             stream_handle,
+//             sink: None,
+//         }
+//     }
+
+//     pub fn play(&mut self, path: &str) {
+//         println!("Starting playback of: {}", path);
+
+//         // Create a new sink each time
+//         let sink = Sink::try_new(&self.stream_handle).unwrap();
+
+//         // Open and decode file
+//         match std::fs::File::open(path) {
+//             Ok(file) => {
+//                 match RodioDecoder::new(BufReader::new(file)) {
+//                     Ok(source) => {
+//                         sink.append(source);
+//                         sink.detach(); // CRITICAL: Keep sink alive after function returns
+//                         println!("Playback started successfully");
+//                         self.sink = Some(sink);
+//                     }
+//                     Err(e) => println!("Failed to decode audio: {}", e),
+//                 }
+//             }
+//             Err(e) => println!("Failed to open file: {}", e),
+//         }
+//     }
+
+//     pub fn stop(&mut self) {
+//         if let Some(sink) = self.sink.take() {
+//             sink.stop();
+//             println!("Playback stopped");
+//         }
+//     }
+// }
+
+// pub fn rodio_play(path: &str) {
+//     let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+//     let sink = Sink::try_new(&stream_handle).unwrap();
+//     let file = std::fs::File::open(path).unwrap();
+//     let source = RodioDecoder::new(BufReader::new(file)).unwrap();
+//     sink.append(source);
+//     sink.sleep_until_end();
 // }
