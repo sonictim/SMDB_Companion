@@ -362,6 +362,7 @@ pub enum Algorithm {
     All,
     Basic,
     SimilarFilename,
+    SimilarAudio,
     Waveforms,
     Compare,
     Tags,

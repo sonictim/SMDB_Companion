@@ -534,7 +534,7 @@ impl Database {
                     processed_ids.insert(record.id);
 
                     // Add algorithm flag
-                    record.algorithm.insert(A::SimilarAudio);
+                    record.algorithm.insert(Algorithm::SimilarAudio);
 
                     // Remove Keep from duplicates
                     if j > 0 {
