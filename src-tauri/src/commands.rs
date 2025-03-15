@@ -409,7 +409,7 @@ pub async fn get_results(
     state: State<'_, Mutex<AppState>>,
 ) -> Result<Vec<FileRecordFrontend>, String> {
     // Try to acquire lock without waiting
-    let mut state = match state.try_lock() {
+    let state = match state.try_lock() {
         Ok(guard) => guard,
         Err(_) => return Err("State is currently locked".into()),
     };
