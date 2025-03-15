@@ -1,26 +1,7 @@
-// use std::env;
-// use std::fs::File;
-// use std::io::BufReader;
-use std::path::Path;
-// use std::sync::{Arc, Mutex};
-// use std::thread;
-// use std::time::Duration;
-
 use anyhow::{Context, Result};
 use base64::{Engine as _, engine::general_purpose};
 use chromaprint::Chromaprint;
-// use chromaprint_rust::Context as ChromaprintContext;
-// use claxon::FlacReader;
-// use crossbeam_channel::{bounded, unbounded};
-// use hound::WavReader;
-// use minimp3::{Decoder, Frame};
-// use parking_lot::RwLock;
-// use rayon::prelude::*;
-// use serde::Serialize;
-// use sha2::{Digest, Sha256};
-// use sqlx::SqlitePool;
-// use std::process::Command;
-
+use std::path::Path;
 use symphonia::core::audio::SampleBuffer;
 use symphonia::core::codecs::DecoderOptions;
 use symphonia::core::formats::FormatOptions;
@@ -32,11 +13,8 @@ use symphonia::core::probe::Hint;
 
 pub fn get_chromaprint_fingerprint<P: AsRef<Path>>(file_path: P) -> Option<String> {
     let path_str = file_path.as_ref().to_string_lossy().to_string();
-    // println!("Generating Chromaprint fingerprint for: {}", path_str);
 
-    // Get PCM data (reuse your existing function)
     let pcm_data = convert_to_raw_pcm(&path_str).unwrap_or_default();
-    // println!("Got PCM data, length: {} bytes", pcm_data.len());
 
     // Convert to i16 samples
     let samples: Vec<i16> = pcm_data
@@ -52,15 +30,11 @@ pub fn get_chromaprint_fingerprint<P: AsRef<Path>>(file_path: P) -> Option<Strin
         })
         .collect();
 
-    // println!("Converted to {} i16 samples", samples.len());
-
     let mut c = Chromaprint::new();
     c.start(48000, 1);
     c.feed(&samples);
     c.finish();
 
-    // Get both fingerprint formats
-    // let text_fingerprint = c.fingerprint();
     if let Some(fingerprint) = c.raw_fingerprint() {
         println!(
             "Generated raw fingerprint for: {} size; {}",
@@ -76,12 +50,9 @@ pub fn get_chromaprint_fingerprint<P: AsRef<Path>>(file_path: P) -> Option<Strin
         eprintln!("Failed to generate chromaprint fingerprint");
         None
     }
-
-    // Base64-encode the raw fingerprint (more efficient for database storage)
 }
 
 fn convert_to_raw_pcm(input_path: &str) -> Result<Vec<u8>> {
-    // Open the media source
     let file = std::fs::File::open(input_path)?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
 
@@ -189,8 +160,6 @@ fn convert_to_raw_pcm(input_path: &str) -> Result<Vec<u8>> {
 
     Ok(pcm_data)
 }
-
-// pub const TABLE: &str = "justinmetadata";
 
 // #[derive(Default, Debug, Serialize, Clone, PartialEq)]
 // pub struct AudioFingerprint {

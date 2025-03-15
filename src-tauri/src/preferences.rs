@@ -108,11 +108,13 @@ impl PreservationLogic {
                     let a_matches = a
                         .data
                         .get(&self.column)
-                        .map_or(false, |v| v.as_ref() == self.variable.as_ref());
+                        .map(|v| v.as_ref() == self.variable.as_ref())
+                        .unwrap_or(false);
                     let b_matches = b
                         .data
                         .get(&self.column)
-                        .map_or(false, |v| v.as_ref() == self.variable.as_ref());
+                        .map(|v| v.as_ref() == self.variable.as_ref())
+                        .unwrap_or(false);
 
                     b_matches.cmp(&a_matches)
                 });
@@ -122,26 +124,44 @@ impl PreservationLogic {
                     let a_matches = a
                         .data
                         .get(&self.column)
-                        .map_or(false, |v| *v == self.variable);
+                        .map(|v| *v == self.variable)
+                        .unwrap_or(false);
                     let b_matches = b
                         .data
                         .get(&self.column)
-                        .map_or(false, |v| *v == self.variable);
+                        .map(|v| *v == self.variable)
+                        .unwrap_or(false);
 
                     a_matches.cmp(&b_matches)
                 });
             }
             O::IsEmpty => {
                 vec.sort_by(|a, b| {
-                    let a_empty = a.data.get(&self.column).map_or(false, |v| v.is_empty());
-                    let b_empty = b.data.get(&self.column).map_or(false, |v| v.is_empty());
+                    let a_empty = a
+                        .data
+                        .get(&self.column)
+                        .map(|v| v.is_empty())
+                        .unwrap_or(false);
+                    let b_empty = b
+                        .data
+                        .get(&self.column)
+                        .map(|v| v.is_empty())
+                        .unwrap_or(false);
                     b_empty.cmp(&a_empty)
                 });
             }
             O::IsNotEmpty => {
                 vec.sort_by(|a, b| {
-                    let a_empty = a.data.get(&self.column).map_or(false, |v| v.is_empty());
-                    let b_empty = b.data.get(&self.column).map_or(false, |v| v.is_empty());
+                    let a_empty = a
+                        .data
+                        .get(&self.column)
+                        .map(|v| v.is_empty())
+                        .unwrap_or(false);
+                    let b_empty = b
+                        .data
+                        .get(&self.column)
+                        .map(|v| v.is_empty())
+                        .unwrap_or(false);
                     a_empty.cmp(&b_empty)
                 });
             }
@@ -150,11 +170,13 @@ impl PreservationLogic {
                     let a_contains = a
                         .data
                         .get(&self.column)
-                        .map_or(false, |v| v.contains(self.variable.as_ref()));
+                        .map(|v| v.contains(self.variable.as_ref()))
+                        .unwrap_or(false);
                     let b_contains = b
                         .data
                         .get(&self.column)
-                        .map_or(false, |v| v.contains(self.variable.as_ref()));
+                        .map(|v| v.contains(self.variable.as_ref()))
+                        .unwrap_or(false);
                     b_contains.cmp(&a_contains)
                 });
             }
@@ -163,11 +185,13 @@ impl PreservationLogic {
                     let a_contains = a
                         .data
                         .get(&self.column)
-                        .map_or(false, |v| v.contains(self.variable.as_ref()));
+                        .map(|v| v.contains(self.variable.as_ref()))
+                        .unwrap_or(false);
                     let b_contains = b
                         .data
                         .get(&self.column)
-                        .map_or(false, |v| v.contains(self.variable.as_ref()));
+                        .map(|v| v.contains(self.variable.as_ref()))
+                        .unwrap_or(false);
                     a_contains.cmp(&b_contains)
                 });
             }
@@ -182,27 +206,28 @@ enum ParsedValue {
     DateTime(NaiveDateTime),
 }
 
-impl PartialOrd for ParsedValue {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+impl Ord for ParsedValue {
+    fn cmp(&self, other: &Self) -> Ordering {
         match (self, other) {
-            (ParsedValue::Integer(a), ParsedValue::Integer(b)) => a.partial_cmp(b),
+            (ParsedValue::Integer(a), ParsedValue::Integer(b)) => a.cmp(b),
             (ParsedValue::Duration(a), ParsedValue::Duration(b)) => {
-                a.num_milliseconds().partial_cmp(&b.num_milliseconds())
+                a.num_milliseconds().cmp(&b.num_milliseconds())
             }
-            (ParsedValue::DateTime(a), ParsedValue::DateTime(b)) => a.partial_cmp(b),
+            (ParsedValue::DateTime(a), ParsedValue::DateTime(b)) => a.cmp(b),
 
-            // For different types, we define a custom ordering or return None.
-            (ParsedValue::Integer(_), _) => Some(Ordering::Less),
-            (ParsedValue::Duration(_), ParsedValue::DateTime(_)) => Some(Ordering::Less),
-            (ParsedValue::DateTime(_), ParsedValue::Integer(_)) => Some(Ordering::Greater),
-            _ => None,
+            // For different types, we define a custom ordering
+            (ParsedValue::Integer(_), _) => Ordering::Less,
+            (ParsedValue::Duration(_), ParsedValue::DateTime(_)) => Ordering::Less,
+            (ParsedValue::DateTime(_), ParsedValue::Integer(_)) => Ordering::Greater,
+            (ParsedValue::Duration(_), ParsedValue::Integer(_)) => Ordering::Greater,
+            (ParsedValue::DateTime(_), ParsedValue::Duration(_)) => Ordering::Greater,
         }
     }
 }
 
-impl Ord for ParsedValue {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.partial_cmp(other).unwrap_or(Ordering::Equal)
+impl PartialOrd for ParsedValue {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -330,13 +355,6 @@ pub fn generate_license_key_old(name: &str, email: &str) -> Arc<str> {
     hasher.update(format!("{}{}{}", name, email, salt).as_bytes());
     let hash = hasher.finalize();
     hex::encode_upper(hash).into()
-}
-
-#[derive(Clone, serde::Serialize)]
-pub struct StatusUpdate {
-    stage: String,
-    progress: u64,
-    message: String,
 }
 
 #[derive(Default, Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
