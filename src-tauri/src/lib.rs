@@ -1,5 +1,4 @@
 mod audiohash;
-use audiohash::*;
 mod commands;
 use anyhow::Result;
 use base64::Engine;
@@ -12,8 +11,8 @@ use rayon::prelude::*;
 pub use regex::Regex;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use sqlx::Row;
 pub use sqlx::sqlite::{SqlitePool, SqliteRow};
-use sqlx::{Executor, Row};
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
@@ -502,9 +501,6 @@ impl FileRecord {
         let mut algorithm = HashSet::new();
         if enabled.invalidpath && !path_exists {
             algorithm.insert(Algorithm::InvalidPath);
-            // if !enabled.invalidpath {
-            //     algorithm.insert(Algorithm::Keep);
-            // }
         } else if enabled.duration && checkduration(duration_str, enabled.min_dur) {
             algorithm.insert(Algorithm::Duration);
         } else if enabled.filetags && checktags(path_str, &pref.autoselects) {
@@ -531,7 +527,13 @@ impl FileRecord {
             }
         }
 
-        let fingerprint = row.try_get::<&str, _>("_fingerprint").ok();
+        let f = row.try_get::<&str, _>("_fingerprint").unwrap_or_default();
+
+        let fingerprint = if f.is_empty() || !pref.fetch_waveforms {
+            None
+        } else {
+            Some(Arc::from(f))
+        };
 
         let mut record = Self {
             id,
@@ -539,7 +541,7 @@ impl FileRecord {
             root: Arc::default(),
             duration: Arc::from(duration_str),
             data,
-            fingerprint: fingerprint.map(Arc::from),
+            fingerprint,
             algorithm,
         };
 
@@ -555,8 +557,6 @@ impl FileRecord {
         if let Some((base, _)) = pref.tags.iter().find_map(|tag| name.split_once(&**tag)) {
             name = Cow::Owned(base.to_string());
         }
-        // if enabled.audiosuite {
-        // }
 
         // Use const array to avoid repeated allocations
         const COPY_TAGS: [&str; 6] = [" copy.", " Copy.", " COPY.", ".copy.", ".Copy.", ".COPY."];
@@ -573,8 +573,6 @@ impl FileRecord {
                 .and_then(|caps| caps.name("base").map(|m| m.as_str().to_string()))
                 .unwrap_or_else(|| name.into_owned()),
         );
-        // if enabled.filename {
-        // }
 
         // Minimize string allocations for root
         self.root = if pref.ignore_filetype {
@@ -709,8 +707,8 @@ impl Database {
             self.records = Vec::with_capacity(self.size); // No need for .into()
             self.is_compare = is_compare;
             self.add_column("_fingerprint").await.ok();
-            self.add_column("_fingerprint_raw").await.ok();
-            self.add_column("_fingerprint_exact").await.ok();
+            // self.add_column("_fingerprint_raw").await.ok();
+            // self.add_column("_fingerprint_exact").await.ok();
         }
     }
 
@@ -920,7 +918,7 @@ impl Database {
         println!("Gathering all records from database");
         self.fetch_filerecords(
             &format!(
-                "SELECT rowid, filepath, duration, _fingerprint, _fingerprint_raw, _fingerprint_exact {} FROM {}",
+                "SELECT rowid, filepath, duration, _fingerprint, {} FROM {}",
                 pref.get_data_requirements(),
                 TABLE
             ),
@@ -1225,15 +1223,28 @@ impl Database {
     //             },
     //         )
     //         .ok();
-
-    //         record.fingerprint = AudioFingerprint::new(record.get_filepath())
-    //             .await
-    //             .ok()
-    //             .map(|fp| Arc::from(fp));
+    //         let fingerprint = match audiohash::get_chromaprint_fingerprint(&record.path) {
+    //             Some(fp) => {
+    //                 println!("SUCCESS fingerprint for: {}", record.get_filepath());
+    //                 Some(Arc::from(fp.as_str()))
+    //             }
+    //             None => {
+    //                 println!(
+    //                     "FAILED fingerprint for: {} (exists: {}, size: {})",
+    //                     record.get_filepath(),
+    //                     Path::new(record.get_filepath()).exists(),
+    //                     Path::new(record.get_filepath())
+    //                         .metadata()
+    //                         .map_or(0, |m| m.len())
+    //                 );
+    //                 None
+    //             }
+    //         };
+    //         record.fingerprint = fingerprint.clone();
     //         if pref.store_waveforms {
     //             if let Some(fingerprint) = &record.fingerprint {
     //                 if let Some(pool) = &pool {
-    //                     fingerprint.store(pool, record.id).await;
+    //                     let _ = update_column(pool, record.id, "_fingerprint", fingerprint).await;
     //                 }
     //             }
     //         };
@@ -1321,13 +1332,7 @@ impl Database {
                     .ok();
                 }
 
-                if records.len() < 2
-                // || records
-                //     .iter()
-                //     .filter(|r| !r.algorithm.contains(&A::Keep))
-                //     .count()
-                //     < 2
-                {
+                if records.len() < 2 {
                     return records;
                 }
                 pref.sort_vec(&mut records);
@@ -1528,7 +1533,7 @@ impl Database {
 
         // Process groups with progress updates
         let mut processed_records = Vec::with_capacity(self.records.len());
-        let mut processed_ids = BitSet::with_capacity(self.records.len());
+        let processed_ids = BitSet::with_capacity(self.records.len());
 
         // Add all records from similarity groups with progress
         let total_groups = similarity_groups.len();
@@ -1588,251 +1593,6 @@ impl Database {
 
         Ok(())
     }
-    // async fn similar_match_old(
-    //     &mut self,
-    //     pref: &Preferences,
-    //     app: &AppHandle,
-    // ) -> Result<(), String> {
-    //     let threshold = pref.similarity_threshold / 100.0;
-
-    //     app.emit(
-    //         "search-sub-status",
-    //         StatusUpdate {
-    //             stage: "similarity".into(),
-    //             progress: 0,
-    //             message: "Starting similarity-based audio comparison...".into(),
-    //         },
-    //     )
-    //     .ok();
-
-    //     // IMPORTANT: Preserve records without valid fingerprints
-    //     let records_without_fingerprints: Vec<FileRecord> = self
-    //         .records
-    //         .iter()
-    //         .filter(|record| {
-    //             record.audio_fingerprint_raw.is_none()
-    //                 || record
-    //                     .audio_fingerprint_raw
-    //                     .as_ref()
-    //                     .map_or(true, |fp| fp.is_empty())
-    //         })
-    //         .cloned()
-    //         .collect();
-
-    //     println!(
-    //         "Found {} records without valid fingerprints",
-    //         records_without_fingerprints.len()
-    //     );
-
-    //     // Filter records with valid fingerprints
-    //     let records_with_fingerprints: Vec<&FileRecord> = self
-    //         .records
-    //         .iter()
-    //         .filter(|record| {
-    //             record
-    //                 .audio_fingerprint_raw
-    //                 .as_ref()
-    //                 .is_some_and(|fp| !fp.is_empty())
-    //         })
-    //         .collect();
-
-    //     if *self.abort.read().await {
-    //         return Err("Aborted".to_string());
-    //     };
-
-    //     let total_records = records_with_fingerprints.len();
-    //     println!("Found {} records with valid fingerprints", total_records);
-
-    //     // Group similar fingerprints
-    //     let mut processed = HashSet::new();
-    //     let mut similar_groups: Vec<Vec<FileRecord>> = Vec::new();
-
-    //     // Process each record
-    //     for i in 0..total_records {
-    //         let idx = records_with_fingerprints[i].id;
-    //         if *self.abort.read().await {
-    //             return Err("Aborted".to_string());
-    //         };
-    //         // Skip if already processed
-    //         if processed.contains(&idx) {
-    //             continue;
-    //         }
-
-    //         if i % RECORD_DIVISOR == 0 || i == 0 || i == total_records - 1 {
-    //             app.emit(
-    //                 "search-sub-status",
-    //                 StatusUpdate {
-    //                     stage: "similarity".into(),
-    //                     progress: ((i + 1) * 100 / total_records) as u64,
-    //                     message: format!("Comparing fingerprints: {}/{}", i + 1, total_records),
-    //                 },
-    //             )
-    //             .ok();
-    //         }
-
-    //         let record_i = records_with_fingerprints[i];
-    //         let raw_fp_i = record_i.audio_fingerprint_raw.as_ref().unwrap();
-
-    //         // Skip empty fingerprints
-    //         if raw_fp_i.is_empty() {
-    //             continue;
-    //         }
-
-    //         // Decode the base64 fingerprint
-    //         let fp_bytes_i = match general_purpose::STANDARD.decode(raw_fp_i.as_ref()) {
-    //             Ok(bytes) => bytes,
-    //             Err(_) => continue,
-    //         };
-
-    //         // Convert bytes to i32 array
-    //         let mut fp_i = Vec::with_capacity(fp_bytes_i.len() / 4);
-    //         for chunk in fp_bytes_i.chunks_exact(4) {
-    //             if chunk.len() == 4 {
-    //                 let mut array = [0u8; 4];
-    //                 array.copy_from_slice(chunk);
-    //                 fp_i.push(u32::from_le_bytes(array));
-    //             }
-    //         }
-
-    //         let mut group = vec![record_i.clone()];
-    //         processed.insert(idx);
-
-    //         // Compare with all remaining records
-    //         for j in (i + 1)..total_records {
-    //             if *self.abort.read().await {
-    //                 return Err("Aborted".to_string());
-    //             };
-    //             let record_j = records_with_fingerprints[j];
-    //             let j_idx = record_j.id;
-
-    //             if processed.contains(&j_idx) {
-    //                 continue;
-    //             }
-
-    //             if let Some(raw_fp_j) = &record_j.audio_fingerprint_raw {
-    //                 // Decode fingerprint
-    //                 let fp_bytes_j = match general_purpose::STANDARD.decode(raw_fp_j.as_ref()) {
-    //                     Ok(bytes) => bytes,
-    //                     Err(_) => continue,
-    //                 };
-
-    //                 // Convert bytes to i32 array
-    //                 let mut fp_j = Vec::with_capacity(fp_bytes_j.len() / 4);
-    //                 for chunk in fp_bytes_j.chunks_exact(4) {
-    //                     if chunk.len() == 4 {
-    //                         let mut array = [0u8; 4];
-    //                         array.copy_from_slice(chunk);
-    //                         fp_j.push(u32::from_le_bytes(array));
-    //                     }
-    //                 }
-
-    //                 // Calculate similarity
-    //                 let similarity = calculate_similarity(&fp_i, &fp_j);
-
-    //                 // Debug print some similarities to check
-    //                 if j % 100 == 0 {
-    //                     println!(
-    //                         "Similarity between {} and {}: {}",
-    //                         record_i.get_filename(),
-    //                         record_j.get_filename(),
-    //                         similarity
-    //                     );
-    //                 }
-
-    //                 if similarity >= threshold {
-    //                     group.push(record_j.clone());
-    //                     processed.insert(j_idx);
-    //                 }
-    //             }
-    //         }
-
-    //         // Only add groups with more than one record
-    //         if group.len() > 1 {
-    //             println!("Found similar group with {} records", group.len());
-    //             similar_groups.push(group);
-    //         }
-    //         // similar_groups.push(group);
-    //     }
-
-    //     println!("Found {} groups with similar audio", similar_groups.len());
-
-    //     // Process the groups
-    //     let mut result_records = Vec::with_capacity(self.records.len());
-
-    //     // First add all records that weren't processed (no fingerprints or not in any group)
-    //     for record in &self.records {
-    //         if !processed.contains(&record.id) {
-    //             result_records.push(record.clone());
-    //         }
-    //     }
-
-    //     // Process each group
-    //     let groups_count = similar_groups.len();
-    //     for (i, mut group) in similar_groups.into_iter().enumerate() {
-    //         if *self.abort.read().await {
-    //             return Err("Aborted".to_string());
-    //         };
-    //         if i % RECORD_DIVISOR == 0 || i == 0 || i == groups_count - 1 {
-    //             app.emit(
-    //                 "search-sub-status",
-    //                 StatusUpdate {
-    //                     stage: "marking".into(),
-    //                     progress: ((i + 1) * 100 / groups_count) as u64,
-    //                     message: format!(
-    //                         "Processing similar audio group: {}/{}",
-    //                         i + 1,
-    //                         groups_count
-    //                     ),
-    //                 },
-    //             )
-    //             .ok();
-    //         }
-
-    //         // Sort according to preservation rules
-    //         pref.sort_vec(&mut group);
-
-    //         // Mark all but the first as duplicates
-    //         for (idx, mut record) in group.into_iter().enumerate() {
-    //             if idx > 0 {
-    //                 record.algorithm.remove(&A::Keep);
-    //             }
-    //             record.algorithm.insert(A::Waveforms);
-    //             result_records.push(record);
-    //         }
-    //     }
-
-    //     // let mut final_records = result_records;
-
-    //     // final_records.extend(records_without_fingerprints);
-
-    //     // self.records = final_records;
-
-    //     self.records = result_records;
-    //     println!("all done! {} records marked", self.records.len());
-    //     // Add debug info
-    //     // println!(
-    //     //     "Similar matching complete: {} total records, {} with fingerprints, {} similar groups, {} final records",
-    //     //     self.records.len(),
-    //     //     records_with_fingerprints.len(),
-    //     //     similar_groups.len(),
-    //     //     final_records.len()
-    //     // );
-
-    //     app.emit(
-    //         "search-sub-status",
-    //         StatusUpdate {
-    //             stage: "complete".into(),
-    //             progress: 100,
-    //             message: format!(
-    //                 "Similarity analysis complete: found {} duplicate groups",
-    //                 groups_count
-    //             ),
-    //         },
-    //     )
-    //     .ok();
-
-    //     Ok(())
-    // }
 
     async fn wave_search_chromaprint(
         &mut self,
@@ -1852,177 +1612,6 @@ impl Database {
 
         Ok(())
     }
-    // async fn gather_fingerprints2(
-    //     &mut self,
-    //     pref: &Preferences,
-    //     app: &AppHandle,
-    // ) -> Result<(), String> {
-    //     println!("Starting fingerprint collection");
-
-    //     // 1. OPTIMIZATION: Pre-filter records that need fingerprinting to avoid processing records unnecessarily
-    //     let records_needing_fingerprints: Vec<usize> = self
-    //         .records
-    //         .iter()
-    //         .enumerate()
-    //         .filter_map(|(idx, record)| {
-    //             if record.audio_fingerprint.is_none() || record.audio_fingerprint_raw.is_none() {
-    //                 Some(idx)
-    //             } else {
-    //                 None
-    //             }
-    //         })
-    //         .collect();
-
-    //     if records_needing_fingerprints.is_empty() {
-    //         println!("No fingerprints needed - all files already processed");
-    //         return Ok(());
-    //     }
-
-    //     let total_to_process = records_needing_fingerprints.len();
-    //     println!("Found {} files requiring fingerprinting", total_to_process);
-
-    //     // 2. OPTIMIZATION: Process files in larger batches instead of one by one
-    //     const BATCH_SIZE: usize = 20;
-    //     let mut fingerprints_to_store = Vec::with_capacity(BATCH_SIZE);
-    //     let mut processed = 0;
-
-    //     // 3. OPTIMIZATION: Get connection pool once instead of repeatedly
-    //     let db_pool = if pref.store_waveforms {
-    //         self.get_pool().await
-    //     } else {
-    //         None
-    //     };
-
-    //     // 4. OPTIMIZATION: Process files in batches
-    //     for batch in records_needing_fingerprints.chunks(BATCH_SIZE) {
-    //         if *self.abort.read().await {
-    //             // 5. OPTIMIZATION: Handle cancellation with proper cleanup
-    //             if !fingerprints_to_store.is_empty() && pref.store_waveforms {
-    //                 app.emit(
-    //                     "search-sub-status",
-    //                     StatusUpdate {
-    //                         stage: "saving".into(),
-    //                         progress: 100,
-    //                         message: "Cancelled - saving already processed fingerprints...".into(),
-    //                     },
-    //                 )
-    //                 .ok();
-
-    //                 // Store any fingerprints we've already processed before exiting
-    //                 if let Some(ref pool) = db_pool {
-    //                     store_fingerprints_batch(pool, &fingerprints_to_store).await;
-    //                 }
-    //             }
-    //             return Err("Aborted".to_string());
-    //         }
-
-    //         // 6. OPTIMIZATION: Use par_iter for parallel fingerprint generation
-    //         let batch_results: Vec<_> = batch
-    //             .par_iter()
-    //             .filter_map(|&idx| {
-    //                 // Get the current abort status without waiting
-    //                 // Uses try_read() instead of now_or_never() which isn't available for this type
-    //                 if let Ok(guard) = tauri::async_runtime::RwLock::try_read(&*self.abort) {
-    //                     if *guard {
-    //                         return None;
-    //                     }
-    //                 }
-
-    //                 let record = &self.records[idx];
-
-    //                 // Skip if already has fingerprints
-    //                 if record.audio_fingerprint.is_some() && record.audio_fingerprint_raw.is_some()
-    //                 {
-    //                     return None;
-    //                 }
-
-    //                 // Generate fingerprint
-    //                 match audiohash::get_chromaprint_rust_fingerprint(&record.path) {
-    //                     Ok((mut fingerprint, mut raw)) => {
-    //                         if raw.is_empty() {
-    //                             // Fallback to hash if raw is empty
-    //                             if let Ok(hash) = audiohash::hash_audio_content(
-    //                                 record.get_path(),
-    //                                 pref.ignore_filetype,
-    //                             ) {
-    //                                 fingerprint = hash.clone();
-    //                                 raw = hash;
-    //                             }
-    //                         }
-
-    //                         // Return index and fingerprints
-    //                         Some((idx, fingerprint, raw))
-    //                     }
-    //                     Err(_) => None,
-    //                 }
-    //             })
-    //             .collect();
-
-    //         // 7. OPTIMIZATION: Update in-memory records first (avoid allocations)
-    //         for (idx, fingerprint, raw) in &batch_results {
-    //             let record = &mut self.records[*idx];
-    //             record.audio_fingerprint = Some(Arc::from(fingerprint.as_ref()));
-    //             record.audio_fingerprint_raw = Some(Arc::from(raw.as_ref()));
-    //         }
-
-    //         // Add to storage batch
-    //         fingerprints_to_store.extend(
-    //             batch_results
-    //                 .iter()
-    //                 .map(|(idx, fp, raw)| (self.records[*idx].id, fp.clone(), raw.clone())),
-    //         );
-
-    //         // 8. OPTIMIZATION: Periodic database storage to avoid memory buildup
-    //         if pref.store_waveforms && fingerprints_to_store.len() >= BATCH_SIZE * 5 {
-    //             if let Some(ref pool) = db_pool {
-    //                 app.emit(
-    //                     "search-sub-status",
-    //                     StatusUpdate {
-    //                         stage: "saving".into(),
-    //                         progress: (processed * 100 / total_to_process) as u64,
-    //                         message: "Saving batch of fingerprints...".into(),
-    //                     },
-    //                 )
-    //                 .ok();
-
-    //                 // 9. OPTIMIZATION: Store in batch transaction
-    //                 store_fingerprints_batch(pool, &fingerprints_to_store).await;
-    //                 fingerprints_to_store.clear();
-    //             }
-    //         }
-
-    //         // Update progress
-    //         processed += batch.len();
-    //         app.emit(
-    //             "search-sub-status",
-    //             StatusUpdate {
-    //                 stage: "fingerprinting".into(),
-    //                 progress: (processed * 100 / total_to_process) as u64,
-    //                 message: format!("Fingerprinted {}/{} files", processed, total_to_process),
-    //             },
-    //         )
-    //         .ok();
-    //     }
-
-    //     // Final storage of any remaining fingerprints
-    //     if pref.store_waveforms && !fingerprints_to_store.is_empty() {
-    //         if let Some(ref pool) = db_pool {
-    //             app.emit(
-    //                 "search-sub-status",
-    //                 StatusUpdate {
-    //                     stage: "saving".into(),
-    //                     progress: 100,
-    //                     message: "Saving final fingerprints...".into(),
-    //                 },
-    //             )
-    //             .ok();
-
-    //             store_fingerprints_batch(pool, &fingerprints_to_store).await;
-    //         }
-    //     }
-
-    //     Ok(())
-    // }
 
     async fn gather_fingerprints3(
         &mut self,
@@ -2045,7 +1634,7 @@ impl Database {
             // }
 
             let path = PathBuf::from(record.get_filepath());
-            if !path.is_file() {
+            if !path.exists() || !path.is_file() {
                 // Skip non-file paths
                 continue;
             }
@@ -2062,6 +1651,7 @@ impl Database {
 
         let total_to_process = records_needing_fingerprints.len();
         println!("Found {} files requiring fingerprinting", total_to_process);
+        println!("{:#?}", records_needing_fingerprints);
 
         // 2. CHECKPOINT OPTIMIZATION: Save progress marker to restart from
         let mut checkpoint_file = std::env::temp_dir();
@@ -2164,7 +1754,27 @@ impl Database {
                             return None;
                         }
 
-                        record.fingerprint = audiohash::get_chromaprint_fingerprint(&record.path);
+                        // Convert Option<String> to Option<Arc<str>> and return the result
+                        let fingerprint = match audiohash::get_chromaprint_fingerprint(&record.path)
+                        {
+                            Some(fp) => {
+                                println!("SUCCESS fingerprint for: {}", record.get_filepath());
+                                Some(Arc::from(fp.as_str()))
+                            }
+                            None => {
+                                println!(
+                                    "FAILED fingerprint for: {} (exists: {}, size: {})",
+                                    record.get_filepath(),
+                                    Path::new(record.get_filepath()).exists(),
+                                    Path::new(record.get_filepath())
+                                        .metadata()
+                                        .map_or(0, |m| m.len())
+                                );
+                                None
+                            }
+                        };
+
+                        Some((idx, fingerprint))
                     })
                     .collect()
             });
@@ -2172,18 +1782,14 @@ impl Database {
             // 11. IN-MEMORY UPDATE OPTIMIZATION: Update records directly
             for (idx, fingerprint) in &batch_results {
                 let record = &mut self.records[*idx];
-                record.fingerprint = Some(Arc::from(fingerprint.as_str()));
-                // record.fingerprint_raw = Some(Arc::from(raw.as_str()));
-                // record.audio_fingerprint_exact = Some(Arc::from(exact.as_str()));
+                record.fingerprint = fingerprint.clone();
             }
 
             // Add to storage queue
-            fingerprints_to_store.extend(batch_results.iter().map(|(idx, fp, raw, exact)| {
+            fingerprints_to_store.extend(batch_results.iter().map(|(idx, fingerprint)| {
                 (
                     self.records[*idx].id,
-                    fp.clone(),
-                    raw.clone(),
-                    exact.clone(),
+                    fingerprint.clone().unwrap_or_default().to_string(),
                 )
             }));
 
@@ -2266,7 +1872,7 @@ impl Database {
 /// Optimized batch storage of audio fingerprints to database
 async fn store_fingerprints_batch_optimized(
     pool: &SqlitePool,
-    fingerprints: &[(usize, String, String, String)],
+    fingerprints: &[(usize, String)],
     app: &AppHandle,
 ) {
     if fingerprints.is_empty() {
@@ -2303,7 +1909,7 @@ async fn store_fingerprints_batch_optimized(
             let mut success_count = 0;
             let mut error_count = 0;
 
-            for (i, (id, fingerprint, raw, exact)) in fingerprints.iter().enumerate() {
+            for (i, (id, fingerprint)) in fingerprints.iter().enumerate() {
                 // Emit progress updates periodically
                 if i % 25 == 0 || i == total - 1 {
                     app.emit(
@@ -2317,21 +1923,14 @@ async fn store_fingerprints_batch_optimized(
                     .ok();
                 }
 
-                // Debug output for empty exact fingerprints
-                if exact.is_empty() {
-                    println!("WARNING: Empty exact fingerprint for ID {}", id);
-                }
-
                 let result = sqlx::query(&format!(
-                        "UPDATE {} SET _fingerprint = ?, _fingerprint_raw = ?, _fingerprint_exact = ? WHERE rowid = ?", 
-                        TABLE
-                    ))
-                    .bind(fingerprint)
-                    .bind(raw)
-                    .bind(exact)
-                    .bind(*id as i64)
-                    .execute(&mut *tx)
-                    .await;
+                    "UPDATE {} SET _fingerprint = ? WHERE rowid = ?",
+                    TABLE
+                ))
+                .bind(fingerprint)
+                .bind(*id as i64)
+                .execute(&mut *tx)
+                .await;
 
                 match result {
                     Ok(result) => {
@@ -2630,71 +2229,71 @@ fn calculate_similarity(fp1: &[u32], fp2: &[u32]) -> f64 {
     best_similarity
 }
 
-// The group-building functionality should be moved to a method or function
-fn build_similarity_groups(
-    records_with_fingerprints: &[&FileRecord],
-    threshold: f64,
-) -> HashMap<usize, Vec<(usize, Vec<u32>)>> {
-    // Create multi-level grouping
-    let mut groups: HashMap<usize, Vec<(usize, Vec<u32>)>> = HashMap::new();
-    let mut next_group_id = 0;
-    let total_records = records_with_fingerprints.len();
+// // The group-building functionality should be moved to a method or function
+// fn build_similarity_groups(
+//     records_with_fingerprints: &[&FileRecord],
+//     threshold: f64,
+// ) -> HashMap<usize, Vec<(usize, Vec<u32>)>> {
+//     // Create multi-level grouping
+//     let mut groups: HashMap<usize, Vec<(usize, Vec<u32>)>> = HashMap::new();
+//     let mut next_group_id = 0;
+//     let total_records = records_with_fingerprints.len();
 
-    // First pass - decode all fingerprints
-    let decoded_fps: Vec<Option<Vec<u32>>> = records_with_fingerprints
-        .par_iter()
-        .map(|record| {
-            if let Some(raw_fp) = &record.fingerprint {
-                if let Ok(fp_bytes) = general_purpose::STANDARD.decode(raw_fp.raw.as_ref()) {
-                    let mut fp = Vec::with_capacity(fp_bytes.len() / 4);
-                    for chunk in fp_bytes.chunks_exact(4) {
-                        if chunk.len() == 4 {
-                            let mut array = [0u8; 4];
-                            array.copy_from_slice(chunk);
-                            fp.push(u32::from_le_bytes(array));
-                        }
-                    }
-                    return Some(fp);
-                }
-            }
-            None
-        })
-        .collect();
+//     // First pass - decode all fingerprints
+//     let decoded_fps: Vec<Option<Vec<u32>>> = records_with_fingerprints
+//         .par_iter()
+//         .map(|record| {
+//             if let Some(raw_fp) = &record.fingerprint {
+//                 if let Ok(fp_bytes) = general_purpose::STANDARD.decode(raw_fp.as_ref()) {
+//                     let mut fp = Vec::with_capacity(fp_bytes.len() / 4);
+//                     for chunk in fp_bytes.chunks_exact(4) {
+//                         if chunk.len() == 4 {
+//                             let mut array = [0u8; 4];
+//                             array.copy_from_slice(chunk);
+//                             fp.push(u32::from_le_bytes(array));
+//                         }
+//                     }
+//                     return Some(fp);
+//                 }
+//             }
+//             None
+//         })
+//         .collect();
 
-    // Second pass - build groups with similarity
-    for i in 0..total_records {
-        let idx = records_with_fingerprints[i].id;
+//     // Second pass - build groups with similarity
+//     for i in 0..total_records {
+//         let idx = records_with_fingerprints[i].id;
 
-        if let Some(ref fp_i) = decoded_fps[i] {
-            let mut found_group = None;
+//         if let Some(ref fp_i) = decoded_fps[i] {
+//             let mut found_group = None;
 
-            // Try to find an existing group that this record belongs to
-            for (&group_id, group_members) in &groups {
-                for (_, group_fp) in group_members {
-                    let similarity = calculate_similarity_simd(fp_i, group_fp);
-                    if similarity >= threshold {
-                        found_group = Some(group_id);
-                        break;
-                    }
-                }
-                if found_group.is_some() {
-                    break;
-                }
-            }
+//             // Try to find an existing group that this record belongs to
+//             for (&group_id, group_members) in &groups {
+//                 for (_, group_fp) in group_members {
+//                     let similarity = calculate_similarity_simd(fp_i, group_fp);
+//                     if similarity >= threshold {
+//                         found_group = Some(group_id);
+//                         break;
+//                     }
+//                 }
+//                 if found_group.is_some() {
+//                     break;
+//                 }
+//             }
 
-            // If we found a matching group, add the record to it
-            if let Some(group_id) = found_group {
-                groups.get_mut(&group_id).unwrap().push((idx, fp_i.clone()));
-            } else {
-                // If no matching group, create a new one
-                groups.insert(next_group_id, vec![(idx, fp_i.clone())]);
-                next_group_id += 1;
-            }
-        }
-    }
+//             // If we found a matching group, add the record to it
+//             if let Some(group_id) = found_group {
+//                 groups.get_mut(&group_id).unwrap().push((idx, fp_i.clone()));
+//             } else {
+//                 // If no matching group, create a new one
+//                 groups.insert(next_group_id, vec![(idx, fp_i.clone())]);
+//                 next_group_id += 1;
+//             }
+//         }
+//     }
 
-    groups
-}
+//     groups
+// }
 
 fn checkduration(duration: &str, min_dur: f64) -> bool {
     if let Some((minutes, rest)) = duration.split_once(':') {
@@ -2785,59 +2384,59 @@ fn get_column_as_string(row: &SqliteRow, column: &str) -> Option<Arc<str>> {
     None
 }
 
-async fn update_column(
-    pool: &SqlitePool,
-    row: usize,
-    column: &str,
-    value: &str,
-) -> Result<(), sqlx::Error> {
-    // Create a parameterized query to update a specific column in a specific row
-    let query = format!("UPDATE {} SET {} = ? WHERE rowid = ?", TABLE, column);
-    println!("column: {}, Value: {}", column, value);
+// async fn update_column(
+//     pool: &SqlitePool,
+//     row: usize,
+//     column: &str,
+//     value: &str,
+// ) -> Result<(), sqlx::Error> {
+//     // Create a parameterized query to update a specific column in a specific row
+//     let query = format!("UPDATE {} SET {} = ? WHERE rowid = ?", TABLE, column);
+//     println!("column: {}, Value: {}", column, value);
 
-    // Execute the query with the provided parameters
-    sqlx::query(&query)
-        .bind(value)
-        .bind(row as i64) // SQLite uses i64 for rowid
-        .execute(pool)
-        .await?;
+//     // Execute the query with the provided parameters
+//     sqlx::query(&query)
+//         .bind(value)
+//         .bind(row as i64) // SQLite uses i64 for rowid
+//         .execute(pool)
+//         .await?;
 
-    // println!("Updated column '{}' in row {} with value '{}'", column_name, row_id, value);
-    Ok(())
-}
-async fn update_db_fingerprints(
-    pool: &SqlitePool,
-    row: usize,
-    fingerprint: &AudioFingerprint,
-) -> Result<(), sqlx::Error> {
-    // Create a parameterized query to update a specific column in a specific row
-    let result = sqlx::query(&format!(
-        "UPDATE {} SET _fingerprint = ?, _fingerprint_raw = ?, _fingerprint_exact = ? WHERE rowid = ?", 
-        TABLE
-    ))
-    .bind(fingerprint.text.as_ref())
-    .bind(fingerprint.raw.as_ref())
-    .bind(fingerprint.exact.as_ref())
-    .bind(row as i64)
-    .execute(pool)
-    .await;
+//     // println!("Updated column '{}' in row {} with value '{}'", column_name, row_id, value);
+//     Ok(())
+// }
+// async fn update_db_fingerprints(
+//     pool: &SqlitePool,
+//     row: usize,
+//     fingerprint: &AudioFingerprint,
+// ) -> Result<(), sqlx::Error> {
+//     // Create a parameterized query to update a specific column in a specific row
+//     let result = sqlx::query(&format!(
+//         "UPDATE {} SET _fingerprint = ?, _fingerprint_raw = ?, _fingerprint_exact = ? WHERE rowid = ?",
+//         TABLE
+//     ))
+//     .bind(fingerprint.text.as_ref())
+//     .bind(fingerprint.raw.as_ref())
+//     .bind(fingerprint.exact.as_ref())
+//     .bind(row as i64)
+//     .execute(pool)
+//     .await;
 
-    match result {
-        Ok(result) => {
-            if result.rows_affected() == 0 {
-                println!(
-                    "WARNING: No rows affected when updating fingerprints for ID {}",
-                    row
-                );
-            } else {
-                println!("Successfully updated fingerprints for ID {}", row);
-            }
-        }
-        Err(e) => {
-            println!("ERROR updating fingerprints for ID {}: {}", row, e);
-        }
-    }
+//     match result {
+//         Ok(result) => {
+//             if result.rows_affected() == 0 {
+//                 println!(
+//                     "WARNING: No rows affected when updating fingerprints for ID {}",
+//                     row
+//                 );
+//             } else {
+//                 println!("Successfully updated fingerprints for ID {}", row);
+//             }
+//         }
+//         Err(e) => {
+//             println!("ERROR updating fingerprints for ID {}: {}", row, e);
+//         }
+//     }
 
-    // println!("Updated column '{}' in row {} with value '{}'", column_name, row_id, value);
-    Ok(())
-}
+//     // println!("Updated column '{}' in row {} with value '{}'", column_name, row_id, value);
+//     Ok(())
+// }

@@ -682,11 +682,11 @@ fn read_mp3_audio_data(file: &File) -> Result<Vec<u8>> {
 
 pub fn get_chromaprint_fingerprint<P: AsRef<Path>>(file_path: P) -> Option<String> {
     let path_str = file_path.as_ref().to_string_lossy().to_string();
-    println!("Generating Chromaprint fingerprint for: {}", path_str);
+    // println!("Generating Chromaprint fingerprint for: {}", path_str);
 
     // Get PCM data (reuse your existing function)
     let pcm_data = convert_to_raw_pcm(&path_str).unwrap_or_default();
-    println!("Got PCM data, length: {} bytes", pcm_data.len());
+    // println!("Got PCM data, length: {} bytes", pcm_data.len());
 
     // Convert to i16 samples
     let samples: Vec<i16> = pcm_data
@@ -702,7 +702,7 @@ pub fn get_chromaprint_fingerprint<P: AsRef<Path>>(file_path: P) -> Option<Strin
         })
         .collect();
 
-    println!("Converted to {} i16 samples", samples.len());
+    // println!("Converted to {} i16 samples", samples.len());
 
     let mut c = Chromaprint::new();
     c.start(48000, 1);
@@ -712,6 +712,11 @@ pub fn get_chromaprint_fingerprint<P: AsRef<Path>>(file_path: P) -> Option<Strin
     // Get both fingerprint formats
     // let text_fingerprint = c.fingerprint();
     if let Some(fingerprint) = c.raw_fingerprint() {
+        println!(
+            "Generated raw fingerprint for: {} size; {}",
+            file_path.as_ref().to_string_lossy(),
+            fingerprint.len()
+        );
         // Convert Vec<i32> to bytes before encoding
         let bytes: Vec<u8> = fingerprint.iter().flat_map(|&x| x.to_le_bytes()).collect();
         let encoded = general_purpose::STANDARD.encode(bytes);
