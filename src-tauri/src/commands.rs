@@ -1,4 +1,5 @@
 use crate::*;
+use audio::*;
 
 pub use rfd::FileDialog;
 use std::process::Command;
@@ -456,6 +457,22 @@ pub async fn cancel_search(state: State<'_, Mutex<AppState>>) -> Result<String, 
 
     Ok(String::from("Search Canceled"))
 }
+
+#[tauri::command]
+pub async fn play_audio(
+    state: State<'_, Mutex<AppState>>,
+    file_path: String,
+) -> Result<(), String> {
+    let state = state.lock().await;
+
+    state.audio.play(&file_path)
+}
+
+#[tauri::command]
+pub fn stop_audio(player: State<AudioPlayer>) {
+    player.stop();
+}
+
 // #[tauri::command]
 // pub async fn play_audio(path: &str) -> Result<(), String> {
 //     // audiohash::rodio_play(path);

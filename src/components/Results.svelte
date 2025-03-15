@@ -389,7 +389,7 @@
   async function previewFile(record: FileRecord) {
     let filePath = record.path + "/" + record.root;
     console.log("playing audio:", filePath);
-    await invoke("play_audio", { path: filePath })
+    await invoke("play_audio", { filePath: filePath })
       .then(() => {
         console.log("Success:", filePath);
       })

@@ -9,7 +9,52 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 
-// use rodio::{Decoder as RodioDecoder, OutputStream, OutputStreamHandle, Sink};
+use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink};
+use std::fs::File;
+use std::io::BufReader;
+use std::sync::{Arc, Mutex};
+
+pub struct AudioPlayer {
+    stream_handle: OutputStreamHandle,
+    sink: Arc<Mutex<Option<Sink>>>,
+}
+
+impl Default for AudioPlayer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl AudioPlayer {
+    pub fn new() -> Self {
+        let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+        Self {
+            stream_handle,
+            sink: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    pub fn play(&self, file_path: &str) -> Result<(), String> {
+        let file = File::open(file_path).map_err(|e| e.to_string())?;
+        let source = Decoder::new(BufReader::new(file)).map_err(|e| e.to_string())?;
+
+        let sink = Sink::try_new(&self.stream_handle).map_err(|e| e.to_string())?;
+        sink.append(source);
+        sink.play();
+
+        let mut sink_guard = self.sink.lock().unwrap();
+        *sink_guard = Some(sink);
+
+        Ok(())
+    }
+
+    pub fn stop(&self) {
+        let mut sink_guard = self.sink.lock().unwrap();
+        if let Some(sink) = sink_guard.take() {
+            sink.stop();
+        }
+    }
+}
 
 pub fn get_chromaprint_fingerprint<P: AsRef<Path>>(file_path: P) -> Option<String> {
     let path_str = file_path.as_ref().to_string_lossy().to_string();

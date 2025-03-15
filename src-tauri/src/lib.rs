@@ -42,6 +42,7 @@ pub fn run() {
                 .set_title(&format!("SMDB Companion :: v{}", version));
 
             app.manage(Mutex::new(AppState::default()));
+            app.manage(audio::AudioPlayer::new());
             Ok(())
         })
         // .plugin(tauri_plugin_window::init())
@@ -64,8 +65,8 @@ pub fn run() {
             check_reg,
             open_quicklook,
             cancel_search,
-            // play_audio,
-            // stop_audio,
+            play_audio,
+            stop_audio,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -109,6 +110,7 @@ fn set_library_path() {
 #[derive(Default)]
 pub struct AppState {
     db: Database,
+    audio: audio::AudioPlayer,
     // enabled: Enabled,
     // pref: Preferences,
     // reg: Registration,
