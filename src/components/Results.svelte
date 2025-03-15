@@ -499,69 +499,51 @@
       {/if}
     </div>
   </div>
-
-  <div class="bar" style="margin-bottom: 16px; margin-top: 10px">
-    <!-- <div class="button-group"> -->
-    <button type="button" class="grid item" on:click={toggle_enable_selections}>
-      {#if enableSelections}
-        <CheckSquare size={20} class="checkbox checked" />
-      {:else}
-        <Square size={20} class="checkbox" />
-      {/if}
-      <span>Enable Selections</span>
-    </button>
-
-    <!-- <button class="small-button" on:click={() => checkSelected([...selectedItems])}>Check Selected</button>
-      <button class="small-button" on:click={() => uncheckSelected([...selectedItems])}>Uncheck Selected</button> -->
-
-    {#if enableSelections}
-      <button class="small-button" on:click={clearSelected}
-        >Clear all Selections</button
+  <div class="header" style="margin-bottom: 20px; margin-top: 10px;">
+    <span>
+      Remove Records From:
+      <select
+        class="select-field"
+        bind:value={pref.safety_db}
+        on:change={() => preferencesStore.set(pref)}
       >
-    {/if}
-    <!-- </div> -->
-
-    <div class="filter-container">
-      {#if isRemove}
-        <span>Filter by: </span>
-        <select
-          class="select-field"
-          bind:value={currentFilter}
-          on:change={handleFilterChange}
-        >
-          {#each filters as option}
-            <option value={option.id}>{option.name}</option>
-          {/each}
-        </select>
+        {#each [{ bool: true, text: "Database Copy" }, { bool: false, text: "Current Database" }] as option}
+          <option value={option.bool}>{option.text}</option>
+        {/each}
+      </select>
+      {#if pref.safety_db}
+        with tag:
+        <input
+          class="input-field"
+          placeholder="thinned"
+          type="text"
+          id="new_db_tag"
+          bind:value={pref.safety_db_tag}
+          on:change={() => preferencesStore.set(pref)}
+        />
       {:else}
-        <button
-          type="button"
-          class="grid item"
-          style="margin-left: 120px"
-          on:click={toggleMarkDirty}
-        >
-          {#if $metadataStore.mark_dirty}
-            <CheckSquare
-              size={20}
-              class="checkbox checked {metadata.column == 'FilePath' ||
-              metadata.column == 'Filename' ||
-              metadata.column == 'Pathname'
-                ? 'inactive'
-                : ''}"
-            />
-          {:else}
-            <Square size={20} class="checkbox" />
-          {/if}
-          <span
-            class={metadata.column == "FilePath" ||
-            metadata.column == "Filename" ||
-            metadata.column == "Pathname"
-              ? "inactive"
-              : ""}>Mark Records as Dirty</span
-          >
-        </button>
+        <TriangleAlert
+          size="20"
+          class="blinking"
+          style="color: var(--warning-hover)"
+        />
       {/if}
-    </div>
+    </span>
+    <span>
+      {#if pref.erase_files !== "Keep"}
+        <TriangleAlert
+          size="20"
+          class={pref.erase_files == "Delete" ? "blinking" : ""}
+          style="color: var(--warning-hover)"
+        />
+      {/if}
+      Duplicate Files On Disk:
+      <select class="select-field" on:change={handleFileEraseChange}>
+        {#each [{ id: "Keep", text: "Keep" }, { id: "Trash", text: "Move To Trash" }, { id: "Delete", text: "Permanently Delete" }] as option}
+          <option value={option.id}>{option.text}</option>
+        {/each}
+      </select>
+    </span>
   </div>
 
   <div
@@ -692,51 +674,68 @@
       </VirtualList>
     {/if}
   </div>
-  <div class="header" style="margin-bottom: 0px">
-    <span>
-      Remove Records From:
-      <select
-        class="select-field"
-        bind:value={pref.safety_db}
-        on:change={() => preferencesStore.set(pref)}
-      >
-        {#each [{ bool: true, text: "Database Copy" }, { bool: false, text: "Current Database" }] as option}
-          <option value={option.bool}>{option.text}</option>
-        {/each}
-      </select>
-      {#if pref.safety_db}
-        with tag:
-        <input
-          class="input-field"
-          placeholder="thinned"
-          type="text"
-          id="new_db_tag"
-          bind:value={pref.safety_db_tag}
-          on:change={() => preferencesStore.set(pref)}
-        />
+  <div class="bar" style="margin-top: 0px; margin-bottom: 0px; padding: 0px;">
+    <!-- <div class="button-group"> -->
+    <button type="button" class="grid item" on:click={toggle_enable_selections}>
+      {#if enableSelections}
+        <CheckSquare size={20} class="checkbox checked" />
       {:else}
-        <TriangleAlert
-          size="20"
-          class="blinking"
-          style="color: var(--warning-hover)"
-        />
+        <Square size={20} class="checkbox" />
       {/if}
-    </span>
-    <span>
-      {#if pref.erase_files !== "Keep"}
-        <TriangleAlert
-          size="20"
-          class={pref.erase_files == "Delete" ? "blinking" : ""}
-          style="color: var(--warning-hover)"
-        />
+      <span>Enable Selections</span>
+    </button>
+
+    <!-- <button class="small-button" on:click={() => checkSelected([...selectedItems])}>Check Selected</button>
+      <button class="small-button" on:click={() => uncheckSelected([...selectedItems])}>Uncheck Selected</button> -->
+
+    {#if enableSelections}
+      <button class="small-button" on:click={clearSelected}
+        >Clear all Selections</button
+      >
+    {/if}
+    <!-- </div> -->
+
+    <div class="filter-container">
+      {#if isRemove}
+        <span>Filter by: </span>
+        <select
+          class="select-field"
+          bind:value={currentFilter}
+          on:change={handleFilterChange}
+        >
+          {#each filters as option}
+            <option value={option.id}>{option.name}</option>
+          {/each}
+        </select>
+      {:else}
+        <button
+          type="button"
+          class="grid item"
+          style="margin-left: 120px"
+          on:click={toggleMarkDirty}
+        >
+          {#if $metadataStore.mark_dirty}
+            <CheckSquare
+              size={20}
+              class="checkbox checked {metadata.column == 'FilePath' ||
+              metadata.column == 'Filename' ||
+              metadata.column == 'Pathname'
+                ? 'inactive'
+                : ''}"
+            />
+          {:else}
+            <Square size={20} class="checkbox" />
+          {/if}
+          <span
+            class={metadata.column == "FilePath" ||
+            metadata.column == "Filename" ||
+            metadata.column == "Pathname"
+              ? "inactive"
+              : ""}>Mark Records as Dirty</span
+          >
+        </button>
       {/if}
-      Duplicate Files On Disk:
-      <select class="select-field" on:change={handleFileEraseChange}>
-        {#each [{ id: "Keep", text: "Keep" }, { id: "Trash", text: "Move To Trash" }, { id: "Delete", text: "Permanently Delete" }] as option}
-          <option value={option.id}>{option.text}</option>
-        {/each}
-      </select>
-    </span>
+    </div>
   </div>
 </div>
 

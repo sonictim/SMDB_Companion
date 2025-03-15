@@ -395,7 +395,8 @@ impl Database {
                 .enumerate()
                 .map(|(i, record)| {
                     // Report progress every 5% of records processed
-                    if i % (total_records.max(20) / 100) == 0 {
+                    let update_interval = (total_records.max(20) / 100).max(1); // Never less than 1
+                    if i % update_interval == 0 {
                         app.emit(
                             "search-sub-status",
                             StatusUpdate {
@@ -442,7 +443,8 @@ impl Database {
 
             // Process in smaller batches and report progress
             for i in 0..total_records {
-                if i % (total_records.max(20) / 100) == 0 {
+                let update_interval = (total_records.max(20) / 100).max(1); // Never less than 1
+                if i % update_interval == 0 {
                     app.emit(
                         "search-sub-status",
                         StatusUpdate {
@@ -506,7 +508,8 @@ impl Database {
         let total_groups = similarity_groups.len();
         for (i, (_, group)) in similarity_groups.iter().enumerate() {
             // Update every 5% of groups processed
-            if i % (total_groups.max(20) / 20) == 0 {
+            let update_interval = (total_records.max(20) / 100).max(1); // Never less than 1
+            if i % update_interval == 0 {
                 app.emit(
                     "search-sub-status",
                     StatusUpdate {
@@ -1134,7 +1137,7 @@ fn calculate_similarity(fp1: &[u32], fp2: &[u32]) -> f64 {
     best_similarity
 }
 
-// // The group-building functionality should be moved to a method or function
+// The group-building functionality should be moved to a method or function
 // fn build_similarity_groups(
 //     records_with_fingerprints: &[&FileRecord],
 //     threshold: f64,
@@ -1175,7 +1178,7 @@ fn calculate_similarity(fp1: &[u32], fp2: &[u32]) -> f64 {
 //             // Try to find an existing group that this record belongs to
 //             for (&group_id, group_members) in &groups {
 //                 for (_, group_fp) in group_members {
-//                     let similarity = calculate_similarity_simd(fp_i, group_fp);
+//                     let similarity = calculate_similarity(fp_i, group_fp);
 //                     if similarity >= threshold {
 //                         found_group = Some(group_id);
 //                         break;
