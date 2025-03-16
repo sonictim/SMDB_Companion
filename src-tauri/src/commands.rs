@@ -301,34 +301,60 @@ pub async fn find(
     column: String,
     case_sensitive: bool,
     pref: Preferences,
-) -> Result<String, String> {
+    app: AppHandle,
+) -> Result<Vec<FileRecordFrontend>, String> {
     println!("Starting Search");
-    let mut state = state.lock().await;
-    let case = if case_sensitive { "GLOB" } else { "LIKE" };
-    let query = format!("SELECT rowid, filepath, duration FROM {TABLE} WHERE {column} {case} ?");
-    let pool = state.db.get_pool().await.unwrap();
-    let rows = sqlx::query(&query)
-        .bind(if case_sensitive {
-            format!("*{}*", find) // GLOB wildcard (*)
-        } else {
-            format!("%{}%", find) // LIKE wildcard (%)
-        })
-        .fetch_all(&pool)
-        .await
-        .unwrap();
-    println!("{} Rows Found", rows.len());
-    let new_records: Vec<FileRecord> = rows
-        .par_iter()
-        .map(|row| FileRecord::new(row, &Enabled::default(), &pref, true))
-        .map(|mut record| {
-            record.algorithm.insert(A::Replace);
-            record.algorithm.remove(&A::Keep);
-            record
-        })
-        .collect();
-    state.db.records = new_records;
+    {
+        let mut state = state.lock().await;
+        let case = if case_sensitive { "GLOB" } else { "LIKE" };
+        let query =
+            format!("SELECT rowid, filepath, duration FROM {TABLE} WHERE {column} {case} ?");
+        let pool = state.db.get_pool().await.unwrap();
+        let rows = sqlx::query(&query)
+            .bind(if case_sensitive {
+                format!("*{}*", find) // GLOB wildcard (*)
+            } else {
+                format!("%{}%", find) // LIKE wildcard (%)
+            })
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        println!("{} Rows Found", rows.len());
+        app.emit(
+            "search-status",
+            StatusUpdate {
+                stage: "starting".into(),
+                progress: 50,
+                message: format!("{} Records Found", rows.len()),
+            },
+        )
+        .ok();
+        let new_records: Vec<FileRecord> = rows
+            .par_iter()
+            .enumerate()
+            .map(|(i, row)| {
+                app.emit(
+                    "search-sub-status",
+                    StatusUpdate {
+                        stage: "processing".into(),
+                        progress: (i * 100 / rows.len()) as u64,
+                        message: format!("Processing: {}/{} Records", i, rows.len()),
+                    },
+                )
+                .ok();
+
+                FileRecord::new(row, &Enabled::default(), &pref, true)
+            })
+            .map(|mut record| {
+                record.algorithm.insert(A::Replace);
+                record.algorithm.remove(&A::Keep);
+                record
+            })
+            .collect();
+        state.db.records = new_records;
+    }
     println!("Search Ended");
-    Ok(String::from("Find Success"))
+    get_results(state).await
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]

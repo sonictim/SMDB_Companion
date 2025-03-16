@@ -19,6 +19,7 @@
     export let selectedDb: string | null;
 
     let isSearching = false;
+    let isFinding = false;
 
     import { algorithmsStore, preferencesStore } from "../store";
     import { resultsStore, metadataStore } from "../session-store";
@@ -87,12 +88,14 @@
 
     async function replaceMetadata() {
         isRemove = false;
+        isFinding = true;
         // Your logic for replacing metadata goes here
         const metaValue = get(metadataStore);
         console.log(
             `Finding: ${metaValue.find}, Replacing: ${metaValue.replace}, Case Sensitive: ${metaValue.case_sensitive}, Column: ${metaValue.column}`,
         );
-        await invoke<string>("find", {
+
+        await invoke<FileRecord[]>("find", {
             find: metaValue.find,
             column: metaValue.column,
             caseSensitive: metaValue.case_sensitive,
@@ -100,9 +103,10 @@
         })
             .then((result) => {
                 console.log(result);
+                resultsStore.set(result); // ✅ Store the results in session storage
             })
             .catch((error) => console.error(error));
-
+        isFinding = false;
         activeTab = "results";
     }
     function toggleCaseSensitivity() {
@@ -424,58 +428,86 @@
                 </button>
             {/if}
         </div>
+        {#if isFinding}
+            <div class="block inner">
+                <span>
+                    <Loader
+                        size={24}
+                        class="spinner ml-2"
+                        style="color: var(--accent-color)"
+                    />
+                    {searchMessage}
+                </span>
+                <div class="progress-container">
+                    <div
+                        class="progress-bar"
+                        style="width: {searchProgress}%"
+                    ></div>
+                </div>
+                <span>
+                    {subsearchMessage}
+                </span>
+                <div class="progress-container">
+                    <div
+                        class="progress-bar"
+                        style="width: {subsearchProgress}%"
+                    ></div>
+                </div>
+                <!-- <AlertCircle size={18} class="ellipsis" /> -->
+            </div>
+        {:else}
+            <div class="input-group2">
+                <label for="case-sensitive">
+                    <button
+                        type="button"
+                        class="grid item"
+                        on:click={toggleCaseSensitivity}
+                    >
+                        {#if $metadata.case_sensitive}
+                            <CheckSquare size={20} class="checkbox checked" />
+                        {:else}
+                            <Square size={20} class="checkbox" />
+                        {/if}
+                        <span>Case Sensitive</span>
+                    </button>
+                </label>
+            </div>
 
-        <div class="input-group2">
-            <label for="case-sensitive">
-                <button
-                    type="button"
-                    class="grid item"
-                    on:click={toggleCaseSensitivity}
+            <div class="input-group">
+                <label for="find-text">Find:</label>
+                <input
+                    type="text"
+                    id="find-text"
+                    bind:value={$metadata.find}
+                    placeholder="Enter text to find"
+                    class="input-field"
+                />
+            </div>
+
+            <div class="input-group">
+                <label for="replace-text">Replace:</label>
+                <input
+                    type="text"
+                    id="replace-text"
+                    bind:value={$metadata.replace}
+                    placeholder="Enter text to replace"
+                    class="input-field"
+                />
+            </div>
+
+            <div class="input-group">
+                <label for="column-select">in Column:</label>
+                <select
+                    id="column-select"
+                    bind:value={$metadata.column}
+                    class="select-field"
                 >
-                    {#if $metadata.case_sensitive}
-                        <CheckSquare size={20} class="checkbox checked" />
-                    {:else}
-                        <Square size={20} class="checkbox" />
-                    {/if}
-                    <span>Case Sensitive</span>
-                </button>
-            </label>
-        </div>
-
-        <div class="input-group">
-            <label for="find-text">Find:</label>
-            <input
-                type="text"
-                id="find-text"
-                bind:value={$metadata.find}
-                placeholder="Enter text to find"
-                class="input-field"
-            />
-        </div>
-
-        <div class="input-group">
-            <label for="replace-text">Replace:</label>
-            <input
-                type="text"
-                id="replace-text"
-                bind:value={$metadata.replace}
-                placeholder="Enter text to replace"
-                class="input-field"
-            />
-        </div>
-
-        <div class="input-group">
-            <label for="column-select">in Column:</label>
-            <select
-                id="column-select"
-                bind:value={$metadata.column}
-                class="select-field"
-            >
-                {#each pref.columns as option}
-                    <option value={option}>{option}</option>
-                {/each}
-            </select>
-        </div>
+                    {#each pref.columns as option}
+                        <option value={option}>{option}</option>
+                    {/each}
+                </select>
+            </div>
+        {/if}
     </div>
 </div>
 

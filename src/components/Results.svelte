@@ -5,6 +5,7 @@
     NotebookPenIcon,
     OctagonX,
     Volume2,
+    Volume,
     TriangleAlert,
     Loader,
     Play,
@@ -39,14 +40,13 @@
   let processing = false;
   let loading = true;
   // let items: FileRecord[] = [];
-  let total: number = 0;
   let selectedItems = new Set<number>();
   // let checkedItems = new Set<FileRecord>();
   let currentFilter = "Relevant";
   let idsToRemove: number[] = [];
   let filesToRemove: string[] = [];
   let filteredItems: FileRecord[] = [];
-  let enableSelections = false;
+  let enableSelections = true;
   let lastPlayed = "Timbo";
 
   function toggle_enable_selections() {
@@ -63,7 +63,13 @@
     });
     filteredItems = newFiltered;
   }
+  function updateUI() {
+    // Force a UI update by creating a new array reference
+    results = [...results];
 
+    // Recalculate filtered items
+    filteredItems = filterItems(results, currentFilter);
+  }
   // Filter function
   function filterItems(items: FileRecord[], filter: string): FileRecord[] {
     switch (filter) {
@@ -185,41 +191,124 @@
     window.addEventListener("mouseup", onMouseUp);
   }
 
-  // function checkSelected(list: FileRecord[]) {
-  //   list.forEach(item => addCheck(item));
-  // }
+  function toggleChecksSelected() {
+    filteredItems.forEach((item) => {
+      if (selectedItems.has(item.id)) {
+        if (item.algorithm.includes("Keep")) {
+          removeCheck(item);
+        } else {
+          addCheck(item);
+        }
+      }
+    });
+    updateUI();
+  }
 
-  // function uncheckSelected(list: FileRecord[]) {
-  //   list.forEach(item => removeCheck(item));
-  // }
+  function uncheckSelected() {
+    filteredItems.forEach((item) => {
+      if (selectedItems.has(item.id)) {
+        if (!item.algorithm.includes("Keep")) {
+          addCheck(item);
+        }
+      }
+    });
+    updateUI();
+  }
 
   // function addCheck(item: FileRecord) {
-  //   if (!checkedItems.has(item)) checkedItems.add(item);
-  //   checkedItems = new Set(checkedItems);
+  //   if (!item.algorithm.includes("Keep")) {
+  //     item.algorithm.push("Keep");
+  //   }
   // }
+
+  function checkSelected() {
+    filteredItems.forEach((item) => {
+      if (selectedItems.has(item.id)) removeCheck(item);
+    });
+    updateUI();
+  }
 
   // function removeCheck(item: FileRecord) {
-  //   if (checkedItems.has(item)) checkedItems.delete(item);
-  //   checkedItems = new Set(checkedItems);
-  // }
-  // function addSelect(item: FileRecord) {
-  //   if (!selectedItems.has(item)) selectedItems.add(item);
-  //   selectedItems = new Set(selectedItems);
-  // }
-
-  // function removeSelect(item: FileRecord) {
-  //   if (selectedItems.has(item)) selectedItems.delete(item);
-  //   selectedItems = new Set(selectedItems);
+  //   if (item.algorithm.includes("Keep")) {
+  //     // Create a new algorithm array
+  //     const updatedAlgorithms = item.algorithm.filter(
+  //       (algo) => algo !== "Keep",
+  //     );
+  //   }
   // }
 
-  function toggleSelect(item: FileRecord) {
-    if (selectedItems.has(item.id)) {
-      selectedItems.delete(item.id);
-    } else {
-      selectedItems.add(item.id);
+  function addCheck(item: FileRecord) {
+    if (!item.algorithm.includes("Keep")) {
+      // Create a new item with updated algorithm array
+      const updatedItem = {
+        ...item,
+        algorithm: [...item.algorithm, "Keep"],
+      };
+
+      // Update the results array to trigger reactivity
+      results = results.map((r) => (r.id === item.id ? updatedItem : r));
     }
+  }
+
+  function removeCheck(item: FileRecord) {
+    if (item.algorithm.includes("Keep")) {
+      // Create a new item with updated algorithm array
+      const updatedItem = {
+        ...item,
+        algorithm: item.algorithm.filter((algo) => algo !== "Keep"),
+      };
+
+      // Update the results array to trigger reactivity
+      results = results.map((r) => (r.id === item.id ? updatedItem : r));
+    }
+  }
+
+  // Add a variable to track the last selected item index
+  let lastSelectedIndex = -1;
+
+  function toggleSelect(item: FileRecord, event: MouseEvent) {
+    event.preventDefault();
+    // Get the current item index
+    const currentIndex = filteredItems.findIndex(
+      (record) => record.id === item.id,
+    );
+
+    // Handle Option/Alt click (toggle all)
+    if (event.altKey) {
+      if (selectedItems.size > 0) {
+        // If any items selected, clear all
+        selectedItems.clear();
+      } else {
+        // Otherwise select all filtered items
+        filteredItems.forEach((record) => selectedItems.add(record.id));
+      }
+      selectedItems = new Set(selectedItems);
+      return;
+    }
+
+    // Handle Shift click (range selection)
+    if (event.shiftKey && lastSelectedIndex !== -1) {
+      // Calculate the range (works in both directions)
+      const start = Math.min(lastSelectedIndex, currentIndex);
+      const end = Math.max(lastSelectedIndex, currentIndex);
+
+      // Add all items in range to selection
+      for (let i = start; i <= end; i++) {
+        selectedItems.add(filteredItems[i].id);
+      }
+    } else {
+      // Normal click (toggle individual)
+      if (selectedItems.has(item.id)) {
+        selectedItems.delete(item.id);
+      } else {
+        selectedItems.add(item.id);
+        // Update last selected index for future shift-clicks
+        lastSelectedIndex = currentIndex;
+      }
+    }
+
+    // Update the set
     selectedItems = new Set(selectedItems);
-    console.log("toggled: ", selectedItems);
   }
 
   function toggleChecked(item: FileRecord) {
@@ -235,11 +324,21 @@
       algorithm: updatedAlgorithms,
     };
 
-    // Adjust total count
-    total += isKeeping ? -1 : 1;
-
     // Update items array
     results = results.map((i) => (i === item ? updatedItem : i));
+  }
+
+  function invertSelected() {
+    filteredItems.forEach((item) => {
+      if (selectedItems.has(item.id)) {
+        // If selected, remove from selection
+        selectedItems.delete(item.id);
+      } else {
+        // If not selected, add to selection
+        selectedItems.add(item.id);
+      }
+    });
+    selectedItems = new Set(selectedItems);
   }
 
   function clearSelected() {
@@ -272,10 +371,14 @@
     }
   }
 
+  function getTotalChecks() {
+    return filteredItems.filter((item) => !item.algorithm.includes("Keep"))
+      .length;
+  }
+
   async function fetchData() {
     try {
       loading = true;
-      total = results.filter((item) => !item.algorithm.includes("Keep")).length; // Fetch total count first
       // items = await invoke<FileRecord[]>("get_results"); // Then fetch the items
     } catch (error) {
       console.error("Failed to fetch data:", error);
@@ -317,19 +420,39 @@
     { id: "Compare", name: "Database Compare" },
   ];
 
-  async function removeRecords() {
-    if (pref.erase_files === "Delete" || !pref.safety_db) {
-      const confirmed = await ask("Are you sure? This is not undoable", {
-        title: "Confirm Remove",
-        kind: "warning",
-        okLabel: "Yes",
-        cancelLabel: "Cancel",
-      });
+  async function confirmDialog() {
+    let dbDialog = "Create Safety Copy";
+    if (!pref.safety_db) dbDialog = "❌ Current Database";
 
-      if (!confirmed) return;
+    let filesDialog = "Keep in Place";
+    if (pref.erase_files === "Trash") filesDialog = "⚠️ Move to Trash";
+    else if (pref.erase_files === "Delete")
+      filesDialog = "❌ Permanently Delete";
+
+    let warningDialog = "";
+    if (pref.erase_files === "Delete" || !pref.safety_db) {
+      warningDialog = "\n\n⚠️ Are you sure? This is NOT undoable!";
     }
 
-    // Filter out items that have "Keep" in their algorithm
+    let titleDialog = "Confirm Remove";
+    if (pref.erase_files === "Delete" || !pref.safety_db) {
+      titleDialog = "Confirm Remove";
+    }
+
+    let dialog = `Files on Disk: ${filesDialog}\nDatabase: ${dbDialog} ${warningDialog}`;
+
+    const confirmed = await ask(dialog, {
+      title: titleDialog,
+      kind: "warning",
+      okLabel: "Yes",
+      cancelLabel: "Cancel",
+    });
+
+    return confirmed;
+  }
+
+  async function removeRecords() {
+    if (!(await confirmDialog())) return;
     idsToRemove = filteredItems
       .filter((item) => !item.algorithm.includes("Keep")) // Only keep items without "Keep"
       .map((item) => item.id); // Extract the ids
@@ -481,6 +604,10 @@
   onDestroy(() => {
     if (unlistenRemoveFn) unlistenRemoveFn();
   });
+
+  function item(value: FileRecord, index: number, array: FileRecord[]): void {
+    throw new Error("Function not implemented.");
+  }
 </script>
 
 <div class="block">
@@ -488,7 +615,7 @@
     <h2>Search Results:</h2>
     <span style="font-size: 18px">
       {#if isRemove}
-        {total} of {results.length} Records marked for Removal
+        {getTotalChecks()} of {results.length} Records marked for Removal
       {:else}
         {results.length} Records found
       {/if}
@@ -496,7 +623,7 @@
 
     <div style="margin-left: auto; display: flex; gap: 20px;">
       {#if isRemove}
-        {#if enableSelections}
+        <!-- {#if enableSelections}
           <button
             class="cta-button cancel"
             style="margin-right: 8px"
@@ -505,11 +632,11 @@
             <OctagonX size="18" />
             Remove Selected
           </button>
-        {/if}
+        {/if} -->
 
         <button class="cta-button cancel" on:click={removeRecords}>
           <OctagonX size="18" />
-          Remove Checked
+          Remove Checked Records
         </button>
       {:else}
         <button class="cta-button cancel" on:click={replaceMetadata}>
@@ -520,7 +647,8 @@
       {/if}
     </div>
   </div>
-  <div class="header" style="margin-bottom: 20px; margin-top: 10px;">
+
+  <!-- <div class="header" style="margin-bottom: 20px; margin-top: 10px;">
     <span>
       Remove Records From:
       <select
@@ -565,8 +693,82 @@
         {/each}
       </select>
     </span>
-  </div>
+  </div> -->
+  <div class="bar" style="margin-top: 10px; margin-bottom: 20px; padding: 0px;">
+    <!-- <div class="button-group"> -->
+    <!-- <button type="button" class="grid item" on:click={toggle_enable_selections}>
+      {#if enableSelections}
+        <CheckSquare size={20} class="checkbox checked" />
+      {:else}
+        <Square size={20} class="checkbox" />
+      {/if}
+      <span>Enable Selections</span>
+    </button> -->
 
+    <!-- <button class="small-button" on:click={() => checkSelected([...selectedItems])}>Check Selected</button>
+      <button class="small-button" on:click={() => uncheckSelected([...selectedItems])}>Uncheck Selected</button> -->
+
+    {#if enableSelections}
+      <button class="small-button" on:click={toggleChecksSelected}
+        >Toggle Selected</button
+      >
+      <button class="small-button" on:click={checkSelected}
+        >Check Selected</button
+      >
+      <button class="small-button" on:click={uncheckSelected}
+        >Uncheck Selected</button
+      >
+      <button class="small-button" on:click={invertSelected}
+        >Invert Selections</button
+      >
+      <button class="small-button" on:click={clearSelected}
+        >Clear Selections</button
+      >
+    {/if}
+    <!-- </div> -->
+
+    <div class="filter-container">
+      {#if isRemove}
+        <span>Filter by: </span>
+        <select
+          class="select-field"
+          bind:value={currentFilter}
+          on:change={handleFilterChange}
+        >
+          {#each filters as option}
+            <option value={option.id}>{option.name}</option>
+          {/each}
+        </select>
+      {:else}
+        <button
+          type="button"
+          class="grid item"
+          style="margin-left: 120px"
+          on:click={toggleMarkDirty}
+        >
+          {#if $metadataStore.mark_dirty}
+            <CheckSquare
+              size={20}
+              class="checkbox checked {metadata.column == 'FilePath' ||
+              metadata.column == 'Filename' ||
+              metadata.column == 'Pathname'
+                ? 'inactive'
+                : ''}"
+            />
+          {:else}
+            <Square size={20} class="checkbox" />
+          {/if}
+          <span
+            class={metadata.column == "FilePath" ||
+            metadata.column == "Filename" ||
+            metadata.column == "Pathname"
+              ? "inactive"
+              : ""}>Mark Records as Dirty</span
+          >
+        </button>
+      {/if}
+    </div>
+  </div>
   <div
     class="block inner"
     bind:this={containerElement}
@@ -659,6 +861,7 @@
           >
             <!-- Checkbox Column -->
             <div class="grid-item" on:click={() => toggleChecked(item)}>
+              <!-- <Volume size={14} /> -->
               {#if !item.algorithm.includes("Keep")}
                 <CheckSquare size={14} />
               {:else}
@@ -669,17 +872,20 @@
             <!-- Root Column -->
             <div
               class="grid-item bold"
-              on:click={() =>
-                enableSelections ? toggleSelect(item) : toggleChecked(item)}
+              on:click={(event) =>
+                enableSelections
+                  ? toggleSelect(item, event)
+                  : toggleChecked(item)}
             >
               {item.root}
             </div>
 
-            <!-- Path Column -->
             <div
               class="grid-item"
-              on:click={() =>
-                enableSelections ? toggleSelect(item) : toggleChecked(item)}
+              on:click={(event) =>
+                enableSelections
+                  ? toggleSelect(item, event)
+                  : toggleChecked(item)}
             >
               {item.path}
             </div>
@@ -698,68 +904,51 @@
       </VirtualList>
     {/if}
   </div>
-  <div class="bar" style="margin-top: 0px; margin-bottom: 0px; padding: 0px;">
-    <!-- <div class="button-group"> -->
-    <button type="button" class="grid item" on:click={toggle_enable_selections}>
-      {#if enableSelections}
-        <CheckSquare size={20} class="checkbox checked" />
-      {:else}
-        <Square size={20} class="checkbox" />
-      {/if}
-      <span>Enable Selections</span>
-    </button>
-
-    <!-- <button class="small-button" on:click={() => checkSelected([...selectedItems])}>Check Selected</button>
-      <button class="small-button" on:click={() => uncheckSelected([...selectedItems])}>Uncheck Selected</button> -->
-
-    {#if enableSelections}
-      <button class="small-button" on:click={clearSelected}
-        >Clear all Selections</button
+  <div class="header" style="margin-bottom: 0px; margin-top: 0px;">
+    <span>
+      Remove Records From:
+      <select
+        class="select-field"
+        bind:value={pref.safety_db}
+        on:change={() => preferencesStore.set(pref)}
       >
-    {/if}
-    <!-- </div> -->
-
-    <div class="filter-container">
-      {#if isRemove}
-        <span>Filter by: </span>
-        <select
-          class="select-field"
-          bind:value={currentFilter}
-          on:change={handleFilterChange}
-        >
-          {#each filters as option}
-            <option value={option.id}>{option.name}</option>
-          {/each}
-        </select>
+        {#each [{ bool: true, text: "Database Copy" }, { bool: false, text: "Current Database" }] as option}
+          <option value={option.bool}>{option.text}</option>
+        {/each}
+      </select>
+      {#if pref.safety_db}
+        with tag:
+        <input
+          class="input-field"
+          placeholder="thinned"
+          type="text"
+          id="new_db_tag"
+          bind:value={pref.safety_db_tag}
+          on:change={() => preferencesStore.set(pref)}
+        />
       {:else}
-        <button
-          type="button"
-          class="grid item"
-          style="margin-left: 120px"
-          on:click={toggleMarkDirty}
-        >
-          {#if $metadataStore.mark_dirty}
-            <CheckSquare
-              size={20}
-              class="checkbox checked {metadata.column == 'FilePath' ||
-              metadata.column == 'Filename' ||
-              metadata.column == 'Pathname'
-                ? 'inactive'
-                : ''}"
-            />
-          {:else}
-            <Square size={20} class="checkbox" />
-          {/if}
-          <span
-            class={metadata.column == "FilePath" ||
-            metadata.column == "Filename" ||
-            metadata.column == "Pathname"
-              ? "inactive"
-              : ""}>Mark Records as Dirty</span
-          >
-        </button>
+        <TriangleAlert
+          size="20"
+          class="blinking"
+          style="color: var(--warning-hover)"
+        />
       {/if}
-    </div>
+    </span>
+    <span>
+      {#if pref.erase_files !== "Keep"}
+        <TriangleAlert
+          size="20"
+          class={pref.erase_files == "Delete" ? "blinking" : ""}
+          style="color: var(--warning-hover)"
+        />
+      {/if}
+      Duplicate Files On Disk:
+      <select class="select-field" on:change={handleFileEraseChange}>
+        {#each [{ id: "Keep", text: "Keep" }, { id: "Trash", text: "Move To Trash" }, { id: "Delete", text: "Permanently Delete" }] as option}
+          <option value={option.id}>{option.text}</option>
+        {/each}
+      </select>
+    </span>
   </div>
 </div>
 
@@ -802,6 +991,10 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 12px;
+    user-select: none; /* Standard syntax */
+    -webkit-user-select: none; /* Safari */
+    -moz-user-select: none; /* Firefox */
+    -ms-user-select: none; /* IE10+/Edge */
   }
 
   .grid-item.header {
@@ -849,5 +1042,12 @@
 
   .header h2 {
     margin: 0; /* Removes extra spacing */
+  }
+
+  .list-item {
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
   }
 </style>
