@@ -9,57 +9,15 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 
-use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink};
-use std::fs::File;
-use std::io::BufReader;
-use std::sync::{Arc, Mutex};
-
-pub struct AudioPlayer {
-    stream_handle: OutputStreamHandle,
-    sink: Arc<Mutex<Option<Sink>>>,
-}
-
-impl Default for AudioPlayer {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl AudioPlayer {
-    pub fn new() -> Self {
-        let (_stream, stream_handle) = OutputStream::try_default().unwrap();
-        Self {
-            stream_handle,
-            sink: Arc::new(Mutex::new(None)),
-        }
-    }
-
-    pub fn play(&self, file_path: &str) -> Result<(), String> {
-        let file = File::open(file_path).map_err(|e| e.to_string())?;
-        let source = Decoder::new(BufReader::new(file)).map_err(|e| e.to_string())?;
-
-        let sink = Sink::try_new(&self.stream_handle).map_err(|e| e.to_string())?;
-        sink.append(source);
-        sink.play();
-
-        let mut sink_guard = self.sink.lock().unwrap();
-        *sink_guard = Some(sink);
-
-        Ok(())
-    }
-
-    pub fn stop(&self) {
-        let mut sink_guard = self.sink.lock().unwrap();
-        if let Some(sink) = sink_guard.take() {
-            sink.stop();
-        }
-    }
-}
-
 pub fn get_chromaprint_fingerprint<P: AsRef<Path>>(file_path: P) -> Option<String> {
     let path_str = file_path.as_ref().to_string_lossy().to_string();
-
-    let pcm_data = convert_to_raw_pcm(&path_str).unwrap_or_default();
+    let pcm_data = match convert_to_raw_pcm(&path_str) {
+        Ok(data) => data,
+        Err(e) => {
+            eprintln!("Failed to convert audio to PCM: {}", e);
+            return None;
+        }
+    };
 
     // Convert to i16 samples
     let samples: Vec<i16> = pcm_data
@@ -75,29 +33,59 @@ pub fn get_chromaprint_fingerprint<P: AsRef<Path>>(file_path: P) -> Option<Strin
         })
         .collect();
 
-    let mut c = Chromaprint::new();
-    c.start(48000, 1);
-    c.feed(&samples);
-    c.finish();
+    const MIN_SAMPLES: usize = 48000; // 1 second minimum at 48kHz
 
-    if let Some(fingerprint) = c.raw_fingerprint() {
-        println!(
-            "Generated raw fingerprint for: {} size; {}",
-            file_path.as_ref().to_string_lossy(),
-            fingerprint.len()
-        );
-        // Convert Vec<i32> to bytes before encoding
-        let bytes: Vec<u8> = fingerprint.iter().flat_map(|&x| x.to_le_bytes()).collect();
-        let encoded = general_purpose::STANDARD.encode(bytes);
+    // Check if we have enough samples for Chromaprint
+    if samples.len() >= MIN_SAMPLES {
+        // Try Chromaprint fingerprinting
+        let mut c = Chromaprint::new();
+        c.start(48000, 1);
+        c.feed(&samples);
+        c.finish();
 
-        Some(encoded)
-    } else {
-        eprintln!("Failed to generate chromaprint fingerprint");
-        None
+        if let Some(fingerprint) = c.raw_fingerprint() {
+            println!(
+                "Generated raw fingerprint for: {} size; {}",
+                file_path.as_ref().to_string_lossy(),
+                fingerprint.len()
+            );
+            // Convert Vec<i32> to bytes before encoding
+            let bytes: Vec<u8> = fingerprint.iter().flat_map(|&x| x.to_le_bytes()).collect();
+            let encoded = general_purpose::STANDARD.encode(&bytes);
+            if !encoded.is_empty() {
+                return Some(encoded);
+            }
+        }
+
+        eprintln!("Chromaprint failed despite sufficient samples");
     }
+
+    // Fallback to PCM hash if:
+    // 1. File is too short for Chromaprint, or
+    // 2. Chromaprint failed to generate a fingerprint
+    if !samples.is_empty() {
+        use sha2::{Digest, Sha256};
+
+        let mut hasher = Sha256::new();
+        for sample in &samples {
+            hasher.update(sample.to_le_bytes());
+        }
+
+        let hash = hasher.finalize();
+        println!(
+            "Generated PCM hash for: {}",
+            file_path.as_ref().to_string_lossy()
+        );
+        return Some(format!("PCM:{}", general_purpose::STANDARD.encode(hash)));
+    }
+
+    eprintln!("Failed to generate any fingerprint for: {}", path_str);
+    None
 }
 
 fn convert_to_raw_pcm(input_path: &str) -> Result<Vec<u8>> {
+    use rubato::{Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType};
+
     let file = std::fs::File::open(input_path)?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
 
@@ -137,10 +125,11 @@ fn convert_to_raw_pcm(input_path: &str) -> Result<Vec<u8>> {
 
     // Decode the track
     let mut sample_count = 0;
-    let target_sample_rate = 48000; // Same as your FFmpeg setting
+    let target_sample_rate = 48000; // Target sample rate for fingerprinting
 
-    // We'll leave resampling for a future implementation if needed
-    // let mut resampler = None;
+    // Initialize resampler storage (only created if needed)
+    let mut resampler = None;
+    let mut last_spec = None;
 
     loop {
         // Get the next packet from the format reader
@@ -178,6 +167,7 @@ fn convert_to_raw_pcm(input_path: &str) -> Result<Vec<u8>> {
 
         // Get the decoded audio buffer
         let spec = *decoded.spec();
+        last_spec = Some(spec);
 
         // Create a buffer for the decoded audio
         let mut sample_buffer = SampleBuffer::<f32>::new(decoded.capacity() as u64, spec);
@@ -186,26 +176,106 @@ fn convert_to_raw_pcm(input_path: &str) -> Result<Vec<u8>> {
         sample_buffer.copy_interleaved_ref(decoded);
         let samples = sample_buffer.samples();
 
-        // Convert the samples to f32 bytes and store in the PCM data
-        for &sample in samples {
-            pcm_data.extend_from_slice(&sample.to_le_bytes());
-            sample_count += 1;
+        // Check if we need to resample
+        if spec.rate != target_sample_rate {
+            // Create resampler if this is the first packet or if format changed
+            if resampler.is_none() {
+                println!(
+                    "Resampling from {}Hz to {}Hz for {}",
+                    spec.rate, target_sample_rate, input_path
+                );
 
-            // Apply a limit to prevent excessive memory usage (equivalent to 10 minutes at 48kHz)
-            if sample_count > 10 * 60 * target_sample_rate {
-                break;
+                // Calculate frames (samples per channel)
+                let frames = samples.len() / spec.channels.count();
+
+                // Create the resampler
+                let resampler_result = SincFixedIn::<f32>::new(
+                    target_sample_rate as f64 / spec.rate as f64,
+                    2.0, // Oversampling factor
+                    SincInterpolationParameters {
+                        sinc_len: 256,
+                        f_cutoff: 0.95,
+                        interpolation: SincInterpolationType::Linear,
+                        oversampling_factor: 256,
+                        window: rubato::WindowFunction::Blackman,
+                    },
+                    frames,
+                    spec.channels.count(),
+                );
+
+                match resampler_result {
+                    Ok(r) => resampler = Some(r),
+                    Err(e) => {
+                        eprintln!("Failed to create resampler: {}", e);
+                        resampler = None;
+                    }
+                }
+            }
+
+            // Prepare samples for resampling (convert interleaved to per-channel)
+            let channels = spec.channels.count();
+            let frames = samples.len() / channels;
+
+            // Split interleaved samples into separate channel vectors
+            let mut channel_samples = vec![Vec::with_capacity(frames); channels];
+            for (i, &sample) in samples.iter().enumerate() {
+                channel_samples[i % channels].push(sample);
+            }
+
+            // Perform resampling
+            if let Some(resampler) = resampler.as_mut() {
+                match resampler.process(&channel_samples, None) {
+                    Ok(resampled) => {
+                        // Calculate how many samples we have after resampling
+                        let resampled_frames = resampled[0].len();
+                        let _total_resampled_samples = resampled_frames * channels;
+
+                        // Add resampled samples to PCM data (converting back to interleaved)
+                        for frame in 0..resampled_frames {
+                            for channel_data in resampled.iter() {
+                                let sample = channel_data[frame];
+                                pcm_data.extend_from_slice(&sample.to_le_bytes());
+                                sample_count += 1;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Resampling error: {}", e);
+                        // Fall back to original samples if resampling fails
+                        for &sample in samples {
+                            pcm_data.extend_from_slice(&sample.to_le_bytes());
+                            sample_count += 1;
+                        }
+                    }
+                }
+            }
+        } else {
+            // No resampling needed, use original samples
+            for &sample in samples {
+                pcm_data.extend_from_slice(&sample.to_le_bytes());
+                sample_count += 1;
             }
         }
 
-        // Break if we've hit our sample limit
+        // Apply a limit to prevent excessive memory usage (equivalent to 10 minutes at 48kHz)
         if sample_count > 10 * 60 * target_sample_rate {
             break;
         }
     }
 
+    // Print audio format info for debugging
+    if let Some(spec) = last_spec {
+        println!(
+            "Processed audio: {} channels, {}Hz, {} samples ({:.1} seconds)",
+            spec.channels.count(),
+            spec.rate,
+            sample_count,
+            sample_count as f32 / target_sample_rate as f32
+        );
+    }
+
     Ok(pcm_data)
 }
-
 // #[derive(Default, Debug, Serialize, Clone, PartialEq)]
 // pub struct AudioFingerprint {
 //     pub text: Arc<str>,

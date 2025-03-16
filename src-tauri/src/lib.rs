@@ -1,4 +1,5 @@
 mod audio;
+mod audioplayer;
 mod commands;
 mod preferences;
 mod search;
@@ -21,6 +22,7 @@ use tauri::async_runtime::{Mutex, RwLock};
 use tauri::{AppHandle, Emitter};
 use tauri::{Manager, State};
 
+use audioplayer::*;
 use commands::*;
 
 pub const TABLE: &str = "justinmetadata";
@@ -40,9 +42,8 @@ pub fn run() {
                 .get("main")
                 .unwrap()
                 .set_title(&format!("SMDB Companion :: v{}", version));
-
-            app.manage(Mutex::new(AppState::default()));
-            app.manage(audio::AudioPlayer::new());
+            audioplayer::init_audio_system();
+            app.manage(Mutex::new(AppState::default())); // Use Mutex to allow async access
             Ok(())
         })
         // .plugin(tauri_plugin_window::init())
@@ -67,6 +68,8 @@ pub fn run() {
             cancel_search,
             play_audio,
             stop_audio,
+            pause_audio,
+            resume_audio,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -110,7 +113,6 @@ fn set_library_path() {
 #[derive(Default)]
 pub struct AppState {
     db: Database,
-    audio: audio::AudioPlayer,
     // enabled: Enabled,
     // pref: Preferences,
     // reg: Registration,

@@ -7,6 +7,7 @@
     Volume2,
     TriangleAlert,
     Loader,
+    Play,
   } from "lucide-svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { onMount, onDestroy } from "svelte";
@@ -46,6 +47,7 @@
   let filesToRemove: string[] = [];
   let filteredItems: FileRecord[] = [];
   let enableSelections = false;
+  let lastPlayed = "Timbo";
 
   function toggle_enable_selections() {
     enableSelections = !enableSelections;
@@ -386,15 +388,34 @@
     }
   }
 
-  async function previewFile(record: FileRecord) {
+  async function playAudioFile(record: FileRecord) {
+    console.log("last played: ", lastPlayed);
     let filePath = record.path + "/" + record.root;
+    if (lastPlayed === filePath) {
+      console.log("Stopping audio playback for:", filePath);
+      await stopAudioFile();
+      return;
+    }
+    lastPlayed = filePath;
+
     console.log("playing audio:", filePath);
-    await invoke("play_audio", { filePath: filePath })
+    await invoke("play_audio", { path: filePath })
       .then(() => {
         console.log("Success:", filePath);
       })
       .catch((error) => {
         console.error("Error calling audio playback:", error);
+      });
+  }
+  async function stopAudioFile() {
+    lastPlayed = "";
+    console.log("Stopping Audio Playback");
+    await invoke("stop_audio")
+      .then(() => {
+        console.log("Success: Stopped audio playback");
+      })
+      .catch((error) => {
+        console.error("Error stopping audio playback:", error);
       });
   }
   // async function previewFile(record: FileRecord) {
@@ -584,7 +605,7 @@
           <div class="grid-item header">Path</div>
 
           <!-- Algorithm Header -->
-          <div class="grid-item header">
+          <div class="grid-item header" on:click={() => stopAudioFile()}>
             <span>
               Algorithm
               <Volume2 size={20} />
@@ -664,9 +685,12 @@
             </div>
 
             <!-- Algorithm Column -->
-            <div class="grid-item" on:click={() => previewFile(item)}>
+            <div class="grid-item" on:click={() => playAudioFile(item)}>
               {item.algorithm
-                .filter((algo: string) => algo !== "Keep")
+                .filter(
+                  (algo: string) =>
+                    algo !== "Keep" || item.algorithm.length === 1,
+                )
                 .join(", ")}
             </div>
           </div>

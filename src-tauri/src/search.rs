@@ -333,7 +333,6 @@ impl Database {
     }
 
     async fn similar_match(&mut self, pref: &Preferences, app: &AppHandle) -> Result<(), String> {
-        // Use lower default threshold if needed
         let threshold = pref.similarity_threshold / 100.0;
 
         app.emit(
@@ -341,7 +340,7 @@ impl Database {
             StatusUpdate {
                 stage: "similarity".into(),
                 progress: 0,
-                message: "Starting similarity-based audio comparison...".into(),
+                message: "Starting combined similarity/hash analysis...".into(),
             },
         )
         .ok();
@@ -349,219 +348,297 @@ impl Database {
         // Keep track of all records, not just ones with fingerprints
         let all_records = self.records.clone();
 
-        // PROGRESS: Update after preparing records
-        app.emit(
-            "search-sub-status",
-            StatusUpdate {
-                stage: "similarity".into(),
-                progress: 5,
-                message: "Finding records with fingerprints...".into(),
-            },
-        )
-        .ok();
-
-        // Filter records with valid fingerprints
-        let records_with_fingerprints: Vec<&FileRecord> = self
+        // STEP 1: Separate fingerprints into Chromaprint vs PCM hash groups
+        let (chromaprint_records, pcm_hash_records): (Vec<&FileRecord>, Vec<&FileRecord>) = self
             .records
             .iter()
             .filter(|record| record.fingerprint.as_ref().is_some_and(|fp| !fp.is_empty()))
-            .collect();
+            .partition(|record| {
+                let fp = record.fingerprint.as_ref().unwrap();
+                !fp.starts_with("PCM:")
+            });
 
         println!(
-            "Found {} records with valid fingerprints",
-            records_with_fingerprints.len()
+            "Found {} records with Chromaprint fingerprints and {} with PCM hashes",
+            chromaprint_records.len(),
+            pcm_hash_records.len()
         );
 
-        // PROGRESS: Update before starting fingerprint decoding
-        app.emit(
-            "search-sub-status",
-            StatusUpdate {
-                stage: "similarity".into(),
-                progress: 10,
-                message: format!(
-                    "Decoding {} fingerprints...",
-                    records_with_fingerprints.len()
-                ),
-            },
-        )
-        .ok();
+        // Create a BitSet to track which records have been processed
+        let mut processed_ids = BitSet::with_capacity(self.records.len());
+        let mut processed_records = Vec::with_capacity(self.records.len());
 
-        // USE the build_similarity_groups function with progress monitoring
-        let total_records = records_with_fingerprints.len();
-        let similarity_groups = {
-            // First pass - decode all fingerprints with progress
-            let decoded_fps: Vec<Option<Vec<u32>>> = records_with_fingerprints
-                .par_iter()
-                .enumerate()
-                .map(|(i, record)| {
-                    // Report progress every 5% of records processed
-                    let update_interval = (total_records.max(20) / 100).max(1); // Never less than 1
-                    if i % update_interval == 0 {
-                        app.emit(
-                            "search-sub-status",
-                            StatusUpdate {
-                                stage: "similarity".into(),
-                                progress: 10 + ((i * 30) / total_records) as u64,
-                                message: format!("Decoding fingerprints: {}/{}", i, total_records),
-                            },
-                        )
-                        .ok();
-                    }
-
-                    if let Some(raw_fp) = &record.fingerprint {
-                        if let Ok(fp_bytes) = general_purpose::STANDARD.decode(raw_fp.as_ref()) {
-                            // Decode fingerprint...
-                            let mut fp = Vec::with_capacity(fp_bytes.len() / 4);
-                            for chunk in fp_bytes.chunks_exact(4) {
-                                if chunk.len() == 4 {
-                                    let mut array = [0u8; 4];
-                                    array.copy_from_slice(chunk);
-                                    fp.push(u32::from_le_bytes(array));
-                                }
-                            }
-                            return Some(fp);
-                        }
-                    }
-                    None
-                })
-                .collect();
-
-            // PROGRESS: Update before starting comparisons
+        // STEP 2: Process PCM hashes with exact matching (similar to exact_match function)
+        if !pcm_hash_records.is_empty() {
             app.emit(
                 "search-sub-status",
                 StatusUpdate {
-                    stage: "similarity".into(),
-                    progress: 40,
-                    message: "Comparing fingerprints for similarities...".into(),
+                    stage: "pcm_hash".into(),
+                    progress: 0,
+                    message: format!("Processing {} PCM hash records...", pcm_hash_records.len()),
                 },
             )
             .ok();
 
-            // Second pass - build groups with similarity with progress updates
-            let mut groups: HashMap<usize, Vec<(usize, Vec<u32>)>> = HashMap::new();
-            let mut next_group_id = 0;
+            // Group PCM hash records by hash value
+            let mut hash_groups: HashMap<Arc<str>, Vec<FileRecord>> = HashMap::new();
 
-            // Process in smaller batches and report progress
-            for i in 0..total_records {
-                let update_interval = (total_records.max(20) / 100).max(1); // Never less than 1
-                if i % update_interval == 0 {
+            for (i, record) in pcm_hash_records.iter().enumerate() {
+                if i % RECORD_DIVISOR == 0 {
                     app.emit(
                         "search-sub-status",
                         StatusUpdate {
-                            stage: "similarity".into(),
-                            progress: 40 + ((i * 30) / total_records) as u64,
-                            message: format!("Finding similar audio: {}/{}", i, total_records),
+                            stage: "pcm_hash".into(),
+                            progress: ((i + 1) * 50 / pcm_hash_records.len()) as u64,
+                            message: format!(
+                                "Grouping PCM hashes: {}/{}",
+                                i + 1,
+                                pcm_hash_records.len()
+                            ),
                         },
                     )
                     .ok();
                 }
 
-                let idx = records_with_fingerprints[i].id;
-                if let Some(ref fp_i) = decoded_fps[i] {
-                    // Comparison logic...
-                    let mut found_group = None;
-
-                    for (&group_id, group_members) in &groups {
-                        for (_, group_fp) in group_members {
-                            let similarity = calculate_similarity_simd(fp_i, group_fp);
-                            if similarity >= threshold {
-                                found_group = Some(group_id);
-                                break;
-                            }
-                        }
-                        if found_group.is_some() {
-                            break;
-                        }
-                    }
-
-                    if let Some(group_id) = found_group {
-                        groups.get_mut(&group_id).unwrap().push((idx, fp_i.clone()));
-                    } else {
-                        groups.insert(next_group_id, vec![(idx, fp_i.clone())]);
-                        next_group_id += 1;
-                    }
+                if let Some(hash) = &record.fingerprint {
+                    hash_groups
+                        .entry(hash.clone())
+                        .or_default()
+                        .push((*record).clone());
                 }
             }
 
-            groups
-        };
+            // Process hash groups - mark duplicates
+            let hash_group_count = hash_groups.len();
 
-        // PROGRESS: Update before processing groups
-        app.emit(
-            "search-sub-status",
-            StatusUpdate {
-                stage: "similarity".into(),
-                progress: 70,
-                message: format!(
-                    "Processing {} similarity groups...",
-                    similarity_groups.len()
-                ),
-            },
-        )
-        .ok();
+            for (i, (_, mut records)) in hash_groups.into_iter().enumerate() {
+                if i % RECORD_DIVISOR == 0 {
+                    app.emit(
+                        "search-sub-status",
+                        StatusUpdate {
+                            stage: "pcm_hash".into(),
+                            progress: 50 + ((i + 1) * 50 / hash_group_count) as u64,
+                            message: format!(
+                                "Processing hash groups: {}/{}",
+                                i + 1,
+                                hash_group_count
+                            ),
+                        },
+                    )
+                    .ok();
+                }
 
-        // Process groups with progress updates
-        let mut processed_records = Vec::with_capacity(self.records.len());
-        let mut processed_ids = BitSet::with_capacity(self.records.len());
+                if records.len() < 2 {
+                    // Single record in group - just mark it as processed
+                    for record in records {
+                        processed_ids.insert(record.id);
+                        processed_records.push(record);
+                    }
+                    continue;
+                }
 
-        // Add all records from similarity groups with progress
-        let total_groups = similarity_groups.len();
-        for (i, (_, group)) in similarity_groups.iter().enumerate() {
-            // Update every 5% of groups processed
-            let update_interval = (total_records.max(20) / 100).max(1); // Never less than 1
-            if i % update_interval == 0 {
-                app.emit(
-                    "search-sub-status",
-                    StatusUpdate {
-                        stage: "similarity".into(),
-                        progress: 70 + ((i * 20) / total_groups) as u64,
-                        message: format!("Sorting similar groups: {}/{}", i, total_groups),
-                    },
-                )
-                .ok();
-            }
+                // Sort and mark duplicates
+                pref.sort_vec(&mut records);
 
-            if group.len() > 1 {
-                // Sort and prepare group records
-                let mut group_records: Vec<FileRecord> = group
-                    .iter()
-                    .filter_map(|(idx, _)| all_records.iter().find(|r| r.id == *idx).cloned())
-                    .collect();
-
-                // Sort by preference
-                pref.sort_vec(&mut group_records);
-
-                // Process and mark duplicates
-                for (j, record) in group_records.iter_mut().enumerate() {
-                    // Mark as processed
+                for (j, mut record) in records.into_iter().enumerate() {
                     processed_ids.insert(record.id);
 
-                    // Add algorithm flag
-                    record.algorithm.insert(Algorithm::SimilarAudio);
+                    // Mark as PCM duplicate
+                    record.algorithm.insert(Algorithm::Waveforms);
 
                     // Remove Keep from duplicates
                     if j > 0 {
                         record.algorithm.remove(&A::Keep);
                     }
 
-                    // Add to processed records
-                    processed_records.push(record.clone());
+                    processed_records.push(record);
                 }
             }
         }
 
-        // PROGRESS: Update before final record collection
-        app.emit(
-            "search-sub-status",
-            StatusUpdate {
-                stage: "similarity".into(),
-                progress: 90,
-                message: "Finalizing records...".into(),
-            },
-        )
-        .ok();
+        // STEP 3: Process Chromaprint fingerprints with similarity matching
+        if !chromaprint_records.is_empty() {
+            // Existing similarity match code...
+            app.emit(
+                "search-sub-status",
+                StatusUpdate {
+                    stage: "similarity".into(),
+                    progress: 10,
+                    message: format!(
+                        "Decoding {} Chromaprint fingerprints...",
+                        chromaprint_records.len()
+                    ),
+                },
+            )
+            .ok();
 
-        // Add any records not in a group
+            // Your existing code for processing fingerprints
+            let total_records = chromaprint_records.len();
+            let similarity_groups = {
+                // First pass - decode all fingerprints with progress
+                let decoded_fps: Vec<Option<Vec<u32>>> = chromaprint_records
+                    .par_iter()
+                    .enumerate()
+                    .map(|(i, record)| {
+                        // Progress reporting code...
+                        let update_interval = (total_records.max(20) / 100).max(1);
+                        if i % update_interval == 0 {
+                            app.emit(
+                                "search-sub-status",
+                                StatusUpdate {
+                                    stage: "similarity".into(),
+                                    progress: 10 + ((i * 30) / total_records) as u64,
+                                    message: format!(
+                                        "Decoding fingerprints: {}/{}",
+                                        i, total_records
+                                    ),
+                                },
+                            )
+                            .ok();
+                        }
+
+                        if let Some(raw_fp) = &record.fingerprint {
+                            if let Ok(fp_bytes) = general_purpose::STANDARD.decode(raw_fp.as_ref())
+                            {
+                                // Decode fingerprint...
+                                let mut fp = Vec::with_capacity(fp_bytes.len() / 4);
+                                for chunk in fp_bytes.chunks_exact(4) {
+                                    if chunk.len() == 4 {
+                                        let mut array = [0u8; 4];
+                                        array.copy_from_slice(chunk);
+                                        fp.push(u32::from_le_bytes(array));
+                                    }
+                                }
+                                return Some(fp);
+                            }
+                        }
+                        None
+                    })
+                    .collect();
+
+                // PROGRESS: Update before starting comparisons
+                app.emit(
+                    "search-sub-status",
+                    StatusUpdate {
+                        stage: "similarity".into(),
+                        progress: 40,
+                        message: "Comparing fingerprints for similarities...".into(),
+                    },
+                )
+                .ok();
+
+                // Second pass - build groups with similarity with progress updates
+                let mut groups: HashMap<usize, Vec<(usize, Vec<u32>)>> = HashMap::new();
+                let mut next_group_id = 0;
+
+                // Process in smaller batches and report progress
+                for i in 0..total_records {
+                    // Progress reporting code...
+                    let update_interval = (total_records.max(20) / 100).max(1);
+                    if i % update_interval == 0 {
+                        app.emit(
+                            "search-sub-status",
+                            StatusUpdate {
+                                stage: "similarity".into(),
+                                progress: 40 + ((i * 30) / total_records) as u64,
+                                message: format!("Finding similar audio: {}/{}", i, total_records),
+                            },
+                        )
+                        .ok();
+                    }
+
+                    let idx = chromaprint_records[i].id;
+                    if let Some(ref fp_i) = decoded_fps[i] {
+                        // Comparison logic...
+                        let mut found_group = None;
+
+                        for (&group_id, group_members) in &groups {
+                            for (_, group_fp) in group_members {
+                                let similarity = calculate_similarity_simd(fp_i, group_fp);
+                                if similarity >= threshold {
+                                    found_group = Some(group_id);
+                                    break;
+                                }
+                            }
+                            if found_group.is_some() {
+                                break;
+                            }
+                        }
+
+                        if let Some(group_id) = found_group {
+                            groups.get_mut(&group_id).unwrap().push((idx, fp_i.clone()));
+                        } else {
+                            groups.insert(next_group_id, vec![(idx, fp_i.clone())]);
+                            next_group_id += 1;
+                        }
+                    }
+                }
+
+                groups
+            };
+
+            // PROGRESS: Update before processing groups
+            app.emit(
+                "search-sub-status",
+                StatusUpdate {
+                    stage: "similarity".into(),
+                    progress: 70,
+                    message: format!(
+                        "Processing {} similarity groups...",
+                        similarity_groups.len()
+                    ),
+                },
+            )
+            .ok();
+
+            // Process groups with progress updates
+            let total_groups = similarity_groups.len();
+            for (i, (_, group)) in similarity_groups.iter().enumerate() {
+                // Update every 5% of groups processed
+                let update_interval = (total_groups.max(20) / 100).max(1);
+                if i % update_interval == 0 {
+                    app.emit(
+                        "search-sub-status",
+                        StatusUpdate {
+                            stage: "similarity".into(),
+                            progress: 70 + ((i * 20) / total_groups) as u64,
+                            message: format!("Sorting similar groups: {}/{}", i, total_groups),
+                        },
+                    )
+                    .ok();
+                }
+
+                if group.len() > 1 {
+                    // Sort and prepare group records
+                    let mut group_records: Vec<FileRecord> = group
+                        .iter()
+                        .filter_map(|(idx, _)| all_records.iter().find(|r| r.id == *idx).cloned())
+                        .collect();
+
+                    // Sort by preference
+                    pref.sort_vec(&mut group_records);
+
+                    // Process and mark duplicates
+                    for (j, mut record) in group_records.into_iter().enumerate() {
+                        // Mark as processed
+                        processed_ids.insert(record.id);
+
+                        // Add algorithm flag
+                        record.algorithm.insert(Algorithm::SimilarAudio);
+
+                        // Remove Keep from duplicates
+                        if j > 0 {
+                            record.algorithm.remove(&A::Keep);
+                        }
+
+                        // Add to processed records
+                        processed_records.push(record);
+                    }
+                }
+            }
+        }
+
+        // STEP 4: Add any records not in a group
         for record in all_records {
             if !processed_ids.contains(record.id) {
                 processed_records.push(record);
@@ -576,10 +653,7 @@ impl Database {
             StatusUpdate {
                 stage: "similarity".into(),
                 progress: 100,
-                message: format!(
-                    "Similarity analysis complete: found {} groups with similar audio",
-                    similarity_groups.len()
-                ),
+                message: "Analysis complete: combined fingerprint and hash processing".into(),
             },
         )
         .ok();
