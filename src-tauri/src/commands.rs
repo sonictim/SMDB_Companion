@@ -446,7 +446,16 @@ pub async fn get_results(
         .records
         .par_iter() // Parallel iterator from Rayon
         .map(|record| {
-            let algorithm = record.algorithm.iter().cloned().collect();
+            let mut algorithm: Vec<_> = record.algorithm.iter().cloned().collect();
+            algorithm.sort_by(|a, b| {
+                if a == &A::Waveforms {
+                    std::cmp::Ordering::Less
+                } else if b == &A::Waveforms {
+                    std::cmp::Ordering::Greater
+                } else {
+                    b.cmp(a)
+                }
+            });
             FileRecordFrontend {
                 id: record.id,
                 path: Arc::from(record.get_path()),

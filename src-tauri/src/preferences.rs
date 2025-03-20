@@ -357,7 +357,7 @@ pub fn generate_license_key_old(name: &str, email: &str) -> Arc<str> {
     hex::encode_upper(hash).into()
 }
 
-#[derive(Default, Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
+#[derive(Default, Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Algorithm {
     All,
     Basic,

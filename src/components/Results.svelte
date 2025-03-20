@@ -1,15 +1,4 @@
 <script lang="ts">
-  import {
-    CheckSquare,
-    Square,
-    NotebookPenIcon,
-    OctagonX,
-    Volume2,
-    Volume,
-    TriangleAlert,
-    Loader,
-    Play,
-  } from "lucide-svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { onMount, onDestroy } from "svelte";
   import { listen } from "@tauri-apps/api/event";
@@ -105,10 +94,11 @@
 
   // Define initial column configurations with percentages
   let columnConfigs: ColumnConfig[] = [
+    { minWidth: 8, width: 15, percentage: 1 }, // Checkbox
     { minWidth: 10, width: 20, percentage: 2 }, // Checkbox
-    { minWidth: 100, width: 200, percentage: 30 }, // Root
-    { minWidth: 150, width: 300, percentage: 53 }, // Path
-    { minWidth: 50, width: 50, percentage: 15 }, // Algorithm
+    { minWidth: 100, width: 200, percentage: 28 }, // Root
+    { minWidth: 150, width: 300, percentage: 58 }, // Path
+    { minWidth: 20, width: 30, percentage: 12 }, // Algorithm
   ];
 
   // Computed property to get current column widths
@@ -608,6 +598,74 @@
   function item(value: FileRecord, index: number, array: FileRecord[]): void {
     throw new Error("Function not implemented.");
   }
+  import {
+    CheckSquare,
+    Square,
+    NotebookPenIcon,
+    OctagonX,
+    Volume2,
+    Volume,
+    TriangleAlert,
+    Loader,
+    Play,
+    // Add these new imports
+    Copy,
+    FileX2,
+    EqualApproximately,
+    Tag,
+    Tags,
+    AudioWaveform,
+    Clock,
+    GitCompareArrowsIcon,
+    Music,
+    AudioLines,
+    CheckCircle,
+    Hash,
+    ShieldCheck,
+    Search,
+    Activity,
+    Asterisk,
+    CopyCheck,
+    CopyPlus,
+    CopyMinus,
+    CopySlash,
+    ScanText,
+    TextSearch,
+    SearchCheck,
+  } from "lucide-svelte";
+  // Add to your script section
+  function getAlgorithmIcon(algoName: string) {
+    const iconMap: Record<
+      string,
+      { component: any; tooltip: string; color?: string }
+    > = {
+      Keep: {
+        component: ShieldCheck,
+        tooltip: "Keep",
+        color: "var(--success-color)",
+      },
+      Basic: { component: Copy, tooltip: "Duplicate Match" },
+      InvalidPath: { component: FileX2, tooltip: "Invalid Path" },
+      SimilarFilename: {
+        component: Search,
+        tooltip: "Similar Filename",
+      },
+      Tags: { component: Tag, tooltip: "Duplicate contains Tag" },
+      FileTags: { component: Tag, tooltip: "Filename contains tag" },
+      Waveform: { component: AudioWaveform, tooltip: "Waveform Match" },
+      Duration: { component: Clock, tooltip: "Duration Match" },
+      Compare: { component: GitCompareArrowsIcon, tooltip: "Database Compare" },
+      SimilarAudio: { component: Activity, tooltip: "Similar Audio" },
+      ExactPCM: { component: AudioWaveform, tooltip: "Exact PCM Hash" },
+      Remove: {
+        component: OctagonX,
+        tooltip: "Marked for Removal",
+        color: "var(--error-color)",
+      },
+    };
+
+    return iconMap[algoName] || { component: Hash, tooltip: algoName };
+  }
 </script>
 
 <div class="block">
@@ -795,9 +853,10 @@
       <div class="grid-header">
         <div
           class="grid-container rheader"
-          style="grid-template-columns: {columnWidths[0]}px {columnWidths[1]}px {columnWidths[2]}px {columnWidths[3]}px;"
+          style="grid-template-columns: {columnWidths[0]}px {columnWidths[1]}px {columnWidths[2]}px {columnWidths[3]}px {columnWidths[4]}px;"
         >
           <!-- Checkbox Header -->
+          <div class="grid-item header"></div>
           <div class="grid-item header">✔</div>
 
           <!-- Root Header -->
@@ -809,8 +868,8 @@
           <!-- Algorithm Header -->
           <div class="grid-item header" on:click={() => stopAudioFile()}>
             <span>
-              Algorithm
-              <Volume2 size={20} />
+              Match
+              <!-- <Volume2 size={20} /> -->
             </span>
           </div>
         </div>
@@ -818,29 +877,39 @@
         <!-- Resizers -->
         <div
           class="resizer-container"
-          style="grid-template-columns: {columnWidths[0]}px {columnWidths[1]}px {columnWidths[2]}px {columnWidths[3]}px; "
+          style="grid-template-columns: {columnWidths[0]}px {columnWidths[1]}px {columnWidths[2]}px {columnWidths[3]}px {columnWidths[4]}px; "
         >
+          <!-- Audio column resizer -->
           <div class="resizer-cell">
-            <div
-              class="resizer"
-              on:mousedown={(event) => startResize(0, event)}
-            ></div>
+            <div></div>
           </div>
+
+          <!-- Checkbox column resizer -->
           <div class="resizer-cell">
             <div
               class="resizer"
               on:mousedown={(event) => startResize(1, event)}
             ></div>
           </div>
+
+          <!-- Filename column resizer -->
           <div class="resizer-cell">
             <div
               class="resizer"
               on:mousedown={(event) => startResize(2, event)}
             ></div>
           </div>
+
+          <!-- Path column resizer -->
           <div class="resizer-cell">
-            <!-- Last column doesn't need a resizer -->
+            <div
+              class="resizer"
+              on:mousedown={(event) => startResize(3, event)}
+            ></div>
           </div>
+
+          <!-- Algorithm column - no resizer needed -->
+          <div class="resizer-cell"></div>
         </div>
       </div>
 
@@ -857,15 +926,18 @@
             class="grid-container"
             style="{selectedItems.has(item.id) && enableSelections
               ? 'background-color: var(--accent-color)'
-              : ''};    grid-template-columns: {columnWidths[0]}px {columnWidths[1]}px {columnWidths[2]}px {columnWidths[3]}px;"
+              : ''};    grid-template-columns: {columnWidths[0]}px {columnWidths[1]}px {columnWidths[2]}px {columnWidths[3]}px {columnWidths[4]}px;"
           >
             <!-- Checkbox Column -->
+            <div class="grid-item" on:click={() => playAudioFile(item)}>
+              <Volume size={18} />
+            </div>
             <div class="grid-item" on:click={() => toggleChecked(item)}>
               <!-- <Volume size={14} /> -->
               {#if !item.algorithm.includes("Keep")}
-                <CheckSquare size={14} />
+                <CheckSquare size={18} />
               {:else}
-                <Square size={14} />
+                <Square size={18} />
               {/if}
             </div>
 
@@ -891,13 +963,26 @@
             </div>
 
             <!-- Algorithm Column -->
-            <div class="grid-item" on:click={() => playAudioFile(item)}>
-              {item.algorithm
-                .filter(
-                  (algo: string) =>
-                    algo !== "Keep" || item.algorithm.length === 1,
-                )
-                .join(", ")}
+            <!-- Replace the existing algorithm column content with this: -->
+            <div
+              class="grid-item"
+              on:click={(event) =>
+                enableSelections
+                  ? toggleSelect(item, event)
+                  : toggleChecked(item)}
+            >
+              <div class="algorithm-icons">
+                {#each item.algorithm.filter((algo: string) => algo !== "Keep" || item.algorithm.length === 1) as algo}
+                  {@const iconData = getAlgorithmIcon(algo)}
+                  <span class="icon-wrapper" title={iconData.tooltip}>
+                    <svelte:component
+                      this={iconData.component}
+                      size={20}
+                      style={iconData.color ? `color: ${iconData.color};` : ""}
+                    />
+                  </span>
+                {/each}
+              </div>
             </div>
           </div>
         </div>
@@ -971,7 +1056,8 @@
     height: 60px;
     background-color: var(--inactive-color);
     position: absolute;
-    right: -6px; /* Changed from 0 to -4px to move right */
+    /* left: 10px; */
+    right: -20px;
     top: -60px;
     cursor: col-resize;
     z-index: 20;
@@ -990,7 +1076,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 12px;
+    font-size: 14px;
     user-select: none; /* Standard syntax */
     -webkit-user-select: none; /* Safari */
     -moz-user-select: none; /* Firefox */
@@ -1049,5 +1135,32 @@
     -webkit-user-select: none;
     -moz-user-select: none;
     -ms-user-select: none;
+  }
+
+  .algorithm-icons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .icon-wrapper {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .icon-wrapper:hover::after {
+    content: attr(title);
+    position: absolute;
+    background: var(--primary-bg);
+    border: 1px solid var(--border-color);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    z-index: 100;
+    white-space: nowrap;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
   }
 </style>
