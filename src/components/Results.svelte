@@ -2,6 +2,8 @@
   import { invoke } from "@tauri-apps/api/core";
   import { onMount, onDestroy } from "svelte";
   import { listen } from "@tauri-apps/api/event";
+  import VirtualTable from "./VirtualTable.svelte";
+
   import VirtualList from "svelte-virtual-list";
   import Select from "./prefs/Select.svelte";
   import { algorithmsStore, preferencesStore } from "../store";
@@ -9,6 +11,7 @@
   import { get } from "svelte/store";
   import type { FileRecord } from "../store";
   import { ask } from "@tauri-apps/plugin-dialog";
+  import { createVirtualizer } from "@tanstack/svelte-virtual";
 
   export let removeResults;
   export let isRemove: boolean;
@@ -45,12 +48,24 @@
   // Update filtered items whenever the filter or items change
   $: {
     let newFiltered = filterItems(results, currentFilter);
+    // Store scroll position before update
+    const scrollElement = parentRef;
+    const scrollTop = scrollElement?.scrollTop;
+
     newFiltered.forEach((item) => {
       if (selectedItems.has(item.id)) {
         selectedItems.add(item.id); // Ensure selected state persists
       }
     });
     filteredItems = newFiltered;
+
+    // Restore scroll position after update
+    queueMicrotask(() => {
+      if (scrollElement && scrollTop !== undefined) {
+        scrollElement.scrollTop = scrollTop;
+      }
+      updateVirtualizer();
+    });
   }
   function updateUI() {
     // Force a UI update by creating a new array reference
@@ -256,8 +271,45 @@
   // Add a variable to track the last selected item index
   let lastSelectedIndex = -1;
 
+  // Enhanced function to update the virtualizer while preserving scroll position
+  function updateVirtualizer() {
+    if ($rowVirtualizer) {
+      // Store current scroll position
+      const scrollElement = parentRef;
+      const scrollTop = scrollElement?.scrollTop;
+
+      // Update the virtualizer
+      $rowVirtualizer.measure();
+
+      // Restore scroll position after a microtask to ensure DOM has updated
+      if (scrollTop !== undefined) {
+        queueMicrotask(() => {
+          if (scrollElement) scrollElement.scrollTop = scrollTop;
+        });
+      }
+    }
+  }
+
+  function addSelected(item: FileRecord) {
+    selectedItems.add(item.id);
+    selectedItems = new Set(selectedItems);
+    updateVirtualizer(); // Update the virtualizer to keep the scroll position
+  }
+
+  function removeSelected(item: FileRecord) {
+    selectedItems.delete(item.id);
+    selectedItems = new Set(selectedItems);
+    updateVirtualizer(); // Update the virtualizer to keep the scroll position
+  }
+
+  // Improve how we handle selection changes
   function toggleSelect(item: FileRecord, event: MouseEvent) {
     event.preventDefault();
+
+    // Store scroll position
+    const scrollElement = parentRef;
+    const scrollTop = scrollElement?.scrollTop;
+
     // Get the current item index
     const currentIndex = filteredItems.findIndex(
       (record) => record.id === item.id,
@@ -273,6 +325,12 @@
         filteredItems.forEach((record) => selectedItems.add(record.id));
       }
       selectedItems = new Set(selectedItems);
+      queueMicrotask(() => {
+        updateVirtualizer();
+        if (scrollTop !== undefined && scrollElement) {
+          scrollElement.scrollTop = scrollTop;
+        }
+      });
       return;
     }
 
@@ -299,10 +357,20 @@
 
     // Update the set
     selectedItems = new Set(selectedItems);
+    queueMicrotask(() => {
+      updateVirtualizer();
+      if (scrollTop !== undefined && scrollElement) {
+        scrollElement.scrollTop = scrollTop;
+      }
+    });
   }
 
   function toggleChecked(item: FileRecord) {
     const isKeeping = item.algorithm.includes("Keep");
+
+    // Store scroll position
+    const scrollElement = parentRef;
+    const scrollTop = scrollElement?.scrollTop;
 
     // Clone the item and update its algorithm array
     const updatedAlgorithms = isKeeping
@@ -316,6 +384,22 @@
 
     // Update items array
     results = results.map((i) => (i === item ? updatedItem : i));
+
+    // Call updateVirtualizer after the state update
+    queueMicrotask(() => {
+      updateVirtualizer();
+      // Extra safety: restore scroll position
+      if (scrollTop !== undefined && scrollElement) {
+        scrollElement.scrollTop = scrollTop;
+      }
+    });
+  }
+
+  // Reactive statement to update the virtualizer when selectedItems changes
+  $: {
+    if (selectedItems) {
+      updateVirtualizer();
+    }
   }
 
   function invertSelected() {
@@ -471,35 +555,35 @@
         });
     }
   }
-  async function removeSelected() {
-    if (selectedItems.size > 0) {
-      processing = true;
-      idsToRemove = Array.from(selectedItems.values());
+  // async function removeSelected() {
+  //   if (selectedItems.size > 0) {
+  //     processing = true;
+  //     idsToRemove = Array.from(selectedItems.values());
 
-      filesToRemove = filteredItems
-        .filter(
-          (item) =>
-            !selectedItems.has(item.id) || !item.algorithm.includes("Keep"),
-        ) // Only keep items without "Keep"
-        .map((item) => item.path + "/" + item.root);
+  //     filesToRemove = filteredItems
+  //       .filter(
+  //         (item) =>
+  //           !selectedItems.has(item.id) || !item.algorithm.includes("Keep"),
+  //       ) // Only keep items without "Keep"
+  //       .map((item) => item.path + "/" + item.root);
 
-      await invoke<string>("remove_records", {
-        records: idsToRemove,
-        clone: pref.safety_db,
-        cloneTag: pref.safety_db_tag,
-        delete: pref.erase_files,
-        files: filesToRemove,
-      })
-        .then((newDbName) => {
-          console.log("Successfully removed records with IDs:", selectedItems);
-          selectedDb = newDbName;
-        })
-        .catch((error) => {
-          console.error("Error removing records:", error);
-          activeTab = "search";
-        });
-    }
-  }
+  //     await invoke<string>("remove_records", {
+  //       records: idsToRemove,
+  //       clone: pref.safety_db,
+  //       cloneTag: pref.safety_db_tag,
+  //       delete: pref.erase_files,
+  //       files: filesToRemove,
+  //     })
+  //       .then((newDbName) => {
+  //         console.log("Successfully removed records with IDs:", selectedItems);
+  //         selectedDb = newDbName;
+  //       })
+  //       .catch((error) => {
+  //         console.error("Error removing records:", error);
+  //         activeTab = "search";
+  //       });
+  //   }
+  // }
 
   async function playAudioFile(record: FileRecord) {
     console.log("last played: ", lastPlayed);
@@ -666,6 +750,44 @@
 
     return iconMap[algoName] || { component: Hash, tooltip: algoName };
   }
+
+  let parentRef: Element;
+  let parentWidth = 0;
+  let parentHeight = 0;
+  export let estimatedItemSize = 40;
+  export let overscan = 5;
+
+  // Calculate total content width from column widths
+  $: totalWidth = columnWidths.reduce((sum, width) => sum + width, 0);
+
+  // Create vertical virtualizer for rows
+  $: rowVirtualizer = createVirtualizer({
+    count: filteredItems.length,
+    estimateSize: () => estimatedItemSize,
+    overscan,
+    getScrollElement: () => parentRef,
+  });
+
+  onMount(() => {
+    // Force an update to handle initial viewport sizes
+    const resizeObserver = new ResizeObserver((entries) => {
+      if (entries[0]) {
+        parentWidth = entries[0].contentRect.width;
+        parentHeight = entries[0].contentRect.height;
+        if ($rowVirtualizer) {
+          $rowVirtualizer.measure();
+        }
+      }
+    });
+
+    if (parentRef) {
+      resizeObserver.observe(parentRef);
+    }
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  });
 </script>
 
 <div class="block">
@@ -850,143 +972,166 @@
         </div>
       </div>
     {:else}
-      <div class="grid-header">
-        <div
-          class="grid-container rheader"
-          style="grid-template-columns: {columnWidths[0]}px {columnWidths[1]}px {columnWidths[2]}px {columnWidths[3]}px {columnWidths[4]}px;"
-        >
-          <!-- Checkbox Header -->
-          <div class="grid-item header"></div>
-          <div class="grid-item header">✔</div>
-
-          <!-- Root Header -->
-          <div class="grid-item header bold">Filename</div>
-
-          <!-- Path Header -->
-          <div class="grid-item header">Path</div>
-
-          <!-- Algorithm Header -->
-          <div class="grid-item header" on:click={() => stopAudioFile()}>
-            <span>
-              Match
-              <!-- <Volume2 size={20} /> -->
-            </span>
-          </div>
-        </div>
-
-        <!-- Resizers -->
-        <div
-          class="resizer-container"
-          style="grid-template-columns: {columnWidths[0]}px {columnWidths[1]}px {columnWidths[2]}px {columnWidths[3]}px {columnWidths[4]}px; "
-        >
-          <!-- Audio column resizer -->
-          <div class="resizer-cell">
-            <div></div>
-          </div>
-
-          <!-- Checkbox column resizer -->
-          <div class="resizer-cell">
+      <div class="virtual-table-container" style="height: 60vh; width: 100%;">
+        <div bind:this={parentRef} class="virtual-table-viewport">
+          <!-- Table header (fixed, not virtualized) -->
+          <div class="virtual-table-header" style="width: {totalWidth}px;">
             <div
-              class="resizer"
-              on:mousedown={(event) => startResize(1, event)}
-            ></div>
-          </div>
-
-          <!-- Filename column resizer -->
-          <div class="resizer-cell">
-            <div
-              class="resizer"
-              on:mousedown={(event) => startResize(2, event)}
-            ></div>
-          </div>
-
-          <!-- Path column resizer -->
-          <div class="resizer-cell">
-            <div
-              class="resizer"
-              on:mousedown={(event) => startResize(3, event)}
-            ></div>
-          </div>
-
-          <!-- Algorithm column - no resizer needed -->
-          <div class="resizer-cell"></div>
-        </div>
-      </div>
-
-      <VirtualList items={filteredItems} let:item>
-        <!-- svelte-ignore a11y_click_events_have_key_events -->
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <!-- on:click={() =>  enableSelections ? toggleSelect(item) : toggleChecked(item)} -->
-        <div
-          class="list-item {item.algorithm.includes('Keep')
-            ? 'unselected-item'
-            : 'checked-item'}"
-        >
-          <div
-            class="grid-container"
-            style="{selectedItems.has(item.id) && enableSelections
-              ? 'background-color: var(--accent-color)'
-              : ''};    grid-template-columns: {columnWidths[0]}px {columnWidths[1]}px {columnWidths[2]}px {columnWidths[3]}px {columnWidths[4]}px;"
-          >
-            <!-- Checkbox Column -->
-            <div class="grid-item" on:click={() => playAudioFile(item)}>
-              <Volume size={18} />
-            </div>
-            <div class="grid-item" on:click={() => toggleChecked(item)}>
-              <!-- <Volume size={14} /> -->
-              {#if !item.algorithm.includes("Keep")}
-                <CheckSquare size={18} />
-              {:else}
-                <Square size={18} />
-              {/if}
-            </div>
-
-            <!-- Root Column -->
-            <div
-              class="grid-item bold"
-              on:click={(event) =>
-                enableSelections
-                  ? toggleSelect(item, event)
-                  : toggleChecked(item)}
+              class="grid-container rheader"
+              style="grid-template-columns: {columnWidths[0]}px {columnWidths[1]}px {columnWidths[2]}px {columnWidths[3]}px {columnWidths[4]}px;"
             >
-              {item.root}
-            </div>
+              <!-- Checkbox Header -->
+              <div class="grid-item header"></div>
+              <div class="grid-item header">✔</div>
 
-            <div
-              class="grid-item"
-              on:click={(event) =>
-                enableSelections
-                  ? toggleSelect(item, event)
-                  : toggleChecked(item)}
-            >
-              {item.path}
-            </div>
+              <!-- Root Header -->
+              <div class="grid-item header bold">Filename</div>
 
-            <!-- Algorithm Column -->
-            <!-- Replace the existing algorithm column content with this: -->
-            <div
-              class="grid-item"
-              on:click={(event) =>
-                enableSelections
-                  ? toggleSelect(item, event)
-                  : toggleChecked(item)}
-            >
-              <div class="algorithm-icons">
-                {#each item.algorithm.filter((algo: string) => algo !== "Keep" || item.algorithm.length === 1) as algo}
-                  {@const iconData = getAlgorithmIcon(algo)}
-                  <span class="icon-wrapper" title={iconData.tooltip}>
-                    <svelte:component
-                      this={iconData.component}
-                      size={20}
-                      style={iconData.color ? `color: ${iconData.color};` : ""}
-                    />
-                  </span>
-                {/each}
+              <!-- Path Header -->
+              <div class="grid-item header">Path</div>
+
+              <!-- Algorithm Header -->
+              <div class="grid-item header" on:click={() => stopAudioFile()}>
+                <span>Match</span>
               </div>
             </div>
+
+            <!-- Resizers -->
+            <div
+              class="resizer-container"
+              style="grid-template-columns: {columnWidths[0]}px {columnWidths[1]}px {columnWidths[2]}px {columnWidths[3]}px {columnWidths[4]}px;"
+            >
+              <!-- Audio column resizer -->
+              <div class="resizer-cell">
+                <div></div>
+              </div>
+
+              <!-- Checkbox column resizer -->
+              <div class="resizer-cell">
+                <div
+                  class="resizer"
+                  on:mousedown={(event) => startResize(1, event)}
+                ></div>
+              </div>
+
+              <!-- Filename column resizer -->
+              <div class="resizer-cell">
+                <div
+                  class="resizer"
+                  on:mousedown={(event) => startResize(2, event)}
+                ></div>
+              </div>
+
+              <!-- Path column resizer -->
+              <div class="resizer-cell">
+                <div
+                  class="resizer"
+                  on:mousedown={(event) => startResize(3, event)}
+                ></div>
+              </div>
+
+              <!-- Algorithm column - no resizer needed -->
+              <div class="resizer-cell"></div>
+            </div>
+          </div>
+
+          <!-- Virtualized rows -->
+          <div
+            class="virtual-table-body"
+            style="height: {$rowVirtualizer.getTotalSize()}px; width: {totalWidth}px;"
+          >
+            {#each $rowVirtualizer.getVirtualItems() as virtualRow (virtualRow.index)}
+              <div
+                class="virtual-row"
+                style="transform: translateY({virtualRow.start}px); height: {virtualRow.size}px; width: {totalWidth}px;"
+              >
+                <div
+                  class="list-item {filteredItems[
+                    virtualRow.index
+                  ].algorithm.includes('Keep')
+                    ? 'unselected-item'
+                    : 'checked-item'}"
+                >
+                  <div
+                    class="grid-container"
+                    style="{selectedItems.has(
+                      filteredItems[virtualRow.index].id,
+                    ) && enableSelections
+                      ? 'background-color: var(--accent-color)'
+                      : ''};
+                    grid-template-columns: {columnWidths[0]}px {columnWidths[1]}px {columnWidths[2]}px {columnWidths[3]}px {columnWidths[4]}px;"
+                  >
+                    <!-- Checkbox Column -->
+                    <div
+                      class="grid-item"
+                      on:click={() =>
+                        playAudioFile(filteredItems[virtualRow.index])}
+                    >
+                      <Volume size={18} />
+                    </div>
+                    <div
+                      class="grid-item"
+                      on:click={() =>
+                        toggleChecked(filteredItems[virtualRow.index])}
+                    >
+                      {#if !filteredItems[virtualRow.index].algorithm.includes("Keep")}
+                        <CheckSquare size={18} />
+                      {:else}
+                        <Square size={18} />
+                      {/if}
+                    </div>
+
+                    <!-- Root Column -->
+                    <div
+                      class="grid-item bold"
+                      on:click={(event) =>
+                        enableSelections
+                          ? toggleSelect(filteredItems[virtualRow.index], event)
+                          : toggleChecked(filteredItems[virtualRow.index])}
+                    >
+                      {filteredItems[virtualRow.index].root}
+                    </div>
+
+                    <div
+                      class="grid-item"
+                      on:click={(event) =>
+                        enableSelections
+                          ? toggleSelect(filteredItems[virtualRow.index], event)
+                          : toggleChecked(filteredItems[virtualRow.index])}
+                    >
+                      {filteredItems[virtualRow.index].path}
+                    </div>
+
+                    <!-- Algorithm Column -->
+                    <div
+                      class="grid-item"
+                      on:click={(event) =>
+                        enableSelections
+                          ? toggleSelect(filteredItems[virtualRow.index], event)
+                          : toggleChecked(filteredItems[virtualRow.index])}
+                    >
+                      <div class="algorithm-icons">
+                        {#each filteredItems[virtualRow.index].algorithm.filter((algo: string) => algo !== "Keep" || filteredItems[virtualRow.index].algorithm.length === 1) as algo}
+                          {@const iconData = getAlgorithmIcon(algo)}
+                          <span class="icon-wrapper" title={iconData.tooltip}>
+                            <svelte:component
+                              this={iconData.component}
+                              size={20}
+                              style={iconData.color
+                                ? `color: ${iconData.color};`
+                                : ""}
+                            />
+                          </span>
+                        {/each}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            {/each}
           </div>
         </div>
-      </VirtualList>
+      </div>
     {/if}
   </div>
   <div class="header" style="margin-bottom: 0px; margin-top: 0px;">
@@ -1038,6 +1183,38 @@
 </div>
 
 <style>
+  .virtual-table-container {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .virtual-table-viewport {
+    overflow: auto;
+    height: 100%;
+    width: 100%;
+    will-change: transform;
+    position: relative;
+  }
+
+  .virtual-table-header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background-color: var(--primary-bg);
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.1);
+  }
+
+  .virtual-table-body {
+    position: relative;
+  }
+
+  .virtual-row {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+  }
+
   .resizer-container {
     display: grid;
     height: 5px;
@@ -1056,7 +1233,6 @@
     height: 60px;
     background-color: var(--inactive-color);
     position: absolute;
-    /* left: 10px; */
     right: -20px;
     top: -60px;
     cursor: col-resize;
@@ -1069,7 +1245,6 @@
     opacity: 1;
   }
 
-  /* Make sure the position is set correctly for grid items */
   .grid-item {
     position: relative;
     padding: 3px;
@@ -1077,10 +1252,10 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 14px;
-    user-select: none; /* Standard syntax */
-    -webkit-user-select: none; /* Safari */
-    -moz-user-select: none; /* Firefox */
-    -ms-user-select: none; /* IE10+/Edge */
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
   }
 
   .grid-item.header {
@@ -1088,7 +1263,6 @@
     background-color: var(--primary-bg);
   }
 
-  /* Update header styles */
   .rheader {
     font-weight: bold;
     font-size: 16px;
@@ -1098,10 +1272,6 @@
   }
 
   .ellipsis {
-    /* display: inline-block;
-    width: 80px;
-    height: 10px; */
-    /* background-color: #ccc; */
     border-radius: 5px;
     animation: loading 1s infinite;
   }
@@ -1121,13 +1291,13 @@
   .header {
     display: flex;
     align-items: center;
-    gap: 12px; /* Adjust spacing */
+    gap: 12px;
     background-color: var(--secondary-bg);
     margin-bottom: 10px;
   }
 
   .header h2 {
-    margin: 0; /* Removes extra spacing */
+    margin: 0;
   }
 
   .list-item {

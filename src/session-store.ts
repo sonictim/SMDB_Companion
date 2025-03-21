@@ -39,3 +39,6 @@ export function updateResultsStore(newResults: any): void {
         resultsStore.set([]);
     }
 }
+
+export const virtualizerStore = writable(null);
+export const scrollPositionStore = writable(0);
