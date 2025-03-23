@@ -131,6 +131,7 @@ struct FileRecordFrontend {
     path: Arc<str>,
     root: Arc<str>,
     algorithm: Vec<Algorithm>,
+    data: HashMap<Arc<str>, Arc<str>>,
 }
 
 #[derive(Default, Debug, Serialize, Clone, PartialEq)]

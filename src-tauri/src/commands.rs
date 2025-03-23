@@ -461,6 +461,7 @@ pub async fn get_results(
                 path: Arc::from(record.get_path()),
                 root: Arc::from(record.get_filename()),
                 algorithm,
+                data: record.data.clone(),
             }
         })
         .collect(); // Parallel collect

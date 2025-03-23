@@ -2,18 +2,13 @@
   import { invoke } from "@tauri-apps/api/core";
   import { onMount, onDestroy } from "svelte";
   import { listen } from "@tauri-apps/api/event";
-  import VirtualTable from "./VirtualTable.svelte";
 
-  import VirtualList from "svelte-virtual-list";
-  import Select from "./prefs/Select.svelte";
   import { algorithmsStore, preferencesStore } from "../store";
   import { resultsStore, metadataStore } from "../session-store";
-  import { get } from "svelte/store";
-  import type { FileRecord } from "../store";
+  import type { FileRecord } from "../session-store";
   import { ask } from "@tauri-apps/plugin-dialog";
   import { createVirtualizer } from "@tanstack/svelte-virtual";
 
-  export let removeResults;
   export let isRemove: boolean;
   export let activeTab: string; // This prop is now bindable
   export let selectedDb: string | null = null;
@@ -757,7 +752,7 @@
   export let estimatedItemSize = 40;
   export let overscan = 5;
 
-  // Calculate total content width from column widths
+  // Ensure totalWidth includes all columns
   $: totalWidth = columnWidths.reduce((sum, width) => sum + width, 0);
 
   // Create vertical virtualizer for rows
@@ -788,6 +783,99 @@
       resizeObserver.disconnect();
     };
   });
+
+  // Helper function to filter metadata keys
+  function shouldDisplayMetadataKey(key: string): boolean {
+    const lowerKey = key.toLowerCase();
+    return !lowerKey.includes("name") && !lowerKey.includes("date");
+  }
+
+  // Add this function to extract all metadata keys in a consistent order
+  function getMetadataKeysInOrder(): string[] {
+    if (!results || results.length === 0) return [];
+
+    // Collect all unique metadata keys from all records
+    const allKeys = new Set<string>();
+    results.forEach((record) => {
+      if (record.data) {
+        Object.keys(record.data).forEach((key) => {
+          if (shouldDisplayMetadataKey(key)) {
+            allKeys.add(key);
+          }
+        });
+      }
+    });
+
+    // Convert to array and sort for consistent ordering
+    return Array.from(allKeys).sort();
+  }
+
+  // Get ordered metadata keys for consistent display
+  $: orderedMetadataKeys = getMetadataKeysInOrder();
+
+  // After you load your results
+  $: {
+    if (results.length > 0 && results[0]?.data) {
+      // Get metadata keys from the first item
+      const metadataKeys = Object.keys(results[0].data);
+
+      // Keep your fixed columns
+      const fixedColumnConfigs = [
+        {
+          minWidth: 8,
+          width: 15,
+          percentage: 1.5,
+          name: "audio",
+          isMetadata: false,
+        }, // Audio
+        {
+          minWidth: 10,
+          width: 20,
+          percentage: 2,
+          name: "checkbox",
+          isMetadata: false,
+        }, // Checkbox
+        {
+          minWidth: 100,
+          width: 200,
+          percentage: 30,
+          name: "filename",
+          isMetadata: false,
+        }, // Root
+        {
+          minWidth: 150,
+          width: 400,
+          percentage: 55,
+          name: "path",
+          isMetadata: false,
+        }, // Path
+        {
+          minWidth: 20,
+          width: 30,
+          percentage: 10,
+          name: "algorithm",
+          isMetadata: false,
+        }, // Algorithm
+      ];
+
+      // Create dynamic metadata columns
+      const metadataColumnConfigs = orderedMetadataKeys.map((key) => ({
+        minWidth: 20,
+        width: 150,
+        percentage: 30 / orderedMetadataKeys.length, // Split remaining percentage
+        name: key,
+        isMetadata: true,
+      }));
+
+      // Combine fixed and metadata columns
+      columnConfigs = [...fixedColumnConfigs, ...metadataColumnConfigs];
+
+      // Update column widths
+      updateColumnWidthsFromContainer();
+    }
+  }
+  // Replace static grid-template-columns with dynamic version
+  $: gridTemplateColumns = columnWidths.map((width) => `${width}px`).join(" ");
 </script>
 
 <div class="block">
@@ -978,28 +1066,27 @@
           <div class="virtual-table-header" style="width: {totalWidth}px;">
             <div
               class="grid-container rheader"
-              style="grid-template-columns: {columnWidths[0]}px {columnWidths[1]}px {columnWidths[2]}px {columnWidths[3]}px {columnWidths[4]}px;"
+              style="grid-template-columns: {gridTemplateColumns};"
             >
-              <!-- Checkbox Header -->
               <div class="grid-item header"></div>
               <div class="grid-item header">✔</div>
-
-              <!-- Root Header -->
               <div class="grid-item header bold">Filename</div>
-
-              <!-- Path Header -->
               <div class="grid-item header">Path</div>
-
-              <!-- Algorithm Header -->
               <div class="grid-item header" on:click={() => stopAudioFile()}>
                 <span>Match</span>
               </div>
+
+              <!-- Use ordered metadata keys for headers -->
+              {#each orderedMetadataKeys as key}
+                <div class="grid-item header">{key}</div>
+              {/each}
             </div>
 
             <!-- Resizers -->
+            <!-- Replace your resizer-container div and its contents with this -->
             <div
               class="resizer-container"
-              style="grid-template-columns: {columnWidths[0]}px {columnWidths[1]}px {columnWidths[2]}px {columnWidths[3]}px {columnWidths[4]}px;"
+              style="grid-template-columns: {gridTemplateColumns};"
             >
               <!-- Audio column resizer -->
               <div class="resizer-cell">
@@ -1030,8 +1117,25 @@
                 ></div>
               </div>
 
-              <!-- Algorithm column - no resizer needed -->
-              <div class="resizer-cell"></div>
+              <!-- Algorithm column resizer -->
+              <div class="resizer-cell">
+                <div
+                  class="resizer"
+                  on:mousedown={(event) => startResize(4, event)}
+                ></div>
+              </div>
+
+              <!-- Metadata column resizers -->
+              {#if results[0]?.data}
+                {#each orderedMetadataKeys as key, i}
+                  <div class="resizer-cell">
+                    <div
+                      class="resizer"
+                      on:mousedown={(event) => startResize(5 + i, event)}
+                    ></div>
+                  </div>
+                {/each}
+              {/if}
             </div>
           </div>
 
@@ -1059,7 +1163,7 @@
                     ) && enableSelections
                       ? 'background-color: var(--accent-color)'
                       : ''};
-                    grid-template-columns: {columnWidths[0]}px {columnWidths[1]}px {columnWidths[2]}px {columnWidths[3]}px {columnWidths[4]}px;"
+                    grid-template-columns: {gridTemplateColumns};"
                   >
                     <!-- Checkbox Column -->
                     <div
@@ -1125,6 +1229,26 @@
                         {/each}
                       </div>
                     </div>
+
+                    <!-- Add metadata cells -->
+                    {#each orderedMetadataKeys as key}
+                      <!-- svelte-ignore a11y_click_events_have_key_events -->
+                      <!-- svelte-ignore a11y_no_static_element_interactions -->
+                      <div
+                        class="grid-item"
+                        on:click={(event) =>
+                          enableSelections
+                            ? toggleSelect(
+                                filteredItems[virtualRow.index],
+                                event,
+                              )
+                            : toggleChecked(filteredItems[virtualRow.index])}
+                      >
+                        {filteredItems[virtualRow.index]?.data?.[
+                          key
+                        ]?.toString() || ""}
+                      </div>
+                    {/each}
                   </div>
                 </div>
               </div>
@@ -1233,7 +1357,7 @@
     height: 60px;
     background-color: var(--inactive-color);
     position: absolute;
-    right: -20px;
+    right: -20px; /* Changed from -20px to 0 */
     top: -60px;
     cursor: col-resize;
     z-index: 20;

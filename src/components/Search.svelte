@@ -23,10 +23,12 @@
 
     import { algorithmsStore, preferencesStore } from "../store";
     import { resultsStore, metadataStore } from "../session-store";
+    import type { HashMap } from "../session-store";
     import { get } from "svelte/store";
     import { open } from "@tauri-apps/plugin-dialog";
     import { basename, extname } from "@tauri-apps/api/path";
-    import type { Algorithm, Preferences, FileRecord } from "../store";
+    import type { Algorithm, Preferences } from "../store";
+    import type { FileRecord } from "../session-store";
 
     async function getFilenameWithoutExtension(fullPath: string) {
         const name = await basename(fullPath); // Extracts filename with extension
@@ -180,6 +182,24 @@
         })
             .then((result) => {
                 console.log("Search Results:", result);
+                if (result && result.length > 0) {
+                    const firstRecord = result[0];
+
+                    // Deep inspect the data property
+                    console.log(
+                        "Data object:",
+                        JSON.stringify(firstRecord.data, null, 2),
+                    );
+                    console.log(
+                        "Data keys:",
+                        Object.keys(firstRecord.data || {}),
+                    );
+                    console.log(
+                        "Data entries:",
+                        Object.entries(firstRecord.data || {}),
+                    );
+                }
+
                 resultsStore.set(result); // ✅ Store the results in session storage
             })
             .catch((error) => {
@@ -251,6 +271,27 @@
                 subsearchMessage = "Search cancelled";
             })
             .catch((error) => console.error("Error cancelling search:", error));
+    }
+
+    function getAlgorithmTooltip(id: string): string {
+        const tooltips: Record<string, string> = {
+            basic: "Finds duplicates by comparing Match Criteria set in Preferences.",
+            filename:
+                "Will attempt to remove extra letters and numbers (.1.4.21.M.wav) from the filename",
+            audiosuite:
+                "Searches for Protools Audiosuite tags in the filename and checks for orginal file.",
+            duration:
+                "Files less than the set duration will be marked for removal.",
+            waveform:
+                "Compares audio waveform patterns to find similar sounds.  This may take a while.",
+            dbcompare: "Compares against another database to find duplicates.",
+            invalidpath: "Files with invalid paths will be marked for removal.",
+            filetags:
+                "Filenames containting tags in this list will be marked for removal.",
+            // Add descriptions for your other algorithms
+        };
+
+        return tooltips[id] || "No description available";
     }
 </script>
 
@@ -338,13 +379,17 @@
                             {/if}
 
                             <span
-                                class={(algo.id === "audiosuite" ||
-                                    algo.id === "filename") &&
+                                class="tooltip-trigger {(algo.id ===
+                                    'audiosuite' ||
+                                    algo.id === 'filename') &&
                                 !isBasicEnabled
-                                    ? "inactive"
-                                    : ""}
+                                    ? 'inactive'
+                                    : ''}"
                             >
                                 {algo.name}
+                                <span class="tooltip-text"
+                                    >{getAlgorithmTooltip(algo.id)}</span
+                                >
                             </span>
                         </button>
 
@@ -524,5 +569,49 @@
 
     :global(.checkbox.inactive) {
         color: var(--inactive-color);
+    }
+
+    /* Tooltip styles */
+    .tooltip-trigger {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+    }
+
+    .tooltip-text {
+        visibility: hidden;
+        width: 220px;
+        background-color: var(--tooltip-bg, #333);
+        color: var(--tooltip-text, white);
+        text-align: center;
+        border-radius: 6px;
+        padding: 8px;
+        position: absolute;
+        z-index: 100;
+        bottom: 125%;
+        left: 50%;
+        transform: translateX(-50%);
+        opacity: 0;
+        transition: opacity 0.3s;
+        font-size: 12px;
+        pointer-events: none;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+    }
+
+    .tooltip-text::after {
+        content: "";
+        position: absolute;
+        top: 100%;
+        left: 50%;
+        margin-left: -5px;
+        border-width: 5px;
+        border-style: solid;
+        border-color: var(--tooltip-bg, #333) transparent transparent
+            transparent;
+    }
+
+    .tooltip-trigger:hover .tooltip-text {
+        visibility: visible;
+        opacity: 1;
     }
 </style>

@@ -411,7 +411,9 @@ export type Algorithm = { id: string; name: string; enabled: boolean; min_dur?: 
 export type Registration = { name: string; email: string; license: string };
 export type Preferences = { match_criteria: string[]; ignore_filetype: boolean; autoselects: string[]; tags: string[], preservation_order: PreservationLogic[], columns: string[], display_all_records: boolean, safety_db: boolean, safety_db_tag: string, erase_files: string, exact_waveform: boolean, similarity_threshold: number, store_waveforms: boolean, fetch_waveforms: boolean, colors: Colors };
 export type PreservationLogic = { column: string, operator: string, variable: string };
-export type FileRecord = { root: string; path: string; algorithm: string[]; id: number };
+export type FileRecord = {
+    data(data: any, arg1: null, arg2: number): any; root: string; path: string; algorithm: string[]; id: number
+};
 export type Preset = { name: string, pref: Preferences };
 export type Colors = {
     primaryBg: string, // Default value for primary background
