@@ -13,22 +13,13 @@
   export let activeTab: string; // This prop is now bindable
   export let selectedDb: string | null = null;
 
-  // type FileRecord = {
-  //   root: string;
-  //   path: string;
-  //   algorithm: string[];
-  //   id: number;
-  // };
-
   $: pref = $preferencesStore;
   $: results = $resultsStore;
   $: metadata = $metadataStore;
 
   let processing = false;
   let loading = true;
-  // let items: FileRecord[] = [];
   let selectedItems = new Set<number>();
-  // let checkedItems = new Set<FileRecord>();
   let currentFilter = "Relevant";
   let idsToRemove: number[] = [];
   let filesToRemove: string[] = [];
@@ -40,10 +31,8 @@
     enableSelections = !enableSelections;
   }
 
-  // Update filtered items whenever the filter or items change
   $: {
     let newFiltered = filterItems(results, currentFilter);
-    // Store scroll position before update
     const scrollElement = parentRef;
     const scrollTop = scrollElement?.scrollTop;
 
@@ -54,7 +43,6 @@
     });
     filteredItems = newFiltered;
 
-    // Restore scroll position after update
     queueMicrotask(() => {
       if (scrollElement && scrollTop !== undefined) {
         scrollElement.scrollTop = scrollTop;
@@ -63,13 +51,10 @@
     });
   }
   function updateUI() {
-    // Force a UI update by creating a new array reference
     results = [...results];
 
-    // Recalculate filtered items
     filteredItems = filterItems(results, currentFilter);
   }
-  // Filter function
   function filterItems(items: FileRecord[], filter: string): FileRecord[] {
     switch (filter) {
       case "All":
@@ -95,18 +80,7 @@
     currentFilter = select.value;
   }
 
-  // Store both percentage and pixel values
-  type ColumnConfig = {
-    isMetadata: any;
-    name: any;
-    minWidth: number;
-    width: number; // Current width in pixels
-    // percentage: number; // Width as a percentage of total width
-  };
-
-  // Define initial column configurations with percentages
   let columnConfigs = [
-    { minWidth: 8, width: 12, name: "audio", header: "" },
     { minWidth: 10, width: 20, name: "checkbox", header: "✔" },
     { minWidth: 20, width: 80, name: "algorithm", header: "Match" },
     { minWidth: 100, width: 250, name: "filename", header: "Filename" },
@@ -116,45 +90,14 @@
     { minwidth: 10, width: 25, name: "bitdepth", header: "BD" },
     { minwidth: 10, width: 50, name: "samplerate", header: "SR" },
     { minwidth: 10, width: 80, name: "duration", header: "Duration" },
+    { minWidth: 8, width: 12, name: "audio", header: "" },
   ];
 
-  // Computed property to get current column widths
   $: columnWidths = columnConfigs.map((config) => config.width);
 
-  // Container element reference for getting available width
   let containerElement: HTMLElement;
   let containerWidth = 0;
 
-  // Listen for resize events
-  // function handleResize() {
-  //   if (containerElement) {
-  //     const newContainerWidth = containerElement.clientWidth;
-
-  //     // Only update if container width has changed
-  //     if (newContainerWidth !== containerWidth) {
-  //       containerWidth = newContainerWidth;
-  //       // updateColumnWidthsFromContainer();
-  //     }
-  //   }
-  // }
-
-  // Update column widths based on container size
-  // function updateColumnWidthsFromContainer() {
-  //   // Skip if container isn't available yet
-  //   if (!containerWidth) return;
-
-  //   // Calculate total available width (minus some buffer for padding/margins)
-  //   const availableWidth = containerWidth - 20;
-
-  //   // Update column widths based on percentages
-  //   columnConfigs = columnConfigs.map((config) => {
-  //     const calculatedWidth = Math.max(
-  //       config.minWidth,
-  //       Math.floor(availableWidth * (config.percentage / 100)),
-  //     );
-  //     return { ...config, width: calculatedWidth };
-  //   });
-  // }
   function startResize(index: number, event: MouseEvent) {
     event.preventDefault();
 
@@ -440,7 +383,6 @@
   async function fetchData() {
     try {
       loading = true;
-      // items = await invoke<FileRecord[]>("get_results"); // Then fetch the items
     } catch (error) {
       console.error("Failed to fetch data:", error);
     } finally {
@@ -452,19 +394,9 @@
     loading = false;
     fetchData();
 
-    // Initial size calculation
     if (containerElement) {
       containerWidth = containerElement.clientWidth;
-      // updateColumnWidthsFromContainer();
     }
-
-    // Add window resize listener
-    // window.addEventListener("resize", handleResize);
-
-    // // Clean up listener on component destruction
-    // return () => {
-    //   window.removeEventListener("resize", handleResize);
-    // };
   });
 
   let filters = [
@@ -523,7 +455,6 @@
 
     if (idsToRemove.length > 0) {
       processing = true;
-      // Call the backend function to remove the records by passing the ids
       await invoke<string>("remove_records", {
         records: idsToRemove,
         clone: pref.safety_db,
@@ -534,7 +465,6 @@
         .then((updatedDb) => {
           console.log("Successfully removed records with IDs:", idsToRemove);
           selectedDb = updatedDb;
-          // Optionally, update the filteredItems to remove the items locally
         })
         .catch((error) => {
           console.error("Error removing records:", error);
@@ -542,35 +472,6 @@
         });
     }
   }
-  // async function removeSelected() {
-  //   if (selectedItems.size > 0) {
-  //     processing = true;
-  //     idsToRemove = Array.from(selectedItems.values());
-
-  //     filesToRemove = filteredItems
-  //       .filter(
-  //         (item) =>
-  //           !selectedItems.has(item.id) || !item.algorithm.includes("Keep"),
-  //       ) // Only keep items without "Keep"
-  //       .map((item) => item.path + "/" + item.filename);
-
-  //     await invoke<string>("remove_records", {
-  //       records: idsToRemove,
-  //       clone: pref.safety_db,
-  //       cloneTag: pref.safety_db_tag,
-  //       delete: pref.erase_files,
-  //       files: filesToRemove,
-  //     })
-  //       .then((newDbName) => {
-  //         console.log("Successfully removed records with IDs:", selectedItems);
-  //         selectedDb = newDbName;
-  //       })
-  //       .catch((error) => {
-  //         console.error("Error removing records:", error);
-  //         activeTab = "search";
-  //       });
-  //   }
-  // }
 
   async function playAudioFile(record: FileRecord) {
     console.log("last played: ", lastPlayed);
@@ -602,16 +503,6 @@
         console.error("Error stopping audio playback:", error);
       });
   }
-  // async function previewFile(record: FileRecord) {
-  //   let filePath = record.path + "/" + record.filename;
-  //   await invoke("open_quicklook", { filePath: filePath })
-  //     .then(() => {
-  //       console.log("QuickLook:", filePath);
-  //     })
-  //     .catch((error) => {
-  //       console.error("Error calling quicklook:", error);
-  //     });
-  // }
 
   function handleFileEraseChange(event: Event) {
     const select = event.target as HTMLSelectElement;
@@ -628,13 +519,11 @@
     }));
   }
 
-  // Add these variables for search status
   let removeProgress = 0;
   let removeMessage = "Initializing...";
   let removeStage = "";
   let unlistenRemoveFn: () => void;
 
-  // Setup event listener when component mounts
   onMount(async () => {
     unlistenRemoveFn = await listen<{
       progress: number;
@@ -649,11 +538,6 @@
         `Remove status: ${status.stage} - ${status.progress}% - ${status.message}`,
       );
       if (status.stage === "complete") {
-        //         filteredItems = filteredItems.filter(
-        //   (item) => !idsToRemove.includes(item.id),
-        // );
-        // if (filteredItems.length == 0) activeTab = "search";
-        // selectedDb = await invoke<string>("get_db_name");
         processing = false;
         fetchData();
         activeTab = "search";
@@ -661,7 +545,6 @@
     });
   });
 
-  // Cleanup event listener when component unmounts
   onDestroy(() => {
     if (unlistenRemoveFn) unlistenRemoveFn();
   });
@@ -679,7 +562,6 @@
     TriangleAlert,
     Loader,
     Play,
-    // Add these new imports
     Copy,
     FileX2,
     EqualApproximately,
@@ -704,7 +586,6 @@
     TextSearch,
     SearchCheck,
   } from "lucide-svelte";
-  // Add to your script section
   function getAlgorithmIcon(algoName: string) {
     const iconMap: Record<
       string,
@@ -744,9 +625,6 @@
   export let estimatedItemSize = 40;
   export let overscan = 5;
 
-  // Ensure totalWidth includes all columns
-  $: totalWidth = columnWidths.reduce((sum, width) => sum + width, 0) + 100;
-
   // Create vertical virtualizer for rows
   $: rowVirtualizer = createVirtualizer({
     count: filteredItems.length,
@@ -756,7 +634,6 @@
   });
 
   onMount(() => {
-    // Force an update to handle initial viewport sizes
     const resizeObserver = new ResizeObserver((entries) => {
       if (entries[0]) {
         parentWidth = entries[0].contentRect.width;
@@ -780,59 +657,8 @@
   $: gridTemplateColumns = columnWidths.map((width) => `${width}px`).join(" ");
 
   $: {
-    console.log("Total Width:", totalWidth);
     console.log("Grid Template Columns:", gridTemplateColumns);
   }
-
-  // function updateColumnWidthsFromContainer() {
-  //   if (!containerWidth) return;
-
-  //   const availableWidth = containerWidth - 20;
-
-  //   // First pass: Calculate widths for fixed columns
-  //   const fixedColumns = columnConfigs.filter((c) => !c.isMetadata);
-  //   const metadataColumns = columnConfigs.filter((c) => c.isMetadata);
-  //   let usedWidth = 0;
-
-  //   // Update fixed column widths using their percentages
-  //   const newColumnConfigs = columnConfigs.map((config) => {
-  //     if (!config.isMetadata) {
-  //       const calculatedWidth = Math.max(
-  //         config.minWidth,
-  //         Math.floor(availableWidth * (config.percentage / 100)),
-  //       );
-  //       usedWidth += calculatedWidth;
-  //       return { ...config, width: calculatedWidth };
-  //     }
-  //     return config;
-  //   });
-
-  //   // Second pass: Distribute remaining width evenly among metadata columns
-  //   const remainingWidth = availableWidth - usedWidth;
-  //   const metadataColumnCount = metadataColumns.length || 1;
-
-  //   // Ensure at least minimum width, but prefer equal distribution of remaining space
-  //   const widthPerMetadataColumn = Math.max(
-  //     20, // Minimum width
-  //     Math.floor(remainingWidth / metadataColumnCount),
-  //   );
-
-  //   // Update the final column configs
-  //   columnConfigs = newColumnConfigs.map((config) => {
-  //     if (config.isMetadata) {
-  //       return {
-  //         ...config,
-  //         width: widthPerMetadataColumn,
-  //         percentage: (widthPerMetadataColumn / availableWidth) * 100,
-  //       };
-  //     }
-  //     return config;
-  //   });
-
-  //   // Debug logs
-  //   console.log("Fixed width used:", usedWidth, "px of", availableWidth, "px");
-  //   console.log("Metadata columns each get:", widthPerMetadataColumn, "px");
-  // }
 </script>
 
 <div class="block">
@@ -848,17 +674,6 @@
 
     <div style="margin-left: auto; display: flex; gap: 20px;">
       {#if isRemove}
-        <!-- {#if enableSelections}
-          <button
-            class="cta-button cancel"
-            style="margin-right: 8px"
-            on:click={removeSelected}
-          >
-            <OctagonX size="18" />
-            Remove Selected
-          </button>
-        {/if} -->
-
         <button class="cta-button cancel" on:click={removeRecords}>
           <OctagonX size="18" />
           Remove Checked Records
@@ -873,66 +688,7 @@
     </div>
   </div>
 
-  <!-- <div class="header" style="margin-bottom: 20px; margin-top: 10px;">
-    <span>
-      Remove Records From:
-      <select
-        class="select-field"
-        bind:value={pref.safety_db}
-        on:change={() => preferencesStore.set(pref)}
-      >
-        {#each [{ bool: true, text: "Database Copy" }, { bool: false, text: "Current Database" }] as option}
-          <option value={option.bool}>{option.text}</option>
-        {/each}
-      </select>
-      {#if pref.safety_db}
-        with tag:
-        <input
-          class="input-field"
-          placeholder="thinned"
-          type="text"
-          id="new_db_tag"
-          bind:value={pref.safety_db_tag}
-          on:change={() => preferencesStore.set(pref)}
-        />
-      {:else}
-        <TriangleAlert
-          size="20"
-          class="blinking"
-          style="color: var(--warning-hover)"
-        />
-      {/if}
-    </span>
-    <span>
-      {#if pref.erase_files !== "Keep"}
-        <TriangleAlert
-          size="20"
-          class={pref.erase_files == "Delete" ? "blinking" : ""}
-          style="color: var(--warning-hover)"
-        />
-      {/if}
-      Duplicate Files On Disk:
-      <select class="select-field" on:change={handleFileEraseChange}>
-        {#each [{ id: "Keep", text: "Keep" }, { id: "Trash", text: "Move To Trash" }, { id: "Delete", text: "Permanently Delete" }] as option}
-          <option value={option.id}>{option.text}</option>
-        {/each}
-      </select>
-    </span>
-  </div> -->
   <div class="bar" style="margin-top: 10px; margin-bottom: 20px; padding: 0px;">
-    <!-- <div class="button-group"> -->
-    <!-- <button type="button" class="grid item" on:click={toggle_enable_selections}>
-      {#if enableSelections}
-        <CheckSquare size={20} class="checkbox checked" />
-      {:else}
-        <Square size={20} class="checkbox" />
-      {/if}
-      <span>Enable Selections</span>
-    </button> -->
-
-    <!-- <button class="small-button" on:click={() => checkSelected([...selectedItems])}>Check Selected</button>
-      <button class="small-button" on:click={() => uncheckSelected([...selectedItems])}>Uncheck Selected</button> -->
-
     {#if enableSelections}
       <button class="small-button" on:click={toggleChecksSelected}
         >Toggle Selected</button
@@ -950,7 +706,6 @@
         >Clear Selections</button
       >
     {/if}
-    <!-- </div> -->
 
     <div class="filter-container">
       {#if isRemove}
@@ -1016,29 +771,25 @@
         </div>
       </div>
     {:else}
-      <div class="virtual-table-container" style="height: 60vh; width: 100%;">
+      <div class="virtual-table-container" style="height: 80vh; width: 100%;">
         <div bind:this={parentRef} class="virtual-table-viewport">
-          <!-- Table header (fixed, not virtualized) -->
-          <div class="virtual-table-header" style="width: {totalWidth}px;">
+          <div class="virtual-table-header" style="width: 100vw;">
             <div
               class="grid-container rheader"
               style="grid-template-columns: {gridTemplateColumns};"
             >
-              <!-- Use ordered metadata keys for headers -->
               {#each columnConfigs as key}
                 <div class="grid-item header">{key.header}</div>
               {/each}
             </div>
 
-            <!-- Resizers -->
-            <!-- Replace your resizer-container div and its contents with this -->
             <div
               class="resizer-container"
-              style="grid-template-columns: {gridTemplateColumns}; display: grid; width: {totalWidth}px;"
+              style="grid-template-columns: {gridTemplateColumns}; display: grid; width: 100vw;"
             >
               {#each columnConfigs as column, i}
                 <div class="resizer-cell">
-                  {#if i > 1 && i < 6}
+                  {#if i > 0 && i < 5}
                     <div
                       class="resizer"
                       on:mousedown={(event) => startResize(i, event)}
@@ -1051,15 +802,14 @@
             </div>
           </div>
 
-          <!-- Virtualized rows -->
           <div
             class="virtual-table-body"
-            style="height: {$rowVirtualizer.getTotalSize()}px; width: {totalWidth}px;"
+            style="height: {$rowVirtualizer.getTotalSize()}px; width: 100vw;"
           >
             {#each $rowVirtualizer.getVirtualItems() as virtualRow (virtualRow.index)}
               <div
                 class="virtual-row"
-                style="transform: translateY({virtualRow.start}px); height: {virtualRow.size}px; width: {totalWidth}px;"
+                style="transform: translateY({virtualRow.start}px); height: {virtualRow.size}px; width: 100vw;"
               >
                 <div
                   class="list-item {filteredItems[
@@ -1068,7 +818,6 @@
                     ? 'unselected-item'
                     : 'checked-item'}"
                 >
-                  <!-- Replace the existing grid-container content in your virtualRow loop with this -->
                   <div
                     class="grid-container"
                     style="{selectedItems.has(
@@ -1132,7 +881,6 @@
                           </div>
                         </div>
                       {:else}
-                        <!-- Standard columns - dynamically access properties by name -->
                         <div
                           class="grid-item {column.name === 'filename'
                             ? 'bold'
@@ -1145,12 +893,9 @@
                                 )
                               : toggleChecked(filteredItems[virtualRow.index])}
                         >
-                          {filteredItems[virtualRow.index][column.name] ||
-                            (filteredItems[virtualRow.index].data &&
-                              filteredItems[virtualRow.index].data[
-                                column.name
-                              ]) ||
-                            ""}
+                          {filteredItems[virtualRow.index][
+                            column.name as keyof FileRecord
+                          ] || ""}
                         </div>
                       {/if}
                     {/each}
@@ -1277,7 +1022,7 @@
 
   .grid-item {
     position: relative;
-    padding: 3px;
+    /* padding: 3px; */
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
