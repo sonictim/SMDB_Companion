@@ -2,7 +2,7 @@ import { writable, type Writable } from 'svelte/store';
 
 export type HashMap = Record<string, string>;
 
-export type FileRecord = { root: string; path: string; algorithm: string[]; id: number; data: HashMap | null; };
+export type FileRecord = { filename: string; path: string; algorithm: string[]; id: number; duration: string; samplerate: string; bitdepth: string; channels: string; description: string; };
 export type Metadata = { find: string; replace: string; column: string; case_sensitive: boolean; mark_dirty: boolean };
 
 export const metadataDefault = { find: '', replace: '', column: 'FilePath', case_sensitive: false, mark_dirty: true };

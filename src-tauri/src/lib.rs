@@ -129,9 +129,14 @@ struct StatusUpdate {
 struct FileRecordFrontend {
     id: usize,
     path: Arc<str>,
-    root: Arc<str>,
+    filename: Arc<str>,
     algorithm: Vec<Algorithm>,
-    data: HashMap<Arc<str>, Arc<str>>,
+    channels: u32,
+    bitdepth: u32,
+    samplerate: u32,
+    duration: Arc<str>,
+    description: Arc<str>,
+    // data: HashMap<Arc<str>, Arc<str>>,
 }
 
 #[derive(Default, Debug, Serialize, Clone, PartialEq)]
@@ -140,6 +145,10 @@ pub struct FileRecord {
     pub path: std::path::PathBuf,
     pub root: Arc<str>,
     pub duration: Arc<str>,
+    pub samplerate: u32,
+    pub bitdepth: u32,
+    pub channels: u32,
+    pub description: Arc<str>,
     pub data: HashMap<Arc<str>, Arc<str>>,
     pub fingerprint: Option<Arc<str>>,
     pub algorithm: HashSet<Algorithm>,
@@ -153,6 +162,10 @@ impl FileRecord {
         let path = PathBuf::from(path_str);
         let duration_str: &str = row.get(2);
         let path_exists = path.exists();
+        let description: &str = row.get(4);
+        let channels = row.get(5);
+        let bitdepth = row.get(6);
+        let samplerate = row.get(7);
 
         let mut algorithm = HashSet::new();
         if enabled.invalidpath && !path_exists {
@@ -199,6 +212,10 @@ impl FileRecord {
             data,
             fingerprint,
             algorithm,
+            channels,
+            bitdepth,
+            samplerate,
+            description: Arc::from(description),
         };
 
         record.set_root(enabled, pref);
@@ -571,7 +588,7 @@ impl Database {
         println!("Gathering all records from database");
         self.fetch_filerecords(
             &format!(
-                "SELECT rowid, filepath, duration, _fingerprint, {} FROM {}",
+                "SELECT rowid, filepath, duration, _fingerprint, description, channels, bitdepth, samplerate, {} FROM {}",
                 pref.get_data_requirements(),
                 TABLE
             ),

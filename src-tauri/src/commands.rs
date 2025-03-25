@@ -459,9 +459,13 @@ pub async fn get_results(
             FileRecordFrontend {
                 id: record.id,
                 path: Arc::from(record.get_path()),
-                root: Arc::from(record.get_filename()),
+                filename: Arc::from(record.get_filename()),
                 algorithm,
-                data: record.data.clone(),
+                duration: record.duration.clone(),
+                description: record.description.clone(),
+                bitdepth: record.bitdepth,
+                samplerate: record.samplerate,
+                channels: record.channels,
             }
         })
         .collect(); // Parallel collect

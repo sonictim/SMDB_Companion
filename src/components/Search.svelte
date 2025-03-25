@@ -182,23 +182,23 @@
         })
             .then((result) => {
                 console.log("Search Results:", result);
-                if (result && result.length > 0) {
-                    const firstRecord = result[0];
+                // if (result && result.length > 0) {
+                //     const firstRecord = result[0];
 
-                    // Deep inspect the data property
-                    console.log(
-                        "Data object:",
-                        JSON.stringify(firstRecord.data, null, 2),
-                    );
-                    console.log(
-                        "Data keys:",
-                        Object.keys(firstRecord.data || {}),
-                    );
-                    console.log(
-                        "Data entries:",
-                        Object.entries(firstRecord.data || {}),
-                    );
-                }
+                //     // Deep inspect the data property
+                //     console.log(
+                //         "Data object:",
+                //         JSON.stringify(firstRecord.data, null, 2),
+                //     );
+                //     console.log(
+                //         "Data keys:",
+                //         Object.keys(firstRecord.data || {}),
+                //     );
+                //     console.log(
+                //         "Data entries:",
+                //         Object.entries(firstRecord.data || {}),
+                //     );
+                // }
 
                 resultsStore.set(result); // ✅ Store the results in session storage
             })

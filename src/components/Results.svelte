@@ -97,18 +97,25 @@
 
   // Store both percentage and pixel values
   type ColumnConfig = {
+    isMetadata: any;
+    name: any;
     minWidth: number;
     width: number; // Current width in pixels
-    percentage: number; // Width as a percentage of total width
+    // percentage: number; // Width as a percentage of total width
   };
 
   // Define initial column configurations with percentages
-  let columnConfigs: ColumnConfig[] = [
-    { minWidth: 8, width: 15, percentage: 1 }, // Checkbox
-    { minWidth: 10, width: 20, percentage: 2 }, // Checkbox
-    { minWidth: 100, width: 200, percentage: 28 }, // Root
-    { minWidth: 150, width: 300, percentage: 58 }, // Path
-    { minWidth: 20, width: 30, percentage: 12 }, // Algorithm
+  let columnConfigs = [
+    { minWidth: 8, width: 12, name: "audio", header: "" },
+    { minWidth: 10, width: 20, name: "checkbox", header: "✔" },
+    { minWidth: 20, width: 80, name: "algorithm", header: "Match" },
+    { minWidth: 100, width: 250, name: "filename", header: "Filename" },
+    { minWidth: 150, width: 400, name: "path", header: "Path" },
+    { minWidth: 100, width: 250, name: "description", header: "Description" },
+    { minWidth: 10, width: 25, name: "channels", header: "CH" },
+    { minwidth: 10, width: 25, name: "bitdepth", header: "BD" },
+    { minwidth: 10, width: 50, name: "samplerate", header: "SR" },
+    { minwidth: 10, width: 80, name: "duration", header: "Duration" },
   ];
 
   // Computed property to get current column widths
@@ -119,45 +126,40 @@
   let containerWidth = 0;
 
   // Listen for resize events
-  function handleResize() {
-    if (containerElement) {
-      const newContainerWidth = containerElement.clientWidth;
+  // function handleResize() {
+  //   if (containerElement) {
+  //     const newContainerWidth = containerElement.clientWidth;
 
-      // Only update if container width has changed
-      if (newContainerWidth !== containerWidth) {
-        containerWidth = newContainerWidth;
-        updateColumnWidthsFromContainer();
-      }
-    }
-  }
+  //     // Only update if container width has changed
+  //     if (newContainerWidth !== containerWidth) {
+  //       containerWidth = newContainerWidth;
+  //       // updateColumnWidthsFromContainer();
+  //     }
+  //   }
+  // }
 
   // Update column widths based on container size
-  function updateColumnWidthsFromContainer() {
-    // Skip if container isn't available yet
-    if (!containerWidth) return;
+  // function updateColumnWidthsFromContainer() {
+  //   // Skip if container isn't available yet
+  //   if (!containerWidth) return;
 
-    // Calculate total available width (minus some buffer for padding/margins)
-    const availableWidth = containerWidth - 20;
+  //   // Calculate total available width (minus some buffer for padding/margins)
+  //   const availableWidth = containerWidth - 20;
 
-    // Update column widths based on percentages
-    columnConfigs = columnConfigs.map((config) => {
-      const calculatedWidth = Math.max(
-        config.minWidth,
-        Math.floor(availableWidth * (config.percentage / 100)),
-      );
-      return { ...config, width: calculatedWidth };
-    });
-  }
-
+  //   // Update column widths based on percentages
+  //   columnConfigs = columnConfigs.map((config) => {
+  //     const calculatedWidth = Math.max(
+  //       config.minWidth,
+  //       Math.floor(availableWidth * (config.percentage / 100)),
+  //     );
+  //     return { ...config, width: calculatedWidth };
+  //   });
+  // }
   function startResize(index: number, event: MouseEvent) {
     event.preventDefault();
 
     const startX = event.clientX;
     const startWidth = columnConfigs[index].width;
-    const totalWidthBefore = columnConfigs.reduce(
-      (sum, col) => sum + col.width,
-      0,
-    );
 
     function onMouseMove(e: MouseEvent) {
       const diff = e.clientX - startX;
@@ -166,20 +168,10 @@
         startWidth + diff,
       );
 
-      // Update width in pixels
-      columnConfigs[index].width = newWidth;
-
-      // Recalculate percentages for all columns
-      const totalWidthAfter = columnConfigs.reduce(
-        (sum, col) => sum + col.width,
-        0,
-      );
-      columnConfigs = columnConfigs.map((config) => {
-        return {
-          ...config,
-          percentage: (config.width / totalWidthAfter) * 100,
-        };
-      });
+      // Just update this single column's width
+      const newConfigs = [...columnConfigs];
+      newConfigs[index] = { ...newConfigs[index], width: newWidth };
+      columnConfigs = newConfigs;
     }
 
     function onMouseUp() {
@@ -463,16 +455,16 @@
     // Initial size calculation
     if (containerElement) {
       containerWidth = containerElement.clientWidth;
-      updateColumnWidthsFromContainer();
+      // updateColumnWidthsFromContainer();
     }
 
     // Add window resize listener
-    window.addEventListener("resize", handleResize);
+    // window.addEventListener("resize", handleResize);
 
-    // Clean up listener on component destruction
-    return () => {
-      window.removeEventListener("resize", handleResize);
-    };
+    // // Clean up listener on component destruction
+    // return () => {
+    //   window.removeEventListener("resize", handleResize);
+    // };
   });
 
   let filters = [
@@ -527,7 +519,7 @@
       .map((item) => item.id); // Extract the ids
     filesToRemove = filteredItems
       .filter((item) => !item.algorithm.includes("Keep")) // Only keep items without "Keep"
-      .map((item) => item.path + "/" + item.root); // Extract the ids
+      .map((item) => item.path + "/" + item.filename); // Extract the ids
 
     if (idsToRemove.length > 0) {
       processing = true;
@@ -560,7 +552,7 @@
   //         (item) =>
   //           !selectedItems.has(item.id) || !item.algorithm.includes("Keep"),
   //       ) // Only keep items without "Keep"
-  //       .map((item) => item.path + "/" + item.root);
+  //       .map((item) => item.path + "/" + item.filename);
 
   //     await invoke<string>("remove_records", {
   //       records: idsToRemove,
@@ -582,7 +574,7 @@
 
   async function playAudioFile(record: FileRecord) {
     console.log("last played: ", lastPlayed);
-    let filePath = record.path + "/" + record.root;
+    let filePath = record.path + "/" + record.filename;
     if (lastPlayed === filePath) {
       console.log("Stopping audio playback for:", filePath);
       await stopAudioFile();
@@ -611,7 +603,7 @@
       });
   }
   // async function previewFile(record: FileRecord) {
-  //   let filePath = record.path + "/" + record.root;
+  //   let filePath = record.path + "/" + record.filename;
   //   await invoke("open_quicklook", { filePath: filePath })
   //     .then(() => {
   //       console.log("QuickLook:", filePath);
@@ -753,7 +745,7 @@
   export let overscan = 5;
 
   // Ensure totalWidth includes all columns
-  $: totalWidth = columnWidths.reduce((sum, width) => sum + width, 0);
+  $: totalWidth = columnWidths.reduce((sum, width) => sum + width, 0) + 100;
 
   // Create vertical virtualizer for rows
   $: rowVirtualizer = createVirtualizer({
@@ -784,98 +776,63 @@
     };
   });
 
-  // Helper function to filter metadata keys
-  function shouldDisplayMetadataKey(key: string): boolean {
-    const lowerKey = key.toLowerCase();
-    return !lowerKey.includes("name") && !lowerKey.includes("date");
-  }
-
-  // Add this function to extract all metadata keys in a consistent order
-  function getMetadataKeysInOrder(): string[] {
-    if (!results || results.length === 0) return [];
-
-    // Collect all unique metadata keys from all records
-    const allKeys = new Set<string>();
-    results.forEach((record) => {
-      if (record.data) {
-        Object.keys(record.data).forEach((key) => {
-          if (shouldDisplayMetadataKey(key)) {
-            allKeys.add(key);
-          }
-        });
-      }
-    });
-
-    // Convert to array and sort for consistent ordering
-    return Array.from(allKeys).sort();
-  }
-
-  // Get ordered metadata keys for consistent display
-  $: orderedMetadataKeys = getMetadataKeysInOrder();
-
-  // After you load your results
-  $: {
-    if (results.length > 0 && results[0]?.data) {
-      // Get metadata keys from the first item
-      const metadataKeys = Object.keys(results[0].data);
-
-      // Keep your fixed columns
-      const fixedColumnConfigs = [
-        {
-          minWidth: 8,
-          width: 15,
-          percentage: 1.5,
-          name: "audio",
-          isMetadata: false,
-        }, // Audio
-        {
-          minWidth: 10,
-          width: 20,
-          percentage: 2,
-          name: "checkbox",
-          isMetadata: false,
-        }, // Checkbox
-        {
-          minWidth: 100,
-          width: 200,
-          percentage: 30,
-          name: "filename",
-          isMetadata: false,
-        }, // Root
-        {
-          minWidth: 150,
-          width: 400,
-          percentage: 55,
-          name: "path",
-          isMetadata: false,
-        }, // Path
-        {
-          minWidth: 20,
-          width: 30,
-          percentage: 10,
-          name: "algorithm",
-          isMetadata: false,
-        }, // Algorithm
-      ];
-
-      // Create dynamic metadata columns
-      const metadataColumnConfigs = orderedMetadataKeys.map((key) => ({
-        minWidth: 20,
-        width: 150,
-        percentage: 30 / orderedMetadataKeys.length, // Split remaining percentage
-        name: key,
-        isMetadata: true,
-      }));
-
-      // Combine fixed and metadata columns
-      columnConfigs = [...fixedColumnConfigs, ...metadataColumnConfigs];
-
-      // Update column widths
-      updateColumnWidthsFromContainer();
-    }
-  }
   // Replace static grid-template-columns with dynamic version
   $: gridTemplateColumns = columnWidths.map((width) => `${width}px`).join(" ");
+
+  $: {
+    console.log("Total Width:", totalWidth);
+    console.log("Grid Template Columns:", gridTemplateColumns);
+  }
+
+  // function updateColumnWidthsFromContainer() {
+  //   if (!containerWidth) return;
+
+  //   const availableWidth = containerWidth - 20;
+
+  //   // First pass: Calculate widths for fixed columns
+  //   const fixedColumns = columnConfigs.filter((c) => !c.isMetadata);
+  //   const metadataColumns = columnConfigs.filter((c) => c.isMetadata);
+  //   let usedWidth = 0;
+
+  //   // Update fixed column widths using their percentages
+  //   const newColumnConfigs = columnConfigs.map((config) => {
+  //     if (!config.isMetadata) {
+  //       const calculatedWidth = Math.max(
+  //         config.minWidth,
+  //         Math.floor(availableWidth * (config.percentage / 100)),
+  //       );
+  //       usedWidth += calculatedWidth;
+  //       return { ...config, width: calculatedWidth };
+  //     }
+  //     return config;
+  //   });
+
+  //   // Second pass: Distribute remaining width evenly among metadata columns
+  //   const remainingWidth = availableWidth - usedWidth;
+  //   const metadataColumnCount = metadataColumns.length || 1;
+
+  //   // Ensure at least minimum width, but prefer equal distribution of remaining space
+  //   const widthPerMetadataColumn = Math.max(
+  //     20, // Minimum width
+  //     Math.floor(remainingWidth / metadataColumnCount),
+  //   );
+
+  //   // Update the final column configs
+  //   columnConfigs = newColumnConfigs.map((config) => {
+  //     if (config.isMetadata) {
+  //       return {
+  //         ...config,
+  //         width: widthPerMetadataColumn,
+  //         percentage: (widthPerMetadataColumn / availableWidth) * 100,
+  //       };
+  //     }
+  //     return config;
+  //   });
+
+  //   // Debug logs
+  //   console.log("Fixed width used:", usedWidth, "px of", availableWidth, "px");
+  //   console.log("Metadata columns each get:", widthPerMetadataColumn, "px");
+  // }
 </script>
 
 <div class="block">
@@ -1040,7 +997,6 @@
   <div
     class="block inner"
     bind:this={containerElement}
-    on:resize={handleResize}
     style="margin-bottom: 15px;"
   >
     {#if loading}
@@ -1068,17 +1024,9 @@
               class="grid-container rheader"
               style="grid-template-columns: {gridTemplateColumns};"
             >
-              <div class="grid-item header"></div>
-              <div class="grid-item header">✔</div>
-              <div class="grid-item header bold">Filename</div>
-              <div class="grid-item header">Path</div>
-              <div class="grid-item header" on:click={() => stopAudioFile()}>
-                <span>Match</span>
-              </div>
-
               <!-- Use ordered metadata keys for headers -->
-              {#each orderedMetadataKeys as key}
-                <div class="grid-item header">{key}</div>
+              {#each columnConfigs as key}
+                <div class="grid-item header">{key.header}</div>
               {/each}
             </div>
 
@@ -1086,56 +1034,20 @@
             <!-- Replace your resizer-container div and its contents with this -->
             <div
               class="resizer-container"
-              style="grid-template-columns: {gridTemplateColumns};"
+              style="grid-template-columns: {gridTemplateColumns}; display: grid; width: {totalWidth}px;"
             >
-              <!-- Audio column resizer -->
-              <div class="resizer-cell">
-                <div></div>
-              </div>
-
-              <!-- Checkbox column resizer -->
-              <div class="resizer-cell">
-                <div
-                  class="resizer"
-                  on:mousedown={(event) => startResize(1, event)}
-                ></div>
-              </div>
-
-              <!-- Filename column resizer -->
-              <div class="resizer-cell">
-                <div
-                  class="resizer"
-                  on:mousedown={(event) => startResize(2, event)}
-                ></div>
-              </div>
-
-              <!-- Path column resizer -->
-              <div class="resizer-cell">
-                <div
-                  class="resizer"
-                  on:mousedown={(event) => startResize(3, event)}
-                ></div>
-              </div>
-
-              <!-- Algorithm column resizer -->
-              <div class="resizer-cell">
-                <div
-                  class="resizer"
-                  on:mousedown={(event) => startResize(4, event)}
-                ></div>
-              </div>
-
-              <!-- Metadata column resizers -->
-              {#if results[0]?.data}
-                {#each orderedMetadataKeys as key, i}
-                  <div class="resizer-cell">
+              {#each columnConfigs as column, i}
+                <div class="resizer-cell">
+                  {#if i > 1 && i < 6}
                     <div
                       class="resizer"
-                      on:mousedown={(event) => startResize(5 + i, event)}
+                      on:mousedown={(event) => startResize(i, event)}
                     ></div>
-                  </div>
-                {/each}
-              {/if}
+                  {:else}
+                    <div></div>
+                  {/if}
+                </div>
+              {/each}
             </div>
           </div>
 
@@ -1156,6 +1068,7 @@
                     ? 'unselected-item'
                     : 'checked-item'}"
                 >
+                  <!-- Replace the existing grid-container content in your virtualRow loop with this -->
                   <div
                     class="grid-container"
                     style="{selectedItems.has(
@@ -1165,89 +1078,81 @@
                       : ''};
                     grid-template-columns: {gridTemplateColumns};"
                   >
-                    <!-- Checkbox Column -->
-                    <div
-                      class="grid-item"
-                      on:click={() =>
-                        playAudioFile(filteredItems[virtualRow.index])}
-                    >
-                      <Volume size={18} />
-                    </div>
-                    <div
-                      class="grid-item"
-                      on:click={() =>
-                        toggleChecked(filteredItems[virtualRow.index])}
-                    >
-                      {#if !filteredItems[virtualRow.index].algorithm.includes("Keep")}
-                        <CheckSquare size={18} />
+                    {#each columnConfigs as column}
+                      {#if column.name === "audio"}
+                        <!-- Audio Column -->
+                        <div
+                          class="grid-item"
+                          on:click={() =>
+                            playAudioFile(filteredItems[virtualRow.index])}
+                        >
+                          <Volume size={18} />
+                        </div>
+                      {:else if column.name === "checkbox"}
+                        <!-- Checkbox Column -->
+                        <div
+                          class="grid-item"
+                          on:click={() =>
+                            toggleChecked(filteredItems[virtualRow.index])}
+                        >
+                          {#if !filteredItems[virtualRow.index].algorithm.includes("Keep")}
+                            <CheckSquare size={18} />
+                          {:else}
+                            <Square size={18} />
+                          {/if}
+                        </div>
+                      {:else if column.name === "algorithm"}
+                        <!-- Algorithm Column -->
+                        <div
+                          class="grid-item"
+                          on:click={(event) =>
+                            enableSelections
+                              ? toggleSelect(
+                                  filteredItems[virtualRow.index],
+                                  event,
+                                )
+                              : toggleChecked(filteredItems[virtualRow.index])}
+                        >
+                          <div class="algorithm-icons">
+                            {#each filteredItems[virtualRow.index].algorithm.filter((algo: string) => algo !== "Keep" || filteredItems[virtualRow.index].algorithm.length === 1) as algo}
+                              {@const iconData = getAlgorithmIcon(algo)}
+                              <span
+                                class="icon-wrapper"
+                                title={iconData.tooltip}
+                              >
+                                <svelte:component
+                                  this={iconData.component}
+                                  size={20}
+                                  style={iconData.color
+                                    ? `color: ${iconData.color};`
+                                    : ""}
+                                />
+                              </span>
+                            {/each}
+                          </div>
+                        </div>
                       {:else}
-                        <Square size={18} />
+                        <!-- Standard columns - dynamically access properties by name -->
+                        <div
+                          class="grid-item {column.name === 'filename'
+                            ? 'bold'
+                            : ''}"
+                          on:click={(event) =>
+                            enableSelections
+                              ? toggleSelect(
+                                  filteredItems[virtualRow.index],
+                                  event,
+                                )
+                              : toggleChecked(filteredItems[virtualRow.index])}
+                        >
+                          {filteredItems[virtualRow.index][column.name] ||
+                            (filteredItems[virtualRow.index].data &&
+                              filteredItems[virtualRow.index].data[
+                                column.name
+                              ]) ||
+                            ""}
+                        </div>
                       {/if}
-                    </div>
-
-                    <!-- Root Column -->
-                    <div
-                      class="grid-item bold"
-                      on:click={(event) =>
-                        enableSelections
-                          ? toggleSelect(filteredItems[virtualRow.index], event)
-                          : toggleChecked(filteredItems[virtualRow.index])}
-                    >
-                      {filteredItems[virtualRow.index].root}
-                    </div>
-
-                    <div
-                      class="grid-item"
-                      on:click={(event) =>
-                        enableSelections
-                          ? toggleSelect(filteredItems[virtualRow.index], event)
-                          : toggleChecked(filteredItems[virtualRow.index])}
-                    >
-                      {filteredItems[virtualRow.index].path}
-                    </div>
-
-                    <!-- Algorithm Column -->
-                    <div
-                      class="grid-item"
-                      on:click={(event) =>
-                        enableSelections
-                          ? toggleSelect(filteredItems[virtualRow.index], event)
-                          : toggleChecked(filteredItems[virtualRow.index])}
-                    >
-                      <div class="algorithm-icons">
-                        {#each filteredItems[virtualRow.index].algorithm.filter((algo: string) => algo !== "Keep" || filteredItems[virtualRow.index].algorithm.length === 1) as algo}
-                          {@const iconData = getAlgorithmIcon(algo)}
-                          <span class="icon-wrapper" title={iconData.tooltip}>
-                            <svelte:component
-                              this={iconData.component}
-                              size={20}
-                              style={iconData.color
-                                ? `color: ${iconData.color};`
-                                : ""}
-                            />
-                          </span>
-                        {/each}
-                      </div>
-                    </div>
-
-                    <!-- Add metadata cells -->
-                    {#each orderedMetadataKeys as key}
-                      <!-- svelte-ignore a11y_click_events_have_key_events -->
-                      <!-- svelte-ignore a11y_no_static_element_interactions -->
-                      <div
-                        class="grid-item"
-                        on:click={(event) =>
-                          enableSelections
-                            ? toggleSelect(
-                                filteredItems[virtualRow.index],
-                                event,
-                              )
-                            : toggleChecked(filteredItems[virtualRow.index])}
-                      >
-                        {filteredItems[virtualRow.index]?.data?.[
-                          key
-                        ]?.toString() || ""}
-                      </div>
                     {/each}
                   </div>
                 </div>
@@ -1357,7 +1262,8 @@
     height: 60px;
     background-color: var(--inactive-color);
     position: absolute;
-    right: -20px; /* Changed from -20px to 0 */
+    right: -20px; /* Change from -20px to 0 */
+    transform: translateX(50%); /* Center on the boundary */
     top: -60px;
     cursor: col-resize;
     z-index: 20;
