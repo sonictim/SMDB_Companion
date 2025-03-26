@@ -8,7 +8,7 @@ const defaultColors = {
     accentColor: "#f0a500", // Default accent color
     hoverColor: "#ffcc00", // Default hover color
     warningColor: "#b91c1c", // Default warning color
-    warningHover: "#dc2626", // Default warning hover color
+    warningHover: "#ff4013", // Default warning hover color
     inactiveColor: "#888888" // Default inactive color
 
 };
@@ -133,6 +133,16 @@ export const defaultPreferences: Preferences = {
     similarity_threshold: 90,
     store_waveforms: true,
     fetch_waveforms: true,
+    algorithms: [
+        { id: 'basic', name: 'Duplicate Search', enabled: true },
+        { id: 'invalidpath', name: 'Invalid Files', enabled: false },
+        { id: 'filename', name: 'Similar Filename', enabled: false },
+        { id: 'duration', name: 'Minimum Duration:', enabled: false, min_dur: 0.5 },
+        { id: 'audiosuite', name: 'Audiosuite Tags', enabled: false },
+        { id: 'filetags', name: 'Filename Contains Tag', enabled: false },
+        { id: 'waveform', name: 'Audio Content Comparison', enabled: false, db: null },
+        { id: 'dbcompare', name: 'Database Compare:', enabled: false },
+    ],
     preservation_order: [
         {
             column: "Description",
@@ -243,9 +253,21 @@ export const defaultPreferences: Preferences = {
 
 const TJFPreferences: Preferences = {
     ...defaultPreferences,
+    ignore_filetype: true,
     colors: terminalColors,
     match_criteria: ['Filename'],
-    tags: [...defaultPreferences.tags, "-Reverse_", "-RING_", ".new.", ".wav.", ".mp3.", ".aif."],
+    autoselects: [".new.", ".wav.", ".mp3.", ".aif.",],
+    algorithms: [
+        { id: 'basic', name: 'Duplicate Search', enabled: true },
+        { id: 'invalidpath', name: 'Invalid Files', enabled: false },
+        { id: 'filename', name: 'Similar Filename', enabled: true },
+        { id: 'duration', name: 'Minimum Duration:', enabled: false, min_dur: 0.5 },
+        { id: 'audiosuite', name: 'Audiosuite Tags', enabled: true },
+        { id: 'filetags', name: 'Filename Contains Tag', enabled: true },
+        { id: 'waveform', name: 'Audio Content Comparison', enabled: false },
+        { id: 'dbcompare', name: 'Database Compare:', enabled: false, db: null },
+    ],
+    tags: [...defaultPreferences.tags, "-Reverse_", "-RING_", ".M.", ".1.", ".1.", ".3.", ".4.", ".5.", ".6.", ".7.", ".8.", ".9.", ".0."],
     preservation_order: [
         {
             column: "Pathname",
@@ -350,6 +372,11 @@ const TJFPreferences: Preferences = {
             variable: "",
         },
         {
+            column: "AudioFileType",
+            operator: "Is",
+            variable: "FLAC",
+        },
+        {
             column: "BWDate",
             operator: "Smallest",
             variable: "",
@@ -409,7 +436,7 @@ const storedPresets = localStorage.getItem('presets');
 // Define types for the store data
 export type Algorithm = { id: string; name: string; enabled: boolean; min_dur?: number, db?: string | null };
 export type Registration = { name: string; email: string; license: string };
-export type Preferences = { match_criteria: string[]; ignore_filetype: boolean; autoselects: string[]; tags: string[], preservation_order: PreservationLogic[], columns: string[], display_all_records: boolean, safety_db: boolean, safety_db_tag: string, erase_files: string, exact_waveform: boolean, similarity_threshold: number, store_waveforms: boolean, fetch_waveforms: boolean, colors: Colors };
+export type Preferences = { match_criteria: string[]; ignore_filetype: boolean; autoselects: string[]; tags: string[], preservation_order: PreservationLogic[], columns: string[], display_all_records: boolean, safety_db: boolean, safety_db_tag: string, erase_files: string, exact_waveform: boolean, similarity_threshold: number, store_waveforms: boolean, fetch_waveforms: boolean, colors: Colors, algorithms: Algorithm[] };
 export type PreservationLogic = { column: string, operator: string, variable: string };
 export type FileRecord = {
     data(data: any, arg1: null, arg2: number): any; root: string; path: string; algorithm: string[]; id: number
@@ -428,24 +455,24 @@ export type Colors = {
 }
 
 // Load algorithms from localStorage or use defaults
-const storedAlgorithms = localStorage.getItem('selectedAlgorithms');
-const defaultAlgorithms: Algorithm[] = [
-    { id: 'basic', name: 'Duplicate Search', enabled: true },
-    { id: 'invalidpath', name: 'Invalid Files', enabled: false },
-    { id: 'filename', name: 'Similar Filename', enabled: false },
-    { id: 'duration', name: 'Minimum Duration:', enabled: false, min_dur: 0.5 },
-    { id: 'audiosuite', name: 'Audiosuite Tags', enabled: false },
-    { id: 'filetags', name: 'Filename Contains Tag', enabled: false },
-    { id: 'waveform', name: 'Audio Content Comparison', enabled: false, db: null },
-    { id: 'dbcompare', name: 'Database Compare:', enabled: false },
-];
+// const storedAlgorithms = localStorage.getItem('selectedAlgorithms');
+// const defaultAlgorithms: Algorithm[] = [
+//     { id: 'basic', name: 'Duplicate Search', enabled: true },
+//     { id: 'invalidpath', name: 'Invalid Files', enabled: false },
+//     { id: 'filename', name: 'Similar Filename', enabled: false },
+//     { id: 'duration', name: 'Minimum Duration:', enabled: false, min_dur: 0.5 },
+//     { id: 'audiosuite', name: 'Audiosuite Tags', enabled: false },
+//     { id: 'filetags', name: 'Filename Contains Tag', enabled: false },
+//     { id: 'waveform', name: 'Audio Content Comparison', enabled: false, db: null },
+//     { id: 'dbcompare', name: 'Database Compare:', enabled: false },
+// ];
 
-export const algorithmsStore = writable<Algorithm[]>(storedAlgorithms ? JSON.parse(storedAlgorithms) : defaultAlgorithms);
+// export const algorithmsStore = writable<Algorithm[]>(storedAlgorithms ? JSON.parse(storedAlgorithms) : defaultAlgorithms);
 
-// Save to localStorage whenever updated
-algorithmsStore.subscribe(value => {
-    localStorage.setItem('selectedAlgorithms', JSON.stringify(value));
-});
+// // Save to localStorage whenever updated
+// algorithmsStore.subscribe(value => {
+//     localStorage.setItem('selectedAlgorithms', JSON.stringify(value));
+// });
 
 // Load registration info from localStorage or use defaults
 const storedRegistration = localStorage.getItem('registrationInfo');

@@ -11,7 +11,7 @@
   /* --accent-color: hsl(42, 100%, 47%);
   --topbar-color: hsl(42, 100%, calc(47% + 10%));
   --hover-color: hsl(42, 100%, calc(47% + 20%));  */
-  --warning-hover: #dc2626;
+  --warning-hover: #ff6a00;
   --warning-color: #b91c1c;
   --inactive-color: #888;
 }
@@ -203,7 +203,7 @@ h2 {
 .small-button:hover {
   background-color: var(--hover-color);
   color: var(--secondary-bg);
-  background: linear-gradient(to bottom, #ffd166, #f0a500);
+  background: linear-gradient(to bottom, var(--hover-color), var(--accent-color));
   /* Brighter hover effect */
   /* border-color: #e69a00; */
 }

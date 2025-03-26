@@ -164,11 +164,28 @@
       const visible = await preferencesWindow.isVisible();
 
       if (visible) {
-        await preferencesWindow.hide();
+        // Window exists and is visible - check if it has focus
+        try {
+          // First try to set focus (bring to front)
+          await preferencesWindow.setFocus();
+
+          // If the window is already focused by the user, hide it instead
+          const isFocused = await preferencesWindow.isFocused();
+          if (isFocused) {
+            await preferencesWindow.hide();
+          }
+        } catch (error) {
+          console.error("Error focusing preferences window:", error);
+          // Fallback to just showing the window if setFocus fails
+          await preferencesWindow.show();
+        }
       } else {
+        // Window exists but isn't visible - show it
         await preferencesWindow.show();
+        await preferencesWindow.setFocus();
       }
     } else {
+      // Window doesn't exist - create it
       const url = `${window.location.origin}/preferences`;
       console.log("Creating Pref Window!");
       const appWindow = new WebviewWindow("preferences", {
@@ -179,6 +196,7 @@
         url: url,
         dragDropEnabled: false,
         devtools: true,
+        focus: true, // Ensure it gets focus when created
       });
 
       // Listen for console logs from preferences window
@@ -319,12 +337,7 @@
       <SearchComponent {dbSize} bind:selectedDb bind:activeTab bind:isRemove />
     {:else if activeTab === "results"}
       {#if isRegistered}
-        <ResultsComponent
-          {removeResults}
-          bind:isRemove
-          bind:activeTab
-          bind:selectedDb
-        />
+        <ResultsComponent bind:isRemove bind:activeTab bind:selectedDb />
       {:else}
         <RegisterComponent bind:isRegistered />
       {/if}

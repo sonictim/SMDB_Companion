@@ -108,12 +108,12 @@ impl PreservationLogic {
                     let a_matches = a
                         .data
                         .get(&self.column)
-                        .map(|v| v.as_ref() == self.variable.as_ref())
+                        .map(|v| v.to_lowercase().as_str() == self.variable.to_lowercase().as_str())
                         .unwrap_or(false);
                     let b_matches = b
                         .data
                         .get(&self.column)
-                        .map(|v| v.as_ref() == self.variable.as_ref())
+                        .map(|v| v.to_lowercase().as_str() == self.variable.to_lowercase().as_str())
                         .unwrap_or(false);
 
                     b_matches.cmp(&a_matches)
@@ -124,12 +124,12 @@ impl PreservationLogic {
                     let a_matches = a
                         .data
                         .get(&self.column)
-                        .map(|v| *v == self.variable)
+                        .map(|v| *v.to_lowercase() == self.variable.to_lowercase())
                         .unwrap_or(false);
                     let b_matches = b
                         .data
                         .get(&self.column)
-                        .map(|v| *v == self.variable)
+                        .map(|v| *v.to_lowercase() == self.variable.to_lowercase())
                         .unwrap_or(false);
 
                     a_matches.cmp(&b_matches)
@@ -170,12 +170,18 @@ impl PreservationLogic {
                     let a_contains = a
                         .data
                         .get(&self.column)
-                        .map(|v| v.contains(self.variable.as_ref()))
+                        .map(|v| {
+                            v.to_lowercase()
+                                .contains(self.variable.to_lowercase().as_str())
+                        })
                         .unwrap_or(false);
                     let b_contains = b
                         .data
                         .get(&self.column)
-                        .map(|v| v.contains(self.variable.as_ref()))
+                        .map(|v| {
+                            v.to_lowercase()
+                                .contains(self.variable.to_lowercase().as_str())
+                        })
                         .unwrap_or(false);
                     b_contains.cmp(&a_contains)
                 });
@@ -185,12 +191,18 @@ impl PreservationLogic {
                     let a_contains = a
                         .data
                         .get(&self.column)
-                        .map(|v| v.contains(self.variable.as_ref()))
+                        .map(|v| {
+                            v.to_lowercase()
+                                .contains(self.variable.to_lowercase().as_str())
+                        })
                         .unwrap_or(false);
                     let b_contains = b
                         .data
                         .get(&self.column)
-                        .map(|v| v.contains(self.variable.as_ref()))
+                        .map(|v| {
+                            v.to_lowercase()
+                                .contains(self.variable.to_lowercase().as_str())
+                        })
                         .unwrap_or(false);
                     a_contains.cmp(&b_contains)
                 });

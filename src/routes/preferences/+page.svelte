@@ -20,6 +20,7 @@
         preferencesStore,
         PresetsStore,
         defaultPreferences,
+        // algorithmsStore,
     } from "../../store";
     import { get } from "svelte/store";
     import type { Preferences } from "../../store";
@@ -32,6 +33,10 @@
     $: console.log("Active Tab:", activeTab);
     $: pref = $preferencesStore;
     $: presets = $PresetsStore;
+
+    // $: if ($preferencesStore && $preferencesStore.algorithms) {
+    //     algorithmsStore.set($preferencesStore.algorithms);
+    // }
 
     function savePreset() {
         const trimmedPreset = newPreset?.trim();
@@ -72,7 +77,7 @@
     function loadPreset() {
         if (selectedPreset === "Default") {
             // Get fresh default preferences from store's defaultPreferences
-            const defaultPrefs = defaultPreferences; // Import this from store.ts
+            const defaultPrefs = structuredClone(defaultPreferences); // Create deep copy to avoid reference issues
             preferencesStore.set(defaultPrefs);
 
             // Update CSS variables for colors
@@ -88,12 +93,34 @@
         // Existing preset loading logic
         const presetObj = presets.find((p) => p.name === selectedPreset);
         if (presetObj) {
-            preferencesStore.set(presetObj.pref);
-            Object.entries(presetObj.pref.colors).forEach(([key, value]) => {
+            // Create deep copies to avoid reference issues
+            const prefCopy = structuredClone(presetObj.pref);
+
+            // Ensure the algorithms are valid before setting stores
+            if (prefCopy && prefCopy.algorithms) {
+                console.log("Loading algorithms:", prefCopy.algorithms);
+
+                // First set the algorithms store
+
+                // Then set the preferences store
+                preferencesStore.set(prefCopy);
+
+                // Log to verify both stores were updated
+                console.log(
+                    "Preferences store updated:",
+                    get(preferencesStore),
+                );
+            } else {
+                console.error("Invalid algorithms in preset:", selectedPreset);
+                // Set preferences without touching algorithms
+                preferencesStore.set(prefCopy);
+            }
+
+            // Update CSS variables
+            Object.entries(prefCopy.colors || {}).forEach(([key, value]) => {
                 const cssVariable = `--${key.replace(/([A-Z])/g, "-$1").toLowerCase()}`;
                 document.documentElement.style.setProperty(cssVariable, value);
             });
-            console.log("Preset loaded:", presetObj);
         }
     }
 
@@ -247,8 +274,6 @@
         </div>
     </main>
 </div>
-
-<footer>TESTING</footer>
 
 <style>
     .bar {

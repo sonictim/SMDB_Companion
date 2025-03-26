@@ -3,7 +3,7 @@
   import { onMount, onDestroy } from "svelte";
   import { listen } from "@tauri-apps/api/event";
 
-  import { algorithmsStore, preferencesStore } from "../store";
+  import { preferencesStore } from "../store";
   import { resultsStore, metadataStore } from "../session-store";
   import type { FileRecord } from "../session-store";
   import { ask } from "@tauri-apps/plugin-dialog";
@@ -81,19 +81,22 @@
   }
 
   let columnConfigs = [
-    { minWidth: 10, width: 20, name: "checkbox", header: "✔" },
-    { minWidth: 20, width: 80, name: "algorithm", header: "Match" },
+    { minWidth: 10, width: 30, name: "checkbox", header: "✔" },
     { minWidth: 100, width: 250, name: "filename", header: "Filename" },
     { minWidth: 150, width: 400, name: "path", header: "Path" },
-    { minWidth: 100, width: 250, name: "description", header: "Description" },
+    { minWidth: 100, width: 300, name: "description", header: "Description" },
+    { minWidth: 20, width: 80, name: "algorithm", header: "Match" },
     { minWidth: 10, width: 25, name: "channels", header: "CH" },
-    { minwidth: 10, width: 25, name: "bitdepth", header: "BD" },
-    { minwidth: 10, width: 50, name: "samplerate", header: "SR" },
-    { minwidth: 10, width: 80, name: "duration", header: "Duration" },
-    { minWidth: 8, width: 12, name: "audio", header: "" },
+    { minWidth: 10, width: 25, name: "bitdepth", header: "BD" },
+    { minWidth: 10, width: 50, name: "samplerate", header: "SR" },
+    { minWidth: 10, width: 80, name: "duration", header: "Duration" },
+    { minWidth: 8, width: 30, name: "audio", header: "" },
   ];
 
   $: columnWidths = columnConfigs.map((config) => config.width);
+
+  $: totalWidth =
+    columnWidths.reduce((acc, width) => acc + width, 0) + 100 + "px";
 
   let containerElement: HTMLElement;
   let containerWidth = 0;
@@ -150,12 +153,6 @@
     updateUI();
   }
 
-  // function addCheck(item: FileRecord) {
-  //   if (!item.algorithm.includes("Keep")) {
-  //     item.algorithm.push("Keep");
-  //   }
-  // }
-
   function checkSelected() {
     filteredItems.forEach((item) => {
       if (selectedItems.has(item.id)) removeCheck(item);
@@ -163,55 +160,37 @@
     updateUI();
   }
 
-  // function removeCheck(item: FileRecord) {
-  //   if (item.algorithm.includes("Keep")) {
-  //     // Create a new algorithm array
-  //     const updatedAlgorithms = item.algorithm.filter(
-  //       (algo) => algo !== "Keep",
-  //     );
-  //   }
-  // }
-
   function addCheck(item: FileRecord) {
     if (!item.algorithm.includes("Keep")) {
-      // Create a new item with updated algorithm array
       const updatedItem = {
         ...item,
         algorithm: [...item.algorithm, "Keep"],
       };
 
-      // Update the results array to trigger reactivity
       results = results.map((r) => (r.id === item.id ? updatedItem : r));
     }
   }
 
   function removeCheck(item: FileRecord) {
     if (item.algorithm.includes("Keep")) {
-      // Create a new item with updated algorithm array
       const updatedItem = {
         ...item,
         algorithm: item.algorithm.filter((algo) => algo !== "Keep"),
       };
 
-      // Update the results array to trigger reactivity
       results = results.map((r) => (r.id === item.id ? updatedItem : r));
     }
   }
 
-  // Add a variable to track the last selected item index
   let lastSelectedIndex = -1;
 
-  // Enhanced function to update the virtualizer while preserving scroll position
   function updateVirtualizer() {
     if ($rowVirtualizer) {
-      // Store current scroll position
       const scrollElement = parentRef;
       const scrollTop = scrollElement?.scrollTop;
 
-      // Update the virtualizer
       $rowVirtualizer.measure();
 
-      // Restore scroll position after a microtask to ensure DOM has updated
       if (scrollTop !== undefined) {
         queueMicrotask(() => {
           if (scrollElement) scrollElement.scrollTop = scrollTop;
@@ -223,35 +202,29 @@
   function addSelected(item: FileRecord) {
     selectedItems.add(item.id);
     selectedItems = new Set(selectedItems);
-    updateVirtualizer(); // Update the virtualizer to keep the scroll position
+    updateVirtualizer();
   }
 
   function removeSelected(item: FileRecord) {
     selectedItems.delete(item.id);
     selectedItems = new Set(selectedItems);
-    updateVirtualizer(); // Update the virtualizer to keep the scroll position
+    updateVirtualizer();
   }
 
-  // Improve how we handle selection changes
   function toggleSelect(item: FileRecord, event: MouseEvent) {
     event.preventDefault();
 
-    // Store scroll position
     const scrollElement = parentRef;
     const scrollTop = scrollElement?.scrollTop;
 
-    // Get the current item index
     const currentIndex = filteredItems.findIndex(
       (record) => record.id === item.id,
     );
 
-    // Handle Option/Alt click (toggle all)
     if (event.altKey) {
       if (selectedItems.size > 0) {
-        // If any items selected, clear all
         selectedItems.clear();
       } else {
-        // Otherwise select all filtered items
         filteredItems.forEach((record) => selectedItems.add(record.id));
       }
       selectedItems = new Set(selectedItems);
@@ -266,26 +239,21 @@
 
     // Handle Shift click (range selection)
     if (event.shiftKey && lastSelectedIndex !== -1) {
-      // Calculate the range (works in both directions)
       const start = Math.min(lastSelectedIndex, currentIndex);
       const end = Math.max(lastSelectedIndex, currentIndex);
 
-      // Add all items in range to selection
       for (let i = start; i <= end; i++) {
         selectedItems.add(filteredItems[i].id);
       }
     } else {
-      // Normal click (toggle individual)
       if (selectedItems.has(item.id)) {
         selectedItems.delete(item.id);
       } else {
         selectedItems.add(item.id);
-        // Update last selected index for future shift-clicks
         lastSelectedIndex = currentIndex;
       }
     }
 
-    // Update the set
     selectedItems = new Set(selectedItems);
     queueMicrotask(() => {
       updateVirtualizer();
@@ -298,13 +266,11 @@
   function toggleChecked(item: FileRecord) {
     const isKeeping = item.algorithm.includes("Keep");
 
-    // Store scroll position
     const scrollElement = parentRef;
     const scrollTop = scrollElement?.scrollTop;
 
-    // Clone the item and update its algorithm array
     const updatedAlgorithms = isKeeping
-      ? item.algorithm.filter((algo) => algo !== "Keep") // Remove "Keep"
+      ? item.algorithm.filter((algo) => algo !== "Keep")
       : [...item.algorithm, "Keep"]; // Add "Keep"
 
     const updatedItem = {
@@ -312,20 +278,16 @@
       algorithm: updatedAlgorithms,
     };
 
-    // Update items array
     results = results.map((i) => (i === item ? updatedItem : i));
 
-    // Call updateVirtualizer after the state update
     queueMicrotask(() => {
       updateVirtualizer();
-      // Extra safety: restore scroll position
       if (scrollTop !== undefined && scrollElement) {
         scrollElement.scrollTop = scrollTop;
       }
     });
   }
 
-  // Reactive statement to update the virtualizer when selectedItems changes
   $: {
     if (selectedItems) {
       updateVirtualizer();
@@ -335,10 +297,8 @@
   function invertSelected() {
     filteredItems.forEach((item) => {
       if (selectedItems.has(item.id)) {
-        // If selected, remove from selection
         selectedItems.delete(item.id);
       } else {
-        // If not selected, add to selection
         selectedItems.add(item.id);
       }
     });
@@ -773,19 +733,31 @@
     {:else}
       <div class="virtual-table-container" style="height: 80vh; width: 100%;">
         <div bind:this={parentRef} class="virtual-table-viewport">
-          <div class="virtual-table-header" style="width: 100vw;">
+          <div class="virtual-table-header" style="width: {totalWidth};">
             <div
               class="grid-container rheader"
               style="grid-template-columns: {gridTemplateColumns};"
             >
-              {#each columnConfigs as key}
-                <div class="grid-item header">{key.header}</div>
+              {#each columnConfigs as key, i}
+                <div
+                  class="grid-item header {i === 0
+                    ? 'sticky-column'
+                    : // : i === 9
+                      //   ? 'sticky-column-right'
+                      ''}"
+                >
+                  <!-- {#if key.name === "audio"}
+                    <Volume2 size={18} />
+                  {:else} -->
+                  {key.header}
+                  <!-- {/if} -->
+                </div>
               {/each}
             </div>
 
             <div
               class="resizer-container"
-              style="grid-template-columns: {gridTemplateColumns}; display: grid; width: 100vw;"
+              style="grid-template-columns: {gridTemplateColumns}; display: grid; width: {totalWidth};"
             >
               {#each columnConfigs as column, i}
                 <div class="resizer-cell">
@@ -804,12 +776,12 @@
 
           <div
             class="virtual-table-body"
-            style="height: {$rowVirtualizer.getTotalSize()}px; width: 100vw;"
+            style="height: {$rowVirtualizer.getTotalSize()}px; width: {totalWidth};"
           >
             {#each $rowVirtualizer.getVirtualItems() as virtualRow (virtualRow.index)}
               <div
                 class="virtual-row"
-                style="transform: translateY({virtualRow.start}px); height: {virtualRow.size}px; width: 100vw;"
+                style="transform: translateY({virtualRow.start}px); height: {virtualRow.size}px; width: {totalWidth};"
               >
                 <div
                   class="list-item {filteredItems[
@@ -827,20 +799,38 @@
                       : ''};
                     grid-template-columns: {gridTemplateColumns};"
                   >
-                    {#each columnConfigs as column}
+                    {#each columnConfigs as column, i}
                       {#if column.name === "audio"}
-                        <!-- Audio Column -->
+                        <!-- Audio Column with sticky positioning if it's the first column -->
                         <div
-                          class="grid-item"
+                          class="grid-item {i === 0
+                            ? 'sticky-column'
+                            : i === 9
+                              ? 'sticky-column-right'
+                              : ''}
+                              {selectedItems.has(
+                            filteredItems[virtualRow.index].id,
+                          ) && enableSelections
+                            ? 'selected'
+                            : ''}"
                           on:click={() =>
                             playAudioFile(filteredItems[virtualRow.index])}
                         >
                           <Volume size={18} />
                         </div>
                       {:else if column.name === "checkbox"}
-                        <!-- Checkbox Column -->
+                        <!-- Checkbox Column with sticky positioning if it's the first column -->
                         <div
-                          class="grid-item"
+                          class="grid-item {i === 0
+                            ? 'sticky-column'
+                            : i === 9
+                              ? 'sticky-column-right'
+                              : ''}
+                              {selectedItems.has(
+                            filteredItems[virtualRow.index].id,
+                          ) && enableSelections
+                            ? 'selected'
+                            : ''}"
                           on:click={() =>
                             toggleChecked(filteredItems[virtualRow.index])}
                         >
@@ -1007,7 +997,7 @@
     height: 60px;
     background-color: var(--inactive-color);
     position: absolute;
-    right: -20px; /* Change from -20px to 0 */
+    right: -14px; /* Change from -20px to 0 */
     transform: translateX(50%); /* Center on the boundary */
     top: -60px;
     cursor: col-resize;
@@ -1022,7 +1012,7 @@
 
   .grid-item {
     position: relative;
-    /* padding: 3px; */
+    padding: 3px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1044,6 +1034,7 @@
     color: var(--accent-color);
     background-color: var(--primary-bg);
     border-bottom: 1px solid var(--inactive-color);
+    margin-left: 6px;
   }
 
   .ellipsis {
@@ -1107,5 +1098,39 @@
     top: 100%;
     left: 50%;
     transform: translateX(-50%);
+  }
+
+  /* Make BOTH header and cells sticky */
+  .sticky-column {
+    position: sticky !important;
+    left: 0;
+    z-index: 15;
+    background-color: var(
+      --primary-bg
+    ); /* Background prevents content behind from showing through */
+    box-shadow: 1px 0 3px rgba(0, 0, 0, 0.1); /* Optional shadow for depth */
+  }
+  .sticky-column-right {
+    position: sticky !important;
+    right: 0;
+    z-index: 15;
+    background-color: var(
+      --primary-bg
+    ); /* Background prevents content behind from showing through */
+    box-shadow: 1px 0 3px rgba(0, 0, 0, 0.1); /* Optional shadow for depth */
+    text-align: right;
+  }
+
+  /* Add these styles to preserve highlighting on sticky columns */
+  .grid-item.sticky-column.selected,
+  .grid-item.sticky-column-right.selected {
+    background-color: var(--accent-color) !important;
+  }
+
+  /* For checked items (not just selected) */
+  .checked-item .grid-item.sticky-column,
+  .checked-item .grid-item.sticky-column-right {
+    /* If you need different styling for checked vs unchecked */
+    /* background-color: var(--checked-bg-color); */
   }
 </style>

@@ -21,7 +21,7 @@
     let isSearching = false;
     let isFinding = false;
 
-    import { algorithmsStore, preferencesStore } from "../store";
+    import { preferencesStore } from "../store";
     import { resultsStore, metadataStore } from "../session-store";
     import type { HashMap } from "../session-store";
     import { get } from "svelte/store";
@@ -47,8 +47,9 @@
                 compareDb = compareDb[0];
             }
             if (compareDb) {
-                algorithmsStore.update((algorithms) => {
-                    return algorithms.map((algo) => {
+                preferencesStore.update((prefs) => ({
+                    ...prefs,
+                    algorithms: prefs.algorithms.map((algo) => {
                         if (algo.id === "dbcompare") {
                             console.log(
                                 "Updating dbcompare:",
@@ -59,9 +60,8 @@
                             return { ...algo, enabled: true, db: compareDb };
                         }
                         return algo;
-                    });
-                });
-                let updatedAlgorithms = get(algorithmsStore);
+                    }),
+                }));
             }
         } catch (error) {
             console.error("Error selecting file:", error);
@@ -73,14 +73,15 @@
     let waveform_match = true;
 
     let pref: Preferences = get(preferencesStore);
-    let algorithms = get(algorithmsStore);
+    // let algorithms = get(algorithmsStore);
 
     $: isBasicEnabled =
-        $algorithmsStore.find((a) => a.id === "basic")?.enabled || false;
+        $preferencesStore.algorithms.find((a) => a.id === "basic")?.enabled ||
+        false;
 
     function getAlgoClass(algo: { id: string }, algorithms: any[]) {
         if (
-            (algo.id === "audiosuite" || algo.id === "filename") && // Add filename check here
+            (algo.id === "audiosuite" || algo.id === "filename") &&
             !algorithms.find((a) => a.id === "basic")?.enabled
         ) {
             return "inactive";
@@ -122,11 +123,12 @@
     // Remove this line: $: prefs = $preferencesStore;
 
     function toggleAlgorithm(id: string) {
-        algorithmsStore.update((algorithms) =>
-            algorithms.map((algo) =>
+        preferencesStore.update((prefs) => ({
+            ...prefs,
+            algorithms: prefs.algorithms.map((algo) =>
                 algo.id === id ? { ...algo, enabled: !algo.enabled } : algo,
             ),
-        );
+        }));
     }
 
     function toggleSearch() {
@@ -142,14 +144,9 @@
     // Update the search function
     async function search() {
         let $pref = get(preferencesStore);
-        let algorithms = get(algorithmsStore); // Ensure fresh values
-
-        // console.log($pref.preservation_order); // Correctly access the current value
-        // Always access the current store value by using get() or $ prefix
-        // console.log($preferencesStore.match_criteria); // Correctly access the current value
+        let algorithms = $pref.algorithms; // Get algorithms directly from preferences
 
         console.log("Starting Search");
-        // console.log(get(preferencesStore)); // Correctly access the current value
         isRemove = true;
         resultsStore.set([]);
 
@@ -351,9 +348,12 @@
             </div>
         {:else}
             <div class="grid">
-                {#each $algorithmsStore as algo}
+                {#each $preferencesStore.algorithms as algo}
                     <div
-                        class="grid item {getAlgoClass(algo, $algorithmsStore)}"
+                        class="grid item {getAlgoClass(
+                            algo,
+                            $preferencesStore.algorithms,
+                        )}"
                     >
                         <button
                             type="button"
