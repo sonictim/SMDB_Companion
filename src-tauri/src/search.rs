@@ -534,18 +534,19 @@ impl Database {
                 // Process in smaller batches and report progress
                 for i in 0..total_records {
                     // Progress reporting code...
-                    let update_interval = (total_records.max(20) / 100).max(1);
-                    if i % update_interval == 0 {
-                        app.emit(
-                            "search-sub-status",
-                            StatusUpdate {
-                                stage: "similarity".into(),
-                                progress: 40 + ((i * 30) / total_records) as u64,
-                                message: format!("Finding similar audio: {}/{}", i, total_records),
-                            },
-                        )
-                        .ok();
-                    }
+                    // let update_interval = (total_records.max(20) / 100).max(1);
+                    // if i % update_interval == 0 {
+                    app.emit(
+                        "search-sub-status",
+                        StatusUpdate {
+                            stage: "similarity".into(),
+                            // progress: 40 + ((i * 30) / total_records) as u64,
+                            progress: (i * 100 / total_records) as u64,
+                            message: format!("Finding similar audio: {}/{}", i, total_records),
+                        },
+                    )
+                    .ok();
+                    // }
 
                     let idx = chromaprint_records[i].id;
                     if let Some(ref fp_i) = decoded_fps[i] {
@@ -700,7 +701,7 @@ impl Database {
 
         // MORE AGGRESSIVE OPTIMIZATIONS
         const BATCH_SIZE: usize = 100; // Larger batch size for fewer transactions
-        const STORAGE_INTERVAL: usize = 250; // Store every 250 records processed
+        const STORAGE_INTERVAL: usize = 200; // Store every 250 records processed
         const PROGRESS_INTERVAL: usize = RECORD_DIVISOR * 5; // Less frequent progress updates
 
         // Pre-scan status update
@@ -716,7 +717,7 @@ impl Database {
 
         // 1. PRE-FILTERING OPTIMIZATION: Use indexed access for faster filtering
         let mut records_needing_fingerprints = BitSet::with_capacity(self.records.len());
-        let update_frequency = std::cmp::max(self.records.len() / 10, 1); // Update ~10 times during scan
+        let update_frequency = std::cmp::max(self.records.len() / 100, 1); // Update ~10 times during scan
 
         for (idx, record) in self.records.iter().enumerate() {
             // More frequent progress updates
@@ -773,7 +774,7 @@ impl Database {
         )
         .ok();
 
-        // Preparation status update
+        // Initial status update
         app.emit(
             "search-sub-status",
             StatusUpdate {
@@ -787,47 +788,8 @@ impl Database {
         println!("Found {} files requiring fingerprinting", total_to_process);
         println!("{:#?}", records_needing_fingerprints);
 
-        // 2. CHECKPOINT OPTIMIZATION: Save progress marker to restart from
-        let mut checkpoint_file = std::env::temp_dir();
-        checkpoint_file.push("smdb_fingerprint_progress.json");
-
-        // More detailed checkpoint status
+        // Set start position to always begin from the start
         let mut start_from = 0;
-        if checkpoint_file.exists() && pref.store_waveforms {
-            app.emit(
-                "search-sub-status",
-                StatusUpdate {
-                    stage: "fingerprinting".into(),
-                    progress: 0,
-                    message: "Reading checkpoint data...".into(),
-                },
-            )
-            .ok();
-
-            if let Ok(contents) = std::fs::read_to_string(&checkpoint_file) {
-                if let Ok(checkpoint) = serde_json::from_str::<usize>(&contents) {
-                    if checkpoint < total_to_process {
-                        start_from = checkpoint;
-                        app.emit(
-                            "search-sub-status",
-                            StatusUpdate {
-                                stage: "fingerprinting".into(),
-                                progress: (start_from * 100 / total_to_process) as u64,
-                                message: format!(
-                                    "Resuming from checkpoint: {}/{} files",
-                                    start_from, total_to_process
-                                ),
-                            },
-                        )
-                        .ok();
-                        println!(
-                            "Resuming from checkpoint: {} of {}",
-                            start_from, total_to_process
-                        );
-                    }
-                }
-            }
-        }
 
         // 3. MEMORY OPTIMIZATION: Store fingerprints more frequently in smaller chunks
         let mut fingerprints_to_store = Vec::with_capacity(STORAGE_INTERVAL);
@@ -932,14 +894,13 @@ impl Database {
             // Check abort with non-blocking access
             if let Ok(guard) = self.abort.try_read() {
                 if *guard {
-                    // Handle cancellation with checkpoint
                     if !fingerprints_to_store.is_empty() && pref.store_waveforms {
                         app.emit(
                             "search-sub-status",
                             StatusUpdate {
                                 stage: "saving".into(),
                                 progress: 100,
-                                message: "Cancelled - saving checkpoint...".into(),
+                                message: "Cancelled - saving processed fingerprints...".into(),
                             },
                         )
                         .ok();
@@ -949,9 +910,6 @@ impl Database {
                             store_fingerprints_batch_optimized(pool, &fingerprints_to_store, app)
                                 .await;
                         }
-
-                        // Save checkpoint
-                        let _ = std::fs::write(&checkpoint_file, processed.to_string());
                     }
                     return Err("Aborted".to_string());
                 }
@@ -1064,9 +1022,6 @@ impl Database {
                     // 13. DATABASE OPTIMIZATION: Use optimized batch storage
                     store_fingerprints_batch_optimized(pool, &fingerprints_to_store, app).await; // Pass app here
                     fingerprints_to_store.clear();
-
-                    // 14. CHECKPOINT OPTIMIZATION: Save progress periodically
-                    let _ = std::fs::write(&checkpoint_file, processed.to_string());
                 }
             }
 
@@ -1083,11 +1038,6 @@ impl Database {
                 },
             )
             .ok();
-        }
-
-        // Remove checkpoint file on successful completion
-        if processed >= total_to_process {
-            let _ = std::fs::remove_file(checkpoint_file);
         }
 
         Ok(())

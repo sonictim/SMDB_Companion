@@ -70,6 +70,7 @@ pub fn run() {
             stop_audio,
             pause_audio,
             resume_audio,
+            clear_fingerprints,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -378,7 +379,6 @@ impl Database {
             self.size = self.fetch_size().await.unwrap();
             self.records = Vec::with_capacity(self.size); // No need for .into()
             self.is_compare = is_compare;
-            self.add_column("_fingerprint").await.ok();
         }
     }
 
@@ -428,6 +428,37 @@ impl Database {
             return SqlitePool::connect(&path).await.ok();
         }
         None
+    }
+
+    async fn remove_column(&self, remove: &str) -> Result<(), sqlx::Error> {
+        if let Some(pool) = self.get_pool().await {
+            // First check if the column already exists
+            let columns = sqlx::query(&format!("PRAGMA table_info({});", TABLE))
+                .fetch_all(&pool)
+                .await?;
+
+            // Check if our column exists
+            let column_exists = columns.iter().any(|row| {
+                let column_name: &str = row.try_get("name").unwrap_or_default();
+                column_name == remove
+            });
+
+            // Only remove the column if it exists
+            if column_exists {
+                // Remove the column
+                let query = format!("ALTER TABLE {} DROP COLUMN {};", TABLE, remove);
+                sqlx::query(&query).execute(&pool).await?;
+                println!("Removed column: {}", remove);
+            } else {
+                println!("Column '{}' does not exist", remove);
+            }
+
+            return Ok(());
+        }
+
+        Err(sqlx::Error::Configuration(
+            "No database connection available".into(),
+        ))
     }
 
     async fn add_column(&self, add: &str) -> Result<(), sqlx::Error> {
@@ -622,74 +653,6 @@ impl Database {
 
         Ok(columns)
     }
-
-    // async fn gather_fingerprints(
-    //     &mut self,
-    //     pref: &Preferences,
-    //     app: &AppHandle,
-    // ) -> Result<(), String> {
-    //     println!("Starting Waveform Search");
-
-    //     // Count how many files need fingerprinting
-    //     let records_to_fingerprint: Vec<usize> = self
-    //         .records
-    //         .par_iter()
-    //         .enumerate()
-    //         .filter(|(_, record)| record.fingerprint.is_none())
-    //         .map(|(i, _)| i)
-    //         .collect();
-
-    //     // Get pool outside the loop to avoid simultaneous mutable and immutable borrows
-    //     let pool = if pref.store_waveforms {
-    //         self.get_pool().await
-    //     } else {
-    //         None
-    //     };
-
-    //     // Can't use async in for_each, so use a standard for loop instead
-    //     for (i, &record_idx) in records_to_fingerprint.iter().enumerate() {
-    //         let record = &mut self.records[record_idx];
-    //         if *self.abort.read().await {
-    //             continue;
-    //         }
-    //         app.emit(
-    //             "search-sub-status",
-    //             StatusUpdate {
-    //                 stage: "fingerprinting".into(),
-    //                 progress: (i * 100 / records_to_fingerprint.len()) as u64,
-    //                 message: format!("Gathering Audio Fingerprint from {}", record.get_filename()),
-    //             },
-    //         )
-    //         .ok();
-    //         let fingerprint = match audio::get_chromaprint_fingerprint(&record.path) {
-    //             Some(fp) => {
-    //                 println!("SUCCESS fingerprint for: {}", record.get_filepath());
-    //                 Some(Arc::from(fp.as_str()))
-    //             }
-    //             None => {
-    //                 println!(
-    //                     "FAILED fingerprint for: {} (exists: {}, size: {})",
-    //                     record.get_filepath(),
-    //                     Path::new(record.get_filepath()).exists(),
-    //                     Path::new(record.get_filepath())
-    //                         .metadata()
-    //                         .map_or(0, |m| m.len())
-    //                 );
-    //                 None
-    //             }
-    //         };
-    //         record.fingerprint = fingerprint.clone();
-    //         if pref.store_waveforms {
-    //             if let Some(fingerprint) = &record.fingerprint {
-    //                 if let Some(pool) = &pool {
-    //                     let _ = update_column(pool, record.id, "_fingerprint", fingerprint).await;
-    //                 }
-    //             }
-    //         };
-    //     }
-
-    //     Ok(())
-    // }
 }
 
 fn checkduration(duration: &str, min_dur: f64) -> bool {

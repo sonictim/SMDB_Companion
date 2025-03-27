@@ -1,8 +1,9 @@
 <script lang="ts">
     import VirtualList from "svelte-virtual-list"; // Ensure this package is installed
     import { Square, CheckSquare, OctagonX } from "lucide-svelte";
-
     import { preferencesStore } from "../../store";
+    import { invoke } from "@tauri-apps/api/core";
+    import { ask, confirm } from "@tauri-apps/plugin-dialog";
 
     // Use the store directly instead of assigning to `pref`
     let currentColumn = "";
@@ -96,6 +97,20 @@
             similarity_threshold: value,
         }));
     }
+
+    let confirmRemove = false;
+
+    async function clearFingerprints() {
+        await invoke("clear_fingerprints")
+            .then(() => {
+                console.log("Successfully cleared fingerprints");
+                confirmRemove = false;
+            })
+            .catch((error) => {
+                console.error("Error clearing fingerprints:", error);
+                confirmRemove = false;
+            });
+    }
 </script>
 
 <div class="grid-container">
@@ -156,7 +171,7 @@
             </VirtualList>
         </div>
     </div>
-    <div class="block" style=" height: 22vh;">
+    <div class="block" style=" height: 30vh;">
         <div class="header">
             <h2>Audio Content Search Options</h2>
         </div>
@@ -227,6 +242,33 @@
                         0-100%</span
                     >
                 </span>
+            {:else}
+                <span></span>
+            {/if}
+            <span>
+                <button
+                    class="cta-button small cancel"
+                    on:click={() => (confirmRemove = true)}
+                >
+                    Clear Audio Fingerprints from Database
+                </button>
+            </span>
+            {#if confirmRemove}
+                <span>
+                    Are you sure? This is not undoable!
+                    <button
+                        class="cta-button small"
+                        on:click={() => (confirmRemove = false)}
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        class="cta-button small cancel"
+                        on:click={clearFingerprints}
+                    >
+                        Confirm
+                    </button>
+                </span>
             {/if}
         </div>
     </div>
@@ -234,7 +276,7 @@
 
 <style>
     .block {
-        height: calc(80vh - 200px);
+        height: calc(80vh - 250px);
     }
 
     .grid-container {

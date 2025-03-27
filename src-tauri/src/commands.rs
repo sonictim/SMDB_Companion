@@ -85,9 +85,11 @@ pub async fn search(
     {
         let state = state.lock().await;
         *state.db.abort.write().await = false;
+        if pref.fetch_waveforms {
+            let _ = state.db.add_column("_fingerprint").await;
+        }
     }
 
-    // Count enabled algorithms
     let mut counter = 0;
     let mut total = 1;
     if enabled.basic {
@@ -102,7 +104,6 @@ pub async fn search(
 
     println!("Running {} algorithms", counter);
 
-    // Emit initial status
     app.emit(
         "search-status",
         StatusUpdate {
@@ -113,7 +114,6 @@ pub async fn search(
     )
     .unwrap();
 
-    // Run first phase
     {
         let mut state = state.lock().await;
         if *state.db.abort.read().await {
@@ -150,8 +150,6 @@ pub async fn search(
         .unwrap();
         counter += 1;
         state.db.compare_search(&enabled, &pref, &app).await;
-
-        // Emit progress update
     }
 
     if enabled.basic {
@@ -182,8 +180,6 @@ pub async fn search(
         .unwrap();
 
         state.db.records.sort_by(|a, b| a.root.cmp(&b.root));
-
-        // Emit progress update
     }
 
     if enabled.waveform {
@@ -203,10 +199,7 @@ pub async fn search(
         .unwrap();
         counter += 1;
 
-        // state.db.wave_search(&pref);
         let _ = state.db.wave_search_chromaprint(&pref, &app).await;
-
-        // Emit progress update
     }
     {
         let state = state.lock().await;
@@ -215,7 +208,6 @@ pub async fn search(
         }
     }
 
-    // Final update
     app.emit(
         "search-status",
         StatusUpdate {
@@ -230,7 +222,14 @@ pub async fn search(
     get_results(state).await
 }
 
-// Define a struct for search status updates
+#[tauri::command]
+pub async fn clear_fingerprints(state: State<'_, Mutex<AppState>>) -> Result<Arc<str>, String> {
+    println!("Clearing Fingerprints");
+    let state = state.lock().await;
+    let _ = state.db.remove_column("_fingerprint").await;
+    println!("Fingerprints Cleared");
+    Ok(state.db.get_name().unwrap_or(Arc::from("Select Database")))
+}
 
 #[tauri::command]
 pub async fn remove_records(
