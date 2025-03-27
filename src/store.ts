@@ -121,6 +121,17 @@ const gruvboxColors = {
     inactiveColor: "#928374"  // Gruvbox gray
 };
 
+export const defaultAlgorithms: Algorithm[] = [
+    { id: 'basic', name: 'Duplicate Search', enabled: true },
+    { id: 'invalidpath', name: 'Invalid Files', enabled: false },
+    { id: 'filename', name: 'Similar Filename', enabled: false },
+    { id: 'duration', name: 'Minimum Duration:', enabled: false, min_dur: 0.5 },
+    { id: 'audiosuite', name: 'Audiosuite Tags', enabled: false },
+    { id: 'filetags', name: 'Filename Contains Tag', enabled: false },
+    { id: 'waveform', name: 'Audio Content Comparison', enabled: false, db: null },
+    { id: 'dbcompare', name: 'Database Compare:', enabled: false },
+];
+
 export const defaultPreferences: Preferences = {
     display_all_records: true,
     match_criteria: ['Filename', 'Channels', 'Duration'],
@@ -133,16 +144,7 @@ export const defaultPreferences: Preferences = {
     similarity_threshold: 90,
     store_waveforms: true,
     fetch_waveforms: true,
-    algorithms: [
-        { id: 'basic', name: 'Duplicate Search', enabled: true },
-        { id: 'invalidpath', name: 'Invalid Files', enabled: false },
-        { id: 'filename', name: 'Similar Filename', enabled: false },
-        { id: 'duration', name: 'Minimum Duration:', enabled: false, min_dur: 0.5 },
-        { id: 'audiosuite', name: 'Audiosuite Tags', enabled: false },
-        { id: 'filetags', name: 'Filename Contains Tag', enabled: false },
-        { id: 'waveform', name: 'Audio Content Comparison', enabled: false, db: null },
-        { id: 'dbcompare', name: 'Database Compare:', enabled: false },
-    ],
+    algorithms: defaultAlgorithms,
     preservation_order: [
         {
             column: "Description",
@@ -391,14 +393,17 @@ const TJFPreferences: Preferences = {
 }
 
 
-// Replace the existing preferences store initialization with this:
 const storedPreferences = localStorage.getItem('preferencesInfo');
 let initialPreferences: Preferences;
 try {
     const parsedPreferences = storedPreferences ? JSON.parse(storedPreferences) : null;
-    // Check if parsedPreferences is null, undefined, or empty object
+
+    // Ensure algorithms are always present, even if not in stored preferences
     initialPreferences = parsedPreferences && Object.keys(parsedPreferences).length > 0
-        ? parsedPreferences
+        ? {
+            ...parsedPreferences,
+            algorithms: parsedPreferences.algorithms || defaultAlgorithms
+        }
         : defaultPreferences;
 } catch (e) {
     console.error('Error loading preferences:', e);
@@ -410,7 +415,12 @@ export const preferencesStore = writable<Preferences>(initialPreferences);
 // Update the subscription to prevent saving empty preferences
 preferencesStore.subscribe(value => {
     if (value && Object.keys(value).length > 0) {
-        localStorage.setItem('preferencesInfo', JSON.stringify(value));
+        // Ensure algorithms are always saved
+        const prefsToSave = {
+            ...value,
+            algorithms: value.algorithms || defaultAlgorithms
+        };
+        localStorage.setItem('preferencesInfo', JSON.stringify(prefsToSave));
     } else {
         // If preferences become empty, reset to defaults
         preferencesStore.set(defaultPreferences);

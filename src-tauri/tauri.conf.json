@@ -18,7 +18,13 @@
         "height": 900,
         "resizable": true,
         "devtools": true,
-        "dragDropEnabled": false
+        "dragDropEnabled": false,
+        "visible": true,
+        "fullscreen": false,
+        "focus": true,
+        "center": true,
+        "decorations": true,
+        "alwaysOnTop": false
       }
     ],
     "security": {

@@ -76,7 +76,7 @@
     // let algorithms = get(algorithmsStore);
 
     $: isBasicEnabled =
-        $preferencesStore.algorithms.find((a) => a.id === "basic")?.enabled ||
+        $preferencesStore?.algorithms?.find((a) => a.id === "basic")?.enabled ||
         false;
 
     function getAlgoClass(algo: { id: string }, algorithms: any[]) {
@@ -143,6 +143,13 @@
 
     // Update the search function
     async function search() {
+        if (!$preferencesStore || !$preferencesStore.algorithms) {
+            console.error("Preferences store not properly initialized");
+            alert(
+                "Application settings not loaded properly. Please restart the application.",
+            );
+            return;
+        }
         let $pref = get(preferencesStore);
         let algorithms = $pref.algorithms; // Get algorithms directly from preferences
 

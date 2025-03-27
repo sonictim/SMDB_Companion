@@ -58,6 +58,8 @@ check_file "./resources/libchromaprint.a"
 echo "Checking library architecture:"
 lipo -info ./resources/libchromaprint.a
 
+# cargo clean
+
 cargo tauri build --target universal-apple-darwin
 
 

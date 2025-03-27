@@ -30,6 +30,41 @@
   import { preferencesStore } from "../store";
   import type { Preferences } from "../store";
 
+  let appInitialized = false;
+  let initError: unknown = null;
+
+  // Wrap your onMount in proper error handling
+  onMount(async () => {
+    try {
+      console.log("Starting app initialization");
+
+      // Ensure window is visible and properly positioned
+      const mainWindow = Window.getCurrent();
+      await mainWindow.show();
+      await mainWindow.setFocus();
+
+      // Reset position in case window was created offscreen
+      await mainWindow.center();
+
+      console.log("Window setup complete");
+
+      // Run your initialization code
+      await checkRegistered();
+
+      // Check for updates (but don't block UI on this)
+      checkForUpdates().catch((err) => {
+        console.error("Update check failed:", err);
+      });
+
+      // Mark initialization as complete
+      appInitialized = true;
+      console.log("App initialization complete");
+    } catch (error) {
+      console.error("Fatal error during app initialization:", error);
+      initError = error;
+    }
+  });
+
   let pref: Preferences = get(preferencesStore);
 
   let preferences;
@@ -284,6 +319,29 @@
   });
 </script>
 
+<svelte:head>
+  <script>
+    // Force window visibility at the earliest possible moment
+    if (window.__TAURI__) {
+      window.__TAURI__.window.getCurrent().show();
+      console.log("Early window show initiated");
+    }
+  </script>
+</svelte:head>
+
+{#if !appInitialized && !initError}
+  <div class="loading-screen">
+    <div class="spinner"></div>
+    <p>Loading SMDB Companion...</p>
+  </div>
+{:else if initError}
+  <div class="error-screen">
+    <h2>Error Starting Application</h2>
+    <p>{initError instanceof Error ? initError.message : "Unknown error"}</p>
+    <button on:click={() => window.location.reload()}>Retry</button>
+  </div>
+{/if}
+
 <div class="app-container">
   <!-- Top Bar -->
   <div class="top-bar">
@@ -347,3 +405,50 @@
     {/if}
   </main>
 </div>
+
+<style>
+  .hidden {
+    display: none;
+  }
+
+  .loading-screen,
+  .error-screen {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    width: 100vw;
+    background-color: var(--primary-bg, #1a1a1a);
+    color: var(--text-color, #ffffff);
+  }
+
+  .spinner {
+    width: 50px;
+    height: 50px;
+    border: 5px solid rgba(255, 255, 255, 0.2);
+    border-radius: 50%;
+    border-top-color: var(--accent-color, #007acc);
+    animation: spin 1s ease-in-out infinite;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  .error-screen {
+    color: var(--warning-color, #ff4444);
+  }
+
+  .error-screen button {
+    margin-top: 20px;
+    padding: 8px 16px;
+    background: var(--accent-color, #007acc);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+</style>

@@ -20,6 +20,7 @@
         preferencesStore,
         PresetsStore,
         defaultPreferences,
+        defaultAlgorithms,
         // algorithmsStore,
     } from "../../store";
     import { get } from "svelte/store";
@@ -96,23 +97,22 @@
             // Create deep copies to avoid reference issues
             const prefCopy = structuredClone(presetObj.pref);
 
-            // Ensure the algorithms are valid before setting stores
+            // Ensure algorithms are set correctly
             if (prefCopy && prefCopy.algorithms) {
                 console.log("Loading algorithms:", prefCopy.algorithms);
 
-                // First set the algorithms store
-
-                // Then set the preferences store
+                // Set the preferences store, which will include algorithms
                 preferencesStore.set(prefCopy);
 
-                // Log to verify both stores were updated
+                // Log to verify store was updated
                 console.log(
                     "Preferences store updated:",
                     get(preferencesStore),
                 );
             } else {
                 console.error("Invalid algorithms in preset:", selectedPreset);
-                // Set preferences without touching algorithms
+                // Fallback to default algorithms if not present
+                prefCopy.algorithms = defaultAlgorithms;
                 preferencesStore.set(prefCopy);
             }
 
