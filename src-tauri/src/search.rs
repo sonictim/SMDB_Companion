@@ -687,14 +687,51 @@ impl Database {
     ) -> Result<(), String> {
         println!("Starting fingerprint collection");
 
+        // Initial status message so user knows process has started
+        app.emit(
+            "search-sub-status",
+            StatusUpdate {
+                stage: "fingerprinting".into(),
+                progress: 0,
+                message: "Starting audio fingerprint analysis...".into(),
+            },
+        )
+        .ok();
+
         // MORE AGGRESSIVE OPTIMIZATIONS
         const BATCH_SIZE: usize = 100; // Larger batch size for fewer transactions
         const STORAGE_INTERVAL: usize = 250; // Store every 250 records processed
         const PROGRESS_INTERVAL: usize = RECORD_DIVISOR * 5; // Less frequent progress updates
 
+        // Pre-scan status update
+        app.emit(
+            "search-sub-status",
+            StatusUpdate {
+                stage: "fingerprinting".into(),
+                progress: 2,
+                message: format!("Pre-scanning {} audio files...", self.records.len()),
+            },
+        )
+        .ok();
+
         // 1. PRE-FILTERING OPTIMIZATION: Use indexed access for faster filtering
         let mut records_needing_fingerprints = BitSet::with_capacity(self.records.len());
+        let update_frequency = std::cmp::max(self.records.len() / 10, 1); // Update ~10 times during scan
+
         for (idx, record) in self.records.iter().enumerate() {
+            // More frequent progress updates
+            if idx % update_frequency == 0 || idx == self.records.len() - 1 {
+                app.emit(
+                    "search-sub-status",
+                    StatusUpdate {
+                        stage: "fingerprinting".into(),
+                        progress: (idx * 100 / self.records.len()) as u64,
+                        message: format!("Scanning files: {}/{}", idx, self.records.len()),
+                    },
+                )
+                .ok();
+            }
+
             // Skip invalid paths completely - no need to fingerprint them
             // if record.algorithm.contains(&Algorithm::InvalidPath) {
             //     continue;
@@ -713,10 +750,40 @@ impl Database {
 
         if records_needing_fingerprints.is_empty() {
             println!("No fingerprints needed - all files already processed");
+            app.emit(
+                "search-sub-status",
+                StatusUpdate {
+                    stage: "fingerprinting".into(),
+                    progress: 100,
+                    message: "All files already have fingerprints - skipping analysis".into(),
+                },
+            )
+            .ok();
             return Ok(());
         }
 
         let total_to_process = records_needing_fingerprints.len();
+        app.emit(
+            "search-sub-status",
+            StatusUpdate {
+                stage: "fingerprinting".into(),
+                progress: 100,
+                message: format!("Found {} files requiring fingerprinting", total_to_process),
+            },
+        )
+        .ok();
+
+        // Preparation status update
+        app.emit(
+            "search-sub-status",
+            StatusUpdate {
+                stage: "fingerprinting".into(),
+                progress: 0,
+                message: format!("Preparing to process {} audio files...", total_to_process),
+            },
+        )
+        .ok();
+
         println!("Found {} files requiring fingerprinting", total_to_process);
         println!("{:#?}", records_needing_fingerprints);
 
@@ -724,12 +791,35 @@ impl Database {
         let mut checkpoint_file = std::env::temp_dir();
         checkpoint_file.push("smdb_fingerprint_progress.json");
 
+        // More detailed checkpoint status
         let mut start_from = 0;
         if checkpoint_file.exists() && pref.store_waveforms {
+            app.emit(
+                "search-sub-status",
+                StatusUpdate {
+                    stage: "fingerprinting".into(),
+                    progress: 0,
+                    message: "Reading checkpoint data...".into(),
+                },
+            )
+            .ok();
+
             if let Ok(contents) = std::fs::read_to_string(&checkpoint_file) {
                 if let Ok(checkpoint) = serde_json::from_str::<usize>(&contents) {
                     if checkpoint < total_to_process {
                         start_from = checkpoint;
+                        app.emit(
+                            "search-sub-status",
+                            StatusUpdate {
+                                stage: "fingerprinting".into(),
+                                progress: (start_from * 100 / total_to_process) as u64,
+                                message: format!(
+                                    "Resuming from checkpoint: {}/{} files",
+                                    start_from, total_to_process
+                                ),
+                            },
+                        )
+                        .ok();
                         println!(
                             "Resuming from checkpoint: {} of {}",
                             start_from, total_to_process
@@ -743,12 +833,45 @@ impl Database {
         let mut fingerprints_to_store = Vec::with_capacity(STORAGE_INTERVAL);
         let mut processed = start_from;
 
+        // Database connection status
+        if pref.store_waveforms {
+            app.emit(
+                "search-sub-status",
+                StatusUpdate {
+                    stage: "fingerprinting".into(),
+                    progress: 0,
+                    message: "Connecting to fingerprint database...".into(),
+                },
+            )
+            .ok();
+        }
+
         // 4. CONNECTION POOL OPTIMIZATION: Get connection pool once, with retry logic
         let db_pool = if pref.store_waveforms {
             match self.get_pool().await {
-                Some(pool) => Some(pool),
+                Some(pool) => {
+                    app.emit(
+                        "search-sub-status",
+                        StatusUpdate {
+                            stage: "fingerprinting".into(),
+                            progress: 0,
+                            message: "Database connection established".into(),
+                        },
+                    )
+                    .ok();
+                    Some(pool)
+                }
                 None => {
                     // Retry connection once after a short delay
+                    app.emit(
+                        "search-sub-status",
+                        StatusUpdate {
+                            stage: "fingerprinting".into(),
+                            progress: 0,
+                            message: "Retrying database connection...".into(),
+                        },
+                    )
+                    .ok();
                     std::thread::sleep(std::time::Duration::from_millis(100));
                     self.get_pool().await
                 }
@@ -765,7 +888,44 @@ impl Database {
             .build()
             .unwrap_or_else(|_| rayon::ThreadPoolBuilder::new().build().unwrap());
 
+        // Thread pool initialization status
+        app.emit(
+            "search-sub-status",
+            StatusUpdate {
+                stage: "fingerprinting".into(),
+                progress: 0,
+                message: "Initializing processing threads...".into(),
+            },
+        )
+        .ok();
+
+        app.emit(
+            "search-sub-status",
+            StatusUpdate {
+                stage: "fingerprinting".into(),
+                progress: 0,
+                message: format!(
+                    "Starting fingerprint analysis with {} threads",
+                    thread_count
+                ),
+            },
+        )
+        .ok();
+
         println!("Processing with {} threads", thread_count);
+
+        app.emit(
+            "search-status",
+            StatusUpdate {
+                stage: "fingerprinting".into(),
+                progress: (processed * 100 / total_to_process) as u64,
+                message: format!(
+                    "Analyzing audio content for waveform analysis: ({}/{}) ",
+                    processed, total_to_process
+                ),
+            },
+        )
+        .ok();
 
         // 6. BATCH PROCESSING OPTIMIZATION: Process in chunks
         for chunk_idx in (start_from..total_to_process).step_by(BATCH_SIZE) {
@@ -825,6 +985,16 @@ impl Database {
                         let fingerprint = match audio::get_chromaprint_fingerprint(&record.path) {
                             Some(fp) => {
                                 println!("SUCCESS fingerprint for: {}", record.get_filepath());
+                                // Emit update for each individual record as it's processed
+                                app.emit(
+                                    "search-sub-status",
+                                    StatusUpdate {
+                                        stage: "fingerprinting".into(),
+                                        progress: ((idx % BATCH_SIZE) * 100 / BATCH_SIZE) as u64,
+                                        message: format!("{} ", record.get_filename()),
+                                    },
+                                )
+                                .ok();
                                 Some(Arc::from(fp.as_str()))
                             }
                             None => {
@@ -901,28 +1071,18 @@ impl Database {
             }
 
             // 15. PROGRESS REPORTING OPTIMIZATION: Less frequent updates
-            if processed % 2 == 0 || processed == total_to_process {
-                // if processed % PROGRESS_INTERVAL == 0 || processed == total_to_process {
-                // Get current filename being processed (from last batch)
-                let current_file = if let Some(&idx) = current_indices.first() {
-                    self.records[idx].get_filename()
-                } else {
-                    "Unknown"
-                };
-
-                app.emit(
-                    "search-sub-status",
-                    StatusUpdate {
-                        stage: "fingerprinting".into(),
-                        progress: (processed * 100 / total_to_process) as u64,
-                        message: format!(
-                            "Processing: ({}/{}) {} ",
-                            processed, total_to_process, current_file
-                        ),
-                    },
-                )
-                .ok();
-            }
+            app.emit(
+                "search-status",
+                StatusUpdate {
+                    stage: "fingerprinting".into(),
+                    progress: (processed * 100 / total_to_process) as u64,
+                    message: format!(
+                        "Analyzing audio content for waveform analysis: ({}/{}) ",
+                        processed, total_to_process
+                    ),
+                },
+            )
+            .ok();
         }
 
         // Remove checkpoint file on successful completion
