@@ -690,16 +690,19 @@ impl Database {
         pref: &Preferences,
         app: &AppHandle,
     ) -> Result<(), String> {
-        const BATCH_SIZE: usize = 2000;
-        const STORE_MIN_INTERVAL: usize = 200;
+        let mut batch_size: usize = 2000;
+        let total_records = self.records.len();
+        if batch_size > total_records {
+            batch_size = total_records;
+        }
         let completed = AtomicUsize::new(0);
+        const STORE_MIN_INTERVAL: usize = 200;
 
         let pool = self.get_pool().await;
-        let total_records = self.records.len();
 
-        let mut record_ids_to_store: Vec<(usize, String)> = Vec::with_capacity(BATCH_SIZE);
+        let mut record_ids_to_store: Vec<(usize, String)> = Vec::with_capacity(batch_size);
 
-        for chunk in self.records.chunks_mut(BATCH_SIZE) {
+        for chunk in self.records.chunks_mut(batch_size) {
             if *self.abort.read().await {
                 println!("Aborting fingerprint scan");
                 return Err("Aborted".to_string());
@@ -729,7 +732,7 @@ impl Database {
                         "search-sub-status",
                         StatusUpdate {
                             stage: "fingerprinting".into(),
-                            progress: ((new_completed % BATCH_SIZE) * 100 / BATCH_SIZE) as u64,
+                            progress: ((new_completed % batch_size) * 100 / batch_size) as u64,
                             message: format!("{} ", record.get_filename()),
                         },
                     )
