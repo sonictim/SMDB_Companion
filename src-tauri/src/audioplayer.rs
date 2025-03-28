@@ -34,7 +34,7 @@ impl AudioManager {
         thread::spawn(move || {
             // Audio state stays in this thread
             match OutputStream::try_default() {
-                Ok((stream, stream_handle)) => {
+                Ok((_stream, stream_handle)) => {
                     println!("✅ Audio device initialized successfully");
                     let mut current_sink: Option<Sink> = None;
 

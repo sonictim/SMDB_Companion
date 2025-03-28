@@ -233,7 +233,13 @@ impl Database {
         let records_without_fingerprints: Vec<FileRecord> = self
             .records
             .iter()
-            .filter(|record| record.fingerprint.is_none())
+            .filter(|record| {
+                record.fingerprint.is_none()
+                    || record
+                        .fingerprint
+                        .as_ref()
+                        .is_some_and(|fp| &**fp == "FAILED")
+            })
             .cloned()
             .collect();
 
@@ -351,7 +357,13 @@ impl Database {
         let (chromaprint_records, pcm_hash_records): (Vec<&FileRecord>, Vec<&FileRecord>) = self
             .records
             .iter()
-            .filter(|record| record.fingerprint.as_ref().is_some_and(|fp| !fp.is_empty()))
+            .filter(|record| {
+                // Add check to exclude FAILED fingerprints
+                record
+                    .fingerprint
+                    .as_ref()
+                    .is_some_and(|fp| !fp.is_empty() && &**fp != "FAILED")
+            })
             .partition(|record| {
                 let fp = record.fingerprint.as_ref().unwrap();
                 !fp.starts_with("PCM:")
@@ -906,7 +918,7 @@ impl Database {
                                             .metadata()
                                             .map_or(0, |m| m.len())
                                     );
-                                    None
+                                    Some(Arc::from("FAILED"))
                                 }
                             };
 

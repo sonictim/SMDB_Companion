@@ -33,15 +33,14 @@ declare module '$env/static/private' {
 	export const SHELL: string;
 	export const TMPDIR: string;
 	export const CARGO_BUILD_JOBS: string;
-	export const APPLE_ID: string;
 	export const TERM_PROGRAM_VERSION: string;
 	export const ZDOTDIR: string;
 	export const TAURI_CLI_VERBOSITY: string;
 	export const ORIGINAL_XDG_CURRENT_DESKTOP: string;
 	export const MallocNanoZone: string;
+	export const TAURI_ENV_DEBUG: string;
 	export const npm_config_registry: string;
 	export const PNPM_HOME: string;
-	export const APPLE_PASSWORD: string;
 	export const USER: string;
 	export const TAURI_ENV_TARGET_TRIPLE: string;
 	export const COMMAND_MODE: string;
@@ -53,7 +52,6 @@ declare module '$env/static/private' {
 	export const TAURI_ENV_PLATFORM: string;
 	export const npm_config_frozen_lockfile: string;
 	export const npm_config_verify_deps_before_run: string;
-	export const APPLE_TEAM_ID: string;
 	export const PATH: string;
 	export const CARGO_HOME: string;
 	export const __CFBundleIdentifier: string;
@@ -84,7 +82,6 @@ declare module '$env/static/private' {
 	export const LOGNAME: string;
 	export const npm_lifecycle_script: string;
 	export const VSCODE_GIT_IPC_HANDLE: string;
-	export const APPLE_CERTIFICATE: string;
 	export const npm_config_user_agent: string;
 	export const VSCODE_GIT_ASKPASS_NODE: string;
 	export const GIT_ASKPASS: string;
@@ -129,15 +126,14 @@ declare module '$env/dynamic/private' {
 		SHELL: string;
 		TMPDIR: string;
 		CARGO_BUILD_JOBS: string;
-		APPLE_ID: string;
 		TERM_PROGRAM_VERSION: string;
 		ZDOTDIR: string;
 		TAURI_CLI_VERBOSITY: string;
 		ORIGINAL_XDG_CURRENT_DESKTOP: string;
 		MallocNanoZone: string;
+		TAURI_ENV_DEBUG: string;
 		npm_config_registry: string;
 		PNPM_HOME: string;
-		APPLE_PASSWORD: string;
 		USER: string;
 		TAURI_ENV_TARGET_TRIPLE: string;
 		COMMAND_MODE: string;
@@ -149,7 +145,6 @@ declare module '$env/dynamic/private' {
 		TAURI_ENV_PLATFORM: string;
 		npm_config_frozen_lockfile: string;
 		npm_config_verify_deps_before_run: string;
-		APPLE_TEAM_ID: string;
 		PATH: string;
 		CARGO_HOME: string;
 		__CFBundleIdentifier: string;
@@ -180,7 +175,6 @@ declare module '$env/dynamic/private' {
 		LOGNAME: string;
 		npm_lifecycle_script: string;
 		VSCODE_GIT_IPC_HANDLE: string;
-		APPLE_CERTIFICATE: string;
 		npm_config_user_agent: string;
 		VSCODE_GIT_ASKPASS_NODE: string;
 		GIT_ASKPASS: string;
