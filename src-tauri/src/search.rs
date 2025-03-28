@@ -720,35 +720,74 @@ impl Database {
         .ok();
 
         // 1. PRE-FILTERING OPTIMIZATION: Use indexed access for faster filtering
-        let mut records_needing_fingerprints = BitSet::with_capacity(self.records.len());
+
         let update_frequency = std::cmp::max(self.records.len() / 100, 1);
+        let records_needing_fingerprints: HashSet<usize> = self
+            .records
+            .par_iter()
+            .enumerate()
+            .filter_map(|(idx, record)| {
+                // Check for cancellation
+                if idx % 100 == 0 {
+                    if let Ok(guard) = self.abort.try_read() {
+                        if *guard {
+                            println!("SKIP: Aborting fingerprint scan at index {}", idx);
+                            return None;
+                        }
+                    }
+                }
+                if idx % update_frequency == 0 || idx == self.records.len() - 1 {
+                    app.emit(
+                        "search-sub-status",
+                        StatusUpdate {
+                            stage: "fingerprinting".into(),
+                            progress: (idx * 100 / self.records.len()) as u64,
+                            message: format!("Scanning files: {}/{}", idx, self.records.len()),
+                        },
+                    )
+                    .ok();
+                }
 
-        for (idx, record) in self.records.iter().enumerate() {
-            if idx % 100 == 0 && *self.abort.read().await {
-                return Err("Aborted during pre-scan".to_string());
-            }
+                let path = PathBuf::from(record.get_filepath());
 
-            if idx % update_frequency == 0 || idx == self.records.len() - 1 {
-                app.emit(
-                    "search-sub-status",
-                    StatusUpdate {
-                        stage: "fingerprinting".into(),
-                        progress: (idx * 100 / self.records.len()) as u64,
-                        message: format!("Scanning files: {}/{}", idx, self.records.len()),
-                    },
-                )
-                .ok();
-            }
+                // Add detailed logging for each reason a file might be skipped
+                if !path.exists() {
+                    println!(
+                        "SKIP fingerprinting: File does not exist: {}",
+                        record.get_filepath()
+                    );
+                    return None;
+                }
 
-            let path = PathBuf::from(record.get_filepath());
-            if !path.exists() || !path.is_file() {
-                continue;
-            }
+                if !path.is_file() {
+                    println!(
+                        "SKIP fingerprinting: Not a regular file: {}",
+                        record.get_filepath()
+                    );
+                    return None;
+                }
 
-            if record.fingerprint.is_none() {
-                records_needing_fingerprints.insert(idx);
-            }
-        }
+                if record.fingerprint.is_some() {
+                    let status = match &record.fingerprint {
+                        Some(fp) if &**fp == "FAILED" => "previously FAILED",
+                        _ => "already has fingerprint",
+                    };
+                    println!(
+                        "SKIP fingerprinting: File {}: {}",
+                        status,
+                        record.get_filepath()
+                    );
+                    return None;
+                }
+
+                // File needs fingerprinting
+                if idx % 50 == 0 {
+                    // Log every 50th file to avoid console spam
+                    println!("QUEUE for fingerprinting: {}", record.get_filepath());
+                }
+                Some(idx)
+            })
+            .collect();
 
         if records_needing_fingerprints.is_empty() {
             println!("No fingerprints needed - all files already processed");
@@ -788,7 +827,7 @@ impl Database {
         .ok();
 
         println!("Found {} files requiring fingerprinting", total_to_process);
-        println!("{:#?}", records_needing_fingerprints);
+        // println!("{:#?}", records_needing_fingerprints);
 
         let start_from = 0;
 
@@ -871,7 +910,7 @@ impl Database {
 
             let end_idx = std::cmp::min(chunk_idx + batch_size, total_to_process);
             let current_indices: Vec<usize> = (chunk_idx..end_idx)
-                .filter(|&idx| records_needing_fingerprints.contains(idx))
+                .filter(|&idx| records_needing_fingerprints.contains(&idx))
                 .collect();
 
             let completed = AtomicUsize::new(0);
