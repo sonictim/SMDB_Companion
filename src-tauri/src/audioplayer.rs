@@ -1,10 +1,10 @@
 // Replace your current AudioState implementation with this:
 
 use once_cell::sync::Lazy;
-use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink};
+use rodio::{Decoder, OutputStream, Sink};
 use std::fs::File;
 use std::io::BufReader;
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::{self, Sender};
 use std::thread;
 
 // Thread-safe audio commands

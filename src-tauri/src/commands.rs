@@ -84,9 +84,7 @@ pub async fn search(
     println!("Starting Search");
     {
         let state = state.lock().await;
-        *state.db.abort.write().await = false;
-        // if pref.fetch_waveforms {
-        // }
+        state.db.abort.store(false, Ordering::SeqCst);
         let _ = state.db.add_column("_fingerprint").await;
     }
 
@@ -102,8 +100,6 @@ pub async fn search(
         total += 1;
     }
 
-    println!("Running {} algorithms", counter);
-
     app.emit(
         "search-status",
         StatusUpdate {
@@ -112,11 +108,20 @@ pub async fn search(
             message: "Starting search...".into(),
         },
     )
-    .unwrap();
+    .ok();
+    app.emit(
+        "search-sub-status",
+        StatusUpdate {
+            stage: "starting".into(),
+            progress: 0,
+            message: "Gathering records from database...".into(),
+        },
+    )
+    .ok();
 
     {
         let mut state = state.lock().await;
-        if *state.db.abort.read().await {
+        if state.db.abort.load(Ordering::SeqCst) {
             return Err(String::from("Search Canceled"));
         }
 
@@ -136,7 +141,7 @@ pub async fn search(
 
     if enabled.dbcompare {
         let mut state = state.lock().await;
-        if *state.db.abort.read().await {
+        if state.db.abort.load(Ordering::SeqCst) {
             return Err(String::from("Search Canceled"));
         }
         app.emit(
@@ -154,7 +159,7 @@ pub async fn search(
 
     if enabled.basic {
         let mut state = state.lock().await;
-        if *state.db.abort.read().await {
+        if state.db.abort.load(Ordering::SeqCst) {
             return Err(String::from("Search Canceled"));
         }
         app.emit(
@@ -184,7 +189,7 @@ pub async fn search(
 
     if enabled.waveform {
         let mut state = state.lock().await;
-        if *state.db.abort.read().await {
+        if state.db.abort.load(Ordering::SeqCst) {
             return Err(String::from("Search Canceled"));
         }
 
@@ -203,7 +208,7 @@ pub async fn search(
     }
     {
         let state = state.lock().await;
-        if *state.db.abort.read().await {
+        if state.db.abort.load(Ordering::SeqCst) {
             return Err(String::from("Search Canceled"));
         }
     }
@@ -491,7 +496,8 @@ pub fn open_quicklook(file_path: String) {
 #[tauri::command]
 pub async fn cancel_search(state: State<'_, Mutex<AppState>>) -> Result<String, String> {
     let state = state.lock().await;
-    *state.db.abort.write().await = true;
+    // *state.db.abort.write().await = true;
+    state.db.abort.store(true, Ordering::SeqCst);
 
     Ok(String::from("Search Canceled"))
 }

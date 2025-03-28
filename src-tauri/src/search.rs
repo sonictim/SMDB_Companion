@@ -8,7 +8,7 @@ use preferences::*;
 use rayon::prelude::*;
 pub use sqlx::sqlite::SqlitePool;
 use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tauri::{AppHandle, Emitter};
 
@@ -248,7 +248,7 @@ impl Database {
 
         // Group records by waveform
         for (i, record) in self.records.iter().enumerate() {
-            if *self.abort.read().await {
+            if self.abort.load(Ordering::SeqCst) {
                 return Err("Aborted".to_string());
             };
             if i % RECORD_DIVISOR == 0 || i == 0 || i == self.records.len() - 1 {
@@ -544,20 +544,15 @@ impl Database {
 
                 // Process in smaller batches and report progress
                 for i in 0..total_records {
-                    // Progress reporting code...
-                    // let update_interval = (total_records.max(20) / 100).max(1);
-                    // if i % update_interval == 0 {
                     app.emit(
                         "search-sub-status",
                         StatusUpdate {
                             stage: "similarity".into(),
-                            // progress: 40 + ((i * 30) / total_records) as u64,
                             progress: (i * 100 / total_records) as u64,
                             message: format!("Finding similar audio: {}/{}", i, total_records),
                         },
                     )
                     .ok();
-                    // }
 
                     let idx = chromaprint_records[i].id;
                     if let Some(ref fp_i) = decoded_fps[i] {
@@ -589,7 +584,6 @@ impl Database {
                 groups
             };
 
-            // PROGRESS: Update before processing groups
             app.emit(
                 "search-sub-status",
                 StatusUpdate {
@@ -603,41 +597,87 @@ impl Database {
             )
             .ok();
 
-            // Process groups with progress updates
+            // Process groups with progress updates - optimized for large databases
             let total_groups = similarity_groups.len();
-            for (i, (_, group)) in similarity_groups.iter().enumerate() {
-                // Update every 5% of groups processed
-                let update_interval = (total_groups.max(20) / 100).max(1);
-                if i % update_interval == 0 {
-                    app.emit(
-                        "search-sub-status",
-                        StatusUpdate {
-                            stage: "similarity".into(),
-                            progress: 70 + ((i * 20) / total_groups) as u64,
-                            message: format!("Sorting similar groups: {}/{}", i, total_groups),
-                        },
-                    )
-                    .ok();
+            let mut groups_processed = 0;
+            let max_group_size = 1000; // Limit extremely large groups
+
+            // Use chunks to process groups in batches
+            for groups_chunk in similarity_groups.iter().collect::<Vec<_>>().chunks(50) {
+                if self.abort.load(Ordering::SeqCst) {
+                    return Err("Aborted during similarity group processing".to_string());
                 }
 
-                if group.len() > 1 {
-                    let mut group_records: Vec<FileRecord> = group
-                        .iter()
-                        .filter_map(|(idx, _)| all_records.iter().find(|r| r.id == *idx).cloned())
-                        .collect();
+                // Process this batch of groups
+                for (_, group) in groups_chunk {
+                    groups_processed += 1;
 
-                    pref.sort_vec(&mut group_records);
+                    // Update progress more frequently
+                    if groups_processed % 10 == 0 || groups_processed == total_groups {
+                        app.emit(
+                            "search-sub-status",
+                            StatusUpdate {
+                                stage: "similarity".into(),
+                                progress: 70 + ((groups_processed * 20) / total_groups) as u64,
+                                message: format!(
+                                    "Processing group {}/{} ({} items)",
+                                    groups_processed,
+                                    total_groups,
+                                    group.len()
+                                ),
+                            },
+                        )
+                        .ok();
+                    }
 
-                    for (j, mut record) in group_records.into_iter().enumerate() {
-                        processed_ids.insert(record.id);
+                    if group.len() > 1 {
+                        // Skip excessively large groups or process them differently
+                        if group.len() > max_group_size {
+                            println!(
+                                "Limiting oversized similarity group: {} items (max: {})",
+                                group.len(),
+                                max_group_size
+                            );
 
-                        record.algorithm.insert(Algorithm::SimilarAudio);
+                            // Take a sample of the large group instead
+                            let mut group_records: Vec<FileRecord> = group
+                                .iter()
+                                .take(max_group_size)
+                                .filter_map(|(idx, _)| {
+                                    all_records.iter().find(|r| r.id == *idx).cloned()
+                                })
+                                .collect();
 
-                        if j > 0 {
-                            record.algorithm.remove(&A::Keep);
+                            pref.sort_vec(&mut group_records);
+
+                            for (j, mut record) in group_records.into_iter().enumerate() {
+                                processed_ids.insert(record.id);
+                                record.algorithm.insert(Algorithm::SimilarAudio);
+                                if j > 0 {
+                                    record.algorithm.remove(&A::Keep);
+                                }
+                                processed_records.push(record);
+                            }
+                        } else {
+                            // Process normal-sized group
+                            let mut group_records: Vec<FileRecord> = group
+                                .iter()
+                                .filter_map(|(idx, _)| {
+                                    all_records.iter().find(|r| r.id == *idx).cloned()
+                                })
+                                .collect();
+
+                            pref.sort_vec(&mut group_records);
+
+                            for (j, mut record) in group_records.into_iter().enumerate() {
+                                processed_ids.insert(record.id);
+                                record.algorithm.insert(Algorithm::SimilarAudio);
+                                if j > 0 {
+                                    record.algorithm.remove(&A::Keep);
+                                }
+                                processed_records.push(record);
+                            }
                         }
-
-                        processed_records.push(record);
                     }
                 }
             }
@@ -673,7 +713,7 @@ impl Database {
     ) -> Result<(), String> {
         println!("Starting Waveform Search");
         self.gather_fingerprints(pref, app).await?;
-        if *self.abort.read().await {
+        if self.abort.load(Ordering::SeqCst) {
             return Err("Aborted".to_string());
         };
         if pref.exact_waveform {
@@ -703,7 +743,7 @@ impl Database {
         let mut record_ids_to_store: Vec<(usize, String)> = Vec::with_capacity(batch_size);
 
         for chunk in self.records.chunks_mut(batch_size) {
-            if *self.abort.read().await {
+            if self.abort.load(Ordering::SeqCst) {
                 println!("Aborting fingerprint scan");
                 return Err("Aborted".to_string());
             }
@@ -722,7 +762,7 @@ impl Database {
                             stage: "fingerprinting".into(),
                             progress: (new_completed * 100 / total_records) as u64,
                             message: format!(
-                                "Analyzing audio content for waveform analysis: ({}/{}) ",
+                                "Generating Audio Fingerprints: ({}/{}) ",
                                 new_completed, total_records
                             ),
                         },
@@ -766,345 +806,6 @@ impl Database {
                 store_fingerprints_batch_optimized(pool, &record_ids_to_store, app).await;
             }
             record_ids_to_store.clear(); // Clear after storing
-        }
-
-        Ok(())
-    }
-
-    async fn gather_fingerprints3(
-        &mut self,
-        pref: &Preferences,
-        app: &AppHandle,
-    ) -> Result<(), String> {
-        println!("Starting fingerprint collection");
-
-        // Initial status message so user knows process has started
-        app.emit(
-            "search-sub-status",
-            StatusUpdate {
-                stage: "fingerprinting".into(),
-                progress: 0,
-                message: "Starting audio fingerprint analysis...".into(),
-            },
-        )
-        .ok();
-
-        // OPTIMIZATIONS
-        let mut batch_size: usize = 1000;
-        const STORAGE_INTERVAL: usize = 200;
-        const PROGRESS_INTERVAL: usize = RECORD_DIVISOR * 5;
-
-        // Pre-scan status update
-        app.emit(
-            "search-sub-status",
-            StatusUpdate {
-                stage: "fingerprinting".into(),
-                progress: 2,
-                message: format!("Pre-scanning {} audio files...", self.records.len()),
-            },
-        )
-        .ok();
-
-        // 1. PRE-FILTERING OPTIMIZATION: Use indexed access for faster filtering
-
-        let update_frequency = std::cmp::max(self.records.len() / 100, 1);
-        let records_needing_fingerprints: HashSet<usize> = self
-            .records
-            .par_iter()
-            .enumerate()
-            .filter_map(|(idx, record)| {
-                // Check for cancellation
-                if idx % 100 == 0 {
-                    if let Ok(guard) = self.abort.try_read() {
-                        if *guard {
-                            println!("SKIP: Aborting fingerprint scan at index {}", idx);
-                            return None;
-                        }
-                    }
-                }
-                if idx % update_frequency == 0 || idx == self.records.len() - 1 {
-                    app.emit(
-                        "search-sub-status",
-                        StatusUpdate {
-                            stage: "fingerprinting".into(),
-                            progress: (idx * 100 / self.records.len()) as u64,
-                            message: format!("Scanning files: {}/{}", idx, self.records.len()),
-                        },
-                    )
-                    .ok();
-                }
-
-                let path = PathBuf::from(record.get_filepath());
-
-                // Add detailed logging for each reason a file might be skipped
-                if !path.exists() {
-                    println!(
-                        "SKIP fingerprinting: File does not exist: {}",
-                        record.get_filepath()
-                    );
-                    return None;
-                }
-
-                if !path.is_file() {
-                    println!(
-                        "SKIP fingerprinting: Not a regular file: {}",
-                        record.get_filepath()
-                    );
-                    return None;
-                }
-
-                if record.fingerprint.is_some() {
-                    let status = match &record.fingerprint {
-                        Some(fp) if &**fp == "FAILED" => "previously FAILED",
-                        _ => "already has fingerprint",
-                    };
-                    println!(
-                        "SKIP fingerprinting: File {}: {}",
-                        status,
-                        record.get_filepath()
-                    );
-                    return None;
-                }
-
-                // File needs fingerprinting
-                if idx % 50 == 0 {
-                    // Log every 50th file to avoid console spam
-                    println!("QUEUE for fingerprinting: {}", record.get_filepath());
-                }
-                Some(idx)
-            })
-            .collect();
-
-        if records_needing_fingerprints.is_empty() {
-            println!("No fingerprints needed - all files already processed");
-            app.emit(
-                "search-sub-status",
-                StatusUpdate {
-                    stage: "fingerprinting".into(),
-                    progress: 100,
-                    message: "All files already have fingerprints - skipping analysis".into(),
-                },
-            )
-            .ok();
-            return Ok(());
-        }
-
-        let total_to_process = records_needing_fingerprints.len();
-
-        app.emit(
-            "search-sub-status",
-            StatusUpdate {
-                stage: "fingerprinting".into(),
-                progress: 100,
-                message: format!("Found {} files requiring fingerprinting", total_to_process),
-            },
-        )
-        .ok();
-
-        // Initial status update
-        app.emit(
-            "search-sub-status",
-            StatusUpdate {
-                stage: "fingerprinting".into(),
-                progress: 0,
-                message: format!("Preparing to process {} audio files...", total_to_process),
-            },
-        )
-        .ok();
-
-        println!("Found {} files requiring fingerprinting", total_to_process);
-        // println!("{:#?}", records_needing_fingerprints);
-
-        let start_from = 0;
-
-        let mut fingerprints_to_store = Vec::with_capacity(STORAGE_INTERVAL);
-        let mut processed = start_from;
-
-        let db_pool = if pref.store_waveforms {
-            match self.get_pool().await {
-                Some(pool) => Some(pool),
-                None => {
-                    std::thread::sleep(std::time::Duration::from_millis(100));
-                    self.get_pool().await
-                }
-            }
-        } else {
-            None
-        };
-
-        let cpu_count = num_cpus::get();
-        let thread_count = std::cmp::min(cpu_count, 8);
-        let thread_pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(thread_count)
-            .build()
-            .unwrap_or_else(|_| rayon::ThreadPoolBuilder::new().build().unwrap());
-
-        app.emit(
-            "search-sub-status",
-            StatusUpdate {
-                stage: "fingerprinting".into(),
-                progress: 0,
-                message: format!(
-                    "Starting fingerprint analysis with {} threads",
-                    thread_count
-                ),
-            },
-        )
-        .ok();
-
-        println!("Processing with {} threads", thread_count);
-
-        if total_to_process < batch_size {
-            batch_size = total_to_process;
-        } else {
-            app.emit(
-                "search-status",
-                StatusUpdate {
-                    stage: "fingerprinting".into(),
-                    progress: (processed * 100 / total_to_process) as u64,
-                    message: format!(
-                        "Analyzing audio content for waveform analysis: ({}/{}) ",
-                        processed, total_to_process
-                    ),
-                },
-            )
-            .ok();
-        };
-
-        // Main processing loop with simplified abort checking
-        for chunk_idx in (start_from..total_to_process).step_by(batch_size) {
-            if *self.abort.read().await {
-                // Save any processed fingerprints before aborting
-                if !fingerprints_to_store.is_empty() && pref.store_waveforms {
-                    app.emit(
-                        "search-sub-status",
-                        StatusUpdate {
-                            stage: "saving".into(),
-                            progress: 100,
-                            message: "Cancelled - saving processed fingerprints...".into(),
-                        },
-                    )
-                    .ok();
-
-                    if let Some(ref pool) = db_pool {
-                        store_fingerprints_batch_optimized(pool, &fingerprints_to_store, app).await;
-                    }
-                }
-
-                return Err("Aborted".to_string());
-            }
-
-            let end_idx = std::cmp::min(chunk_idx + batch_size, total_to_process);
-            let current_indices: Vec<usize> = (chunk_idx..end_idx)
-                .filter(|&idx| records_needing_fingerprints.contains(&idx))
-                .collect();
-
-            let completed = AtomicUsize::new(0);
-            let batch_results: Vec<_> = thread_pool.install(|| {
-                current_indices
-                    .par_iter()
-                    .filter_map(|&idx| {
-                        let record = &self.records[idx];
-
-                        if record.algorithm.contains(&Algorithm::InvalidPath) {
-                            return None;
-                        }
-
-                        if record.fingerprint.is_some() {
-                            return None;
-                        }
-
-                        let fingerprint_result: Option<String> =
-                            audio::get_chromaprint_fingerprint(record.get_filepath());
-                        let fingerprint = match fingerprint_result {
-                            Some(fp) => {
-                                println!("SUCCESS fingerprint for: {}", record.get_filepath());
-
-                                let new_completed = completed.fetch_add(1, Ordering::SeqCst) + 1;
-                                app.emit(
-                                    "search-sub-status",
-                                    StatusUpdate {
-                                        stage: "fingerprinting".into(),
-                                        progress: ((new_completed % batch_size) * 100 / batch_size)
-                                            as u64,
-                                        message: format!("{} ", record.get_filename()),
-                                    },
-                                )
-                                .ok();
-                                Some(Arc::from(fp.as_str()))
-                            }
-                            None => {
-                                println!(
-                                    "FAILED fingerprint for: {} (exists: {}, size: {})",
-                                    record.get_filepath(),
-                                    Path::new(record.get_filepath()).exists(),
-                                    Path::new(record.get_filepath())
-                                        .metadata()
-                                        .map_or(0, |m| m.len())
-                                );
-                                Some(Arc::from("FAILED"))
-                            }
-                        };
-
-                        Some((idx, fingerprint))
-                    })
-                    .collect()
-            });
-
-            if *self.abort.read().await {
-                return Err("Aborted during batch processing".to_string());
-            }
-
-            for (idx, fingerprint) in &batch_results {
-                let record = &mut self.records[*idx];
-                record.fingerprint = fingerprint.clone();
-            }
-
-            fingerprints_to_store.extend(batch_results.iter().map(|(idx, fingerprint)| {
-                (
-                    self.records[*idx].id,
-                    fingerprint.clone().unwrap_or_default().to_string(),
-                )
-            }));
-
-            processed += batch_results.len();
-            if pref.store_waveforms
-                && !fingerprints_to_store.is_empty()
-                && (processed % STORAGE_INTERVAL == 0 || processed == total_to_process)
-            {
-                if let Some(ref pool) = db_pool {
-                    if processed % PROGRESS_INTERVAL == 0 || processed == total_to_process {
-                        app.emit(
-                            "search-sub-status",
-                            StatusUpdate {
-                                stage: "saving".into(),
-                                progress: (processed * 100 / total_to_process) as u64,
-                                message: format!(
-                                    "Saving batch: {}/{} processed",
-                                    processed, total_to_process
-                                ),
-                            },
-                        )
-                        .ok();
-                    }
-
-                    store_fingerprints_batch_optimized(pool, &fingerprints_to_store, app).await;
-                    fingerprints_to_store.clear();
-                }
-            }
-
-            app.emit(
-                "search-status",
-                StatusUpdate {
-                    stage: "fingerprinting".into(),
-                    progress: (processed * 100 / total_to_process) as u64,
-                    message: format!(
-                        "Analyzing audio content for waveform analysis: ({}/{}) ",
-                        processed, total_to_process
-                    ),
-                },
-            )
-            .ok();
         }
 
         Ok(())

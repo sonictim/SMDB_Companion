@@ -18,8 +18,8 @@ use std::collections::{HashMap, HashSet};
 use std::env;
 pub use std::fs::{self};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use tauri::async_runtime::{Mutex, RwLock};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use tauri::async_runtime::Mutex;
 use tauri::{AppHandle, Emitter};
 use tauri::{Manager, State};
 
@@ -162,25 +162,31 @@ impl FileRecord {
         let id = row.get::<u32, _>(0) as usize;
         let path_str: &str = row.get(1);
         let path = PathBuf::from(path_str);
+        // let path_exists = path.exists();
         let duration_str: &str = row.get(2);
-        let path_exists = path.exists();
         let description: &str = row.get(4);
         let channels = row.get(5);
         let bitdepth = row.get(6);
         let samplerate = row.get(7);
 
         let mut algorithm = HashSet::new();
-        if enabled.invalidpath && !path_exists {
+        let mut keep = true;
+        if enabled.invalidpath && !path.exists() {
             algorithm.insert(Algorithm::InvalidPath);
-        } else if enabled.duration && checkduration(duration_str, enabled.min_dur) {
+            keep = false;
+        }
+        if enabled.duration && checkduration(duration_str, enabled.min_dur) {
             algorithm.insert(Algorithm::Duration);
-        } else if enabled.filetags && checktags(path_str, &pref.autoselects) {
+            keep = false;
+        }
+        if enabled.filetags && checktags(path_str, &pref.autoselects) {
             algorithm.insert(Algorithm::FileTags);
-        } else {
+            keep = false;
+        }
+        if keep {
             algorithm.insert(Algorithm::Keep);
         }
 
-        // Create a HashMap for column data
         let mut data = HashMap::new();
 
         // Gather required columns from preferences
@@ -342,7 +348,8 @@ pub struct Database {
     size: usize,
     records: Vec<FileRecord>, // Changed from Arc<[FileRecord]> to Vec<FileRecord>
     is_compare: bool,
-    abort: Arc<RwLock<bool>>,
+    // abort: Arc<RwLock<bool>>,
+    abort: Arc<AtomicBool>,
 }
 
 impl Database {

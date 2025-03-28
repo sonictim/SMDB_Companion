@@ -13,7 +13,7 @@
     import { listen } from "@tauri-apps/api/event";
 
     // Define props
-    export let dbSize: number;
+    // export let dbSize: number;
     export let activeTab: string; // This prop is now bindable
     export let isRemove: boolean;
     export let selectedDb: string | null;
@@ -268,6 +268,9 @@
 
         return tooltips[id] || "No description available";
     }
+    function checkAnyAlgorithmEnabled() {
+        return $preferencesStore.algorithms.some((algo) => algo.enabled);
+    }
 </script>
 
 <div class="page-columns">
@@ -275,7 +278,7 @@
     <div class="block" style="height: 40vh">
         <div class="header">
             <h2>Search Algorithms</h2>
-            {#if selectedDb == null || selectedDb == "" || selectedDb == "Select Database"}
+            {#if selectedDb == null || selectedDb == "" || selectedDb == "Select Database" || !checkAnyAlgorithmEnabled()}
                 <button class="cta-button inactive">
                     <Search size={18} />
                     <span>Search</span>
@@ -373,6 +376,8 @@
                         {#if algo.id === "dbcompare"}
                             {#if algo.db !== null && algo.db !== undefined}
                                 {#await getFilenameWithoutExtension(algo.db) then filename}
+                                    <!-- svelte-ignore a11y_click_events_have_key_events -->
+                                    <!-- svelte-ignore a11y_no_static_element_interactions -->
                                     <span
                                         class="clickable"
                                         on:click={openSqliteFile}
