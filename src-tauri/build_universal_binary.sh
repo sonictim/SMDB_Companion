@@ -93,3 +93,5 @@ else
   echo "Failed to copy the DMG file to $DEST_DIR"
   exit 1
 fi
+
+cp -R  ./target/universal-apple-darwin/release/bundle/macos/SMDB\ Companion.app /Applications/
