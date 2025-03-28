@@ -85,9 +85,9 @@ pub async fn search(
     {
         let state = state.lock().await;
         *state.db.abort.write().await = false;
-        if pref.fetch_waveforms {
-            let _ = state.db.add_column("_fingerprint").await;
-        }
+        // if pref.fetch_waveforms {
+        // }
+        let _ = state.db.add_column("_fingerprint").await;
     }
 
     let mut counter = 0;

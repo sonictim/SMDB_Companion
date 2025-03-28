@@ -10,6 +10,7 @@
     $: pref = $preferencesStore;
     let selectedMatches = new Set<string>();
     let waveform_match = false;
+    let isRemoving = false;
 
     function toggleignore_filetype() {
         preferencesStore.update((p) => ({
@@ -101,14 +102,17 @@
     let confirmRemove = false;
 
     async function clearFingerprints() {
+        isRemoving = true;
         await invoke("clear_fingerprints")
             .then(() => {
                 console.log("Successfully cleared fingerprints");
                 confirmRemove = false;
+                isRemoving = false;
             })
             .catch((error) => {
                 console.error("Error clearing fingerprints:", error);
                 confirmRemove = false;
+                isRemoving = false;
             });
     }
 </script>
@@ -246,12 +250,16 @@
                 <span></span>
             {/if}
             <span>
-                <button
-                    class="cta-button small cancel"
-                    on:click={() => (confirmRemove = true)}
-                >
-                    Clear Audio Fingerprints from Database
-                </button>
+                {#if isRemoving}
+                    <p class="ellipsis">Clearing fingerprints from database</p>
+                {:else}
+                    <button
+                        class="cta-button small cancel"
+                        on:click={() => (confirmRemove = true)}
+                    >
+                        Clear Audio Fingerprints from Database
+                    </button>
+                {/if}
             </span>
             {#if confirmRemove}
                 <span>

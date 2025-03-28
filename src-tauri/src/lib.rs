@@ -18,6 +18,7 @@ use std::collections::{HashMap, HashSet};
 use std::env;
 pub use std::fs::{self};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tauri::async_runtime::{Mutex, RwLock};
 use tauri::{AppHandle, Emitter};
 use tauri::{Manager, State};
@@ -571,6 +572,7 @@ impl Database {
         app: &AppHandle,
     ) -> Result<(), sqlx::Error> {
         // self.records.clear();
+        let completed = AtomicUsize::new(0);
         let rows = self.fetch(query).await;
         let mut records = Vec::with_capacity(rows.len());
         println!("{} Rows Found", rows.len());
@@ -578,12 +580,13 @@ impl Database {
             .par_iter()
             .enumerate()
             .map(|(count, row)| {
-                if count % RECORD_DIVISOR == 0 {
+                let new_completed = completed.fetch_add(1, Ordering::SeqCst) + 1;
+                if new_completed % RECORD_DIVISOR == 0 {
                     app.emit(
                         "search-sub-status",
                         StatusUpdate {
                             stage: "gather".into(),
-                            progress: (count * 100 / rows.len()) as u64,
+                            progress: (new_completed * 100 / rows.len()) as u64,
                             message: format!(
                                 "Processing Records into Memory: {}/{}",
                                 count,

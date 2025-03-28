@@ -18,12 +18,17 @@
     export let isRemove: boolean;
     export let selectedDb: string | null;
 
-    let isSearching = false;
     let isFinding = false;
 
     import { preferencesStore } from "../store";
-    import { resultsStore, metadataStore } from "../session-store";
-    import type { HashMap } from "../session-store";
+    import {
+        resultsStore,
+        metadataStore,
+        isSearching,
+        searchProgressStore,
+        initializeSearchListeners,
+        resetSearchProgress,
+    } from "../session-store";
     import { get } from "svelte/store";
     import { open } from "@tauri-apps/plugin-dialog";
     import { basename, extname } from "@tauri-apps/api/path";
@@ -133,8 +138,8 @@
 
     function toggleSearch() {
         console.log("Toggle Search");
-        isSearching = !isSearching;
-        if (isSearching) {
+        $isSearching = !$isSearching;
+        if ($isSearching) {
             search();
         } else {
             cancelSearch();
@@ -207,72 +212,38 @@
                 resultsStore.set(result); // ✅ Store the results in session storage
             })
             .catch((error) => {
-                isSearching = false;
+                $isSearching = false;
                 console.error(error);
             });
 
-        if (isSearching) {
-            isSearching = false;
+        if ($isSearching) {
+            $isSearching = false;
             activeTab = "results"; // Ensure this updates properly
         }
     }
 
-    // Add these variables for search status
-    let searchProgress = 0;
-    let searchMessage = "Initializing...";
-    let searchStage = "";
-    let unlistenFn: () => void;
-    let subsearchProgress = 0;
-    let subsearchMessage = "Requesting Records...";
-    let subsearchStage = "";
-    let unlistenFn2: () => void;
-
     // Setup event listener when component mounts
     onMount(async () => {
         selectedDb = await invoke<string>("get_db_name");
-        unlistenFn = await listen<{
-            progress: number;
-            message: string;
-            stage: string;
-        }>("search-status", (event) => {
-            const status = event.payload;
-            searchProgress = status.progress;
-            searchMessage = status.message;
-            searchStage = status.stage;
-            console.log(
-                `Search status: ${status.stage} - ${status.progress}% - ${status.message}`,
-            );
-        });
-        unlistenFn2 = await listen<{
-            progress: number;
-            message: string;
-            stage: string;
-        }>("search-sub-status", (event) => {
-            const status = event.payload;
-            subsearchProgress = status.progress;
-            subsearchMessage = status.message;
-            subsearchStage = status.stage;
-            console.log(
-                `Search status: ${status.stage} - ${status.progress}% - ${status.message}`,
-            );
-        });
+
+        // Initialize the listeners only once in the application lifecycle
+        await initializeSearchListeners();
+
+        console.log("Search component mounted, isSearching:", $isSearching);
+
+        // No need to fetch status from backend, the store already has the state
     });
 
-    // Cleanup event listener when component unmounts
-    onDestroy(() => {
-        if (unlistenFn) unlistenFn();
-        if (unlistenFn2) unlistenFn2();
-    });
+    // No need for onDestroy cleanup as listeners stay active throughout app lifecycle
 
     async function cancelSearch() {
         await invoke("cancel_search")
             .then(() => {
                 console.log("Search cancellation requested");
-                isSearching = false;
-                searchProgress = 0;
-                searchMessage = "Search cancelled";
-                subsearchProgress = 0;
-                subsearchMessage = "Search cancelled";
+                $isSearching = false;
+
+                // Reset progress in store
+                resetSearchProgress();
             })
             .catch((error) => console.error("Error cancelling search:", error));
     }
@@ -311,11 +282,11 @@
                 </button>
             {:else}
                 <button
-                    class="cta-button {isSearching ? 'cancel' : ''}"
+                    class="cta-button {$isSearching ? 'cancel' : ''}"
                     on:click={toggleSearch}
                 >
                     <div class="flex items-center gap-2">
-                        {#if isSearching}
+                        {#if $isSearching}
                             <X size={18} />
                             <span>Cancel</span>
                         {:else}
@@ -326,7 +297,7 @@
                 </button>
             {/if}
         </div>
-        {#if isSearching}
+        {#if $isSearching}
             <div class="block inner">
                 <span>
                     <Loader
@@ -334,24 +305,23 @@
                         class="spinner ml-2"
                         style="color: var(--accent-color)"
                     />
-                    {searchMessage}
+                    {$searchProgressStore.searchMessage}
                 </span>
                 <div class="progress-container">
                     <div
                         class="progress-bar"
-                        style="width: {searchProgress}%"
+                        style="width: {$searchProgressStore.searchProgress}%"
                     ></div>
                 </div>
                 <span>
-                    {subsearchMessage}
+                    {$searchProgressStore.subsearchMessage}
                 </span>
                 <div class="progress-container">
                     <div
                         class="progress-bar"
-                        style="width: {subsearchProgress}%"
+                        style="width: {$searchProgressStore.subsearchProgress}%"
                     ></div>
                 </div>
-                <!-- <AlertCircle size={18} class="ellipsis" /> -->
             </div>
         {:else}
             <div class="grid">
@@ -488,24 +458,23 @@
                         class="spinner ml-2"
                         style="color: var(--accent-color)"
                     />
-                    {searchMessage}
+                    {$searchProgressStore.searchMessage}
                 </span>
                 <div class="progress-container">
                     <div
                         class="progress-bar"
-                        style="width: {searchProgress}%"
+                        style="width: {$searchProgressStore.searchProgress}%"
                     ></div>
                 </div>
                 <span>
-                    {subsearchMessage}
+                    {$searchProgressStore.subsearchMessage}
                 </span>
                 <div class="progress-container">
                     <div
                         class="progress-bar"
-                        style="width: {subsearchProgress}%"
+                        style="width: {$searchProgressStore.subsearchProgress}%"
                     ></div>
                 </div>
-                <!-- <AlertCircle size={18} class="ellipsis" /> -->
             </div>
         {:else}
             <div class="input-group2">
