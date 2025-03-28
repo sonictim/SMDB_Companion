@@ -9,12 +9,8 @@ use rayon::prelude::*;
 pub use sqlx::sqlite::SqlitePool;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::time::Duration;
-use tauri::async_runtime;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tauri::{AppHandle, Emitter};
-use tokio::time::sleep; // Add explicit import for sleep function
 
 impl Database {
     pub async fn compare_search(&mut self, enabled: &Enabled, pref: &Preferences, app: &AppHandle) {
@@ -613,29 +609,22 @@ impl Database {
                 }
 
                 if group.len() > 1 {
-                    // Sort and prepare group records
                     let mut group_records: Vec<FileRecord> = group
                         .iter()
                         .filter_map(|(idx, _)| all_records.iter().find(|r| r.id == *idx).cloned())
                         .collect();
 
-                    // Sort by preference
                     pref.sort_vec(&mut group_records);
 
-                    // Process and mark duplicates
                     for (j, mut record) in group_records.into_iter().enumerate() {
-                        // Mark as processed
                         processed_ids.insert(record.id);
 
-                        // Add algorithm flag
                         record.algorithm.insert(Algorithm::SimilarAudio);
 
-                        // Remove Keep from duplicates
                         if j > 0 {
                             record.algorithm.remove(&A::Keep);
                         }
 
-                        // Add to processed records
                         processed_records.push(record);
                     }
                 }
@@ -702,13 +691,10 @@ impl Database {
         )
         .ok();
 
-        // MORE AGGRESSIVE OPTIMIZATIONS
-        let mut batch_size: usize = 1000; // Larger batch size for fewer transactions
-        const STORAGE_INTERVAL: usize = 200; // Store every 250 records processed
-        const PROGRESS_INTERVAL: usize = RECORD_DIVISOR * 5; // Less frequent progress updates
-
-        // Create a shared atomic cancellation flag for all threads
-        let cancelled = std::sync::Arc::new(AtomicBool::new(false));
+        // OPTIMIZATIONS
+        let mut batch_size: usize = 1000;
+        const STORAGE_INTERVAL: usize = 200;
+        const PROGRESS_INTERVAL: usize = RECORD_DIVISOR * 5;
 
         // Pre-scan status update
         app.emit(
@@ -723,19 +709,13 @@ impl Database {
 
         // 1. PRE-FILTERING OPTIMIZATION: Use indexed access for faster filtering
         let mut records_needing_fingerprints = BitSet::with_capacity(self.records.len());
-        let update_frequency = std::cmp::max(self.records.len() / 100, 1); // Update ~10 times during scan
+        let update_frequency = std::cmp::max(self.records.len() / 100, 1);
 
         for (idx, record) in self.records.iter().enumerate() {
-            // Check for cancellation during pre-scan
-            if idx % 100 == 0 {
-                if let Ok(guard) = self.abort.try_read() {
-                    if *guard {
-                        return Err("Aborted during pre-scan".to_string());
-                    }
-                }
+            if idx % 100 == 0 && *self.abort.read().await {
+                return Err("Aborted during pre-scan".to_string());
             }
 
-            // More frequent progress updates
             if idx % update_frequency == 0 || idx == self.records.len() - 1 {
                 app.emit(
                     "search-sub-status",
@@ -803,42 +783,10 @@ impl Database {
         let mut fingerprints_to_store = Vec::with_capacity(STORAGE_INTERVAL);
         let mut processed = start_from;
 
-        if pref.store_waveforms {
-            app.emit(
-                "search-sub-status",
-                StatusUpdate {
-                    stage: "fingerprinting".into(),
-                    progress: 0,
-                    message: "Connecting to fingerprint database...".into(),
-                },
-            )
-            .ok();
-        }
-
         let db_pool = if pref.store_waveforms {
             match self.get_pool().await {
-                Some(pool) => {
-                    app.emit(
-                        "search-sub-status",
-                        StatusUpdate {
-                            stage: "fingerprinting".into(),
-                            progress: 0,
-                            message: "Database connection established".into(),
-                        },
-                    )
-                    .ok();
-                    Some(pool)
-                }
+                Some(pool) => Some(pool),
                 None => {
-                    app.emit(
-                        "search-sub-status",
-                        StatusUpdate {
-                            stage: "fingerprinting".into(),
-                            progress: 0,
-                            message: "Retrying database connection...".into(),
-                        },
-                    )
-                    .ok();
                     std::thread::sleep(std::time::Duration::from_millis(100));
                     self.get_pool().await
                 }
@@ -853,16 +801,6 @@ impl Database {
             .num_threads(thread_count)
             .build()
             .unwrap_or_else(|_| rayon::ThreadPoolBuilder::new().build().unwrap());
-
-        app.emit(
-            "search-sub-status",
-            StatusUpdate {
-                stage: "fingerprinting".into(),
-                progress: 0,
-                message: "Initializing processing threads...".into(),
-            },
-        )
-        .ok();
 
         app.emit(
             "search-sub-status",
@@ -896,45 +834,10 @@ impl Database {
             .ok();
         };
 
-        // Copy the cancellation flag to share with rayon threads
-        let thread_cancelled = cancelled.clone();
-
-        // Update the abort flag in a separate task to allow immediate cancellation
-        let abort_ref = self.abort.clone();
-        let abort_monitor = async_runtime::spawn(async move {
-            while !thread_cancelled.load(Ordering::Relaxed) {
-                if let Ok(guard) = abort_ref.try_read() {
-                    if *guard {
-                        thread_cancelled.store(true, Ordering::Relaxed);
-                        break;
-                    }
-                }
-                // Use tokio's sleep function directly
-                sleep(Duration::from_millis(50)).await;
-            }
-        });
-
-        // Check cancellation before entering the main loop
-        if cancelled.load(Ordering::Relaxed) || {
-            if let Ok(guard) = self.abort.try_read() {
-                *guard
-            } else {
-                false
-            }
-        } {
-            abort_monitor.abort();
-            return Err("Aborted before processing".to_string());
-        }
-
+        // Main processing loop with simplified abort checking
         for chunk_idx in (start_from..total_to_process).step_by(batch_size) {
-            // Check for cancellation before processing chunk
-            if cancelled.load(Ordering::Relaxed) || {
-                if let Ok(guard) = self.abort.try_read() {
-                    *guard
-                } else {
-                    false
-                }
-            } {
+            if *self.abort.read().await {
+                // Save any processed fingerprints before aborting
                 if !fingerprints_to_store.is_empty() && pref.store_waveforms {
                     app.emit(
                         "search-sub-status",
@@ -951,9 +854,6 @@ impl Database {
                     }
                 }
 
-                // Make sure to abort the monitor task
-                abort_monitor.abort();
-
                 return Err("Aborted".to_string());
             }
 
@@ -962,18 +862,11 @@ impl Database {
                 .filter(|&idx| records_needing_fingerprints.contains(idx))
                 .collect();
 
-            let batch_cancelled = cancelled.clone();
-
             let completed = AtomicUsize::new(0);
             let batch_results: Vec<_> = thread_pool.install(|| {
                 current_indices
                     .par_iter()
                     .filter_map(|&idx| {
-                        // Check cancellation before processing file
-                        if batch_cancelled.load(Ordering::Relaxed) {
-                            return None;
-                        }
-
                         let record = &self.records[idx];
 
                         if record.algorithm.contains(&Algorithm::InvalidPath) {
@@ -984,37 +877,27 @@ impl Database {
                             return None;
                         }
 
-                        if batch_cancelled.load(Ordering::Relaxed) {
-                            return None;
-                        }
+                        let fingerprint =
+                            match audio::get_chromaprint_fingerprint(record.get_filepath()) {
+                                Some(fp) => {
+                                    println!("SUCCESS fingerprint for: {}", record.get_filepath());
 
-                        let fingerprint = match get_cancellable_chromaprint(
-                            record.get_filepath(),
-                            &batch_cancelled,
-                        ) {
-                            Some(fp) => {
-                                println!("SUCCESS fingerprint for: {}", record.get_filepath());
-
-                                let new_completed = completed.fetch_add(1, Ordering::SeqCst) + 1;
-                                app.emit(
-                                    "search-sub-status",
-                                    StatusUpdate {
-                                        stage: "fingerprinting".into(),
-                                        progress: ((new_completed % batch_size) * 100 / batch_size)
-                                            as u64,
-                                        message: format!("{} ", record.get_filename()),
-                                    },
-                                )
-                                .ok();
-                                Some(Arc::from(fp.as_str()))
-                            }
-                            None => {
-                                if batch_cancelled.load(Ordering::Relaxed) {
-                                    println!(
-                                        "Cancelled fingerprinting for: {}",
-                                        record.get_filepath()
-                                    );
-                                } else {
+                                    let new_completed =
+                                        completed.fetch_add(1, Ordering::SeqCst) + 1;
+                                    app.emit(
+                                        "search-sub-status",
+                                        StatusUpdate {
+                                            stage: "fingerprinting".into(),
+                                            progress: ((new_completed % batch_size) * 100
+                                                / batch_size)
+                                                as u64,
+                                            message: format!("{} ", record.get_filename()),
+                                        },
+                                    )
+                                    .ok();
+                                    Some(Arc::from(fp.as_str()))
+                                }
+                                None => {
                                     println!(
                                         "FAILED fingerprint for: {} (exists: {}, size: {})",
                                         record.get_filepath(),
@@ -1023,30 +906,16 @@ impl Database {
                                             .metadata()
                                             .map_or(0, |m| m.len())
                                     );
+                                    None
                                 }
-                                None
-                            }
-                        };
-
-                        // Check cancellation after processing
-                        if batch_cancelled.load(Ordering::Relaxed) {
-                            return None;
-                        }
+                            };
 
                         Some((idx, fingerprint))
                     })
                     .collect()
             });
 
-            if cancelled.load(Ordering::Relaxed) || {
-                if let Ok(guard) = self.abort.try_read() {
-                    *guard
-                } else {
-                    false
-                }
-            } {
-                // Make sure to abort the monitor task
-                abort_monitor.abort();
+            if *self.abort.read().await {
                 return Err("Aborted during batch processing".to_string());
             }
 
@@ -1102,31 +971,8 @@ impl Database {
             .ok();
         }
 
-        // Clean up the abort monitor task
-        abort_monitor.abort();
-
         Ok(())
     }
-}
-
-// Add a cancellable version of the chromaprint function
-fn get_cancellable_chromaprint(path: &str, cancelled: &AtomicBool) -> Option<String> {
-    // If the audio module has a direct function, we should use that
-    // But if it's using an external process, we need a version that can be cancelled
-
-    if cancelled.load(Ordering::Relaxed) {
-        return None;
-    }
-
-    // Try to get the fingerprint using the normal method first
-    let result = audio::get_chromaprint_fingerprint(path);
-
-    // If cancellation happened during processing, discard the result
-    if cancelled.load(Ordering::Relaxed) {
-        return None;
-    }
-
-    result
 }
 
 async fn store_fingerprints_batch_optimized(
