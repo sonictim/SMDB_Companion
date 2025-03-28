@@ -356,7 +356,7 @@ impl Database {
         // STEP 1: Separate fingerprints into Chromaprint vs PCM hash groups
         let (chromaprint_records, pcm_hash_records): (Vec<&FileRecord>, Vec<&FileRecord>) = self
             .records
-            .iter()
+            .par_iter() // Changed from par_iter_mut() to par_iter() to match the expected immutable references
             .filter(|record| {
                 // Add check to exclude FAILED fingerprints
                 record
@@ -672,7 +672,7 @@ impl Database {
         app: &AppHandle,
     ) -> Result<(), String> {
         println!("Starting Waveform Search");
-        self.gather_fingerprints3(pref, app).await?;
+        self.gather_fingerprints(pref, app).await?;
         if *self.abort.read().await {
             return Err("Aborted".to_string());
         };
@@ -680,6 +680,89 @@ impl Database {
             self.exact_match(pref, app).await?;
         } else {
             self.similar_match(pref, app).await?;
+        }
+
+        Ok(())
+    }
+
+    async fn gather_fingerprints(
+        &mut self,
+        pref: &Preferences,
+        app: &AppHandle,
+    ) -> Result<(), String> {
+        const BATCH_SIZE: usize = 2000;
+        const STORE_MIN_INTERVAL: usize = 200;
+        let completed = AtomicUsize::new(0);
+
+        let pool = self.get_pool().await;
+        let total_records = self.records.len();
+
+        let mut record_ids_to_store: Vec<(usize, String)> = Vec::with_capacity(BATCH_SIZE);
+
+        for chunk in self.records.chunks_mut(BATCH_SIZE) {
+            if *self.abort.read().await {
+                println!("Aborting fingerprint scan");
+                return Err("Aborted".to_string());
+            }
+
+            let local_ids: Vec<(usize, String)> = chunk
+                .par_iter_mut()
+                .filter_map(|record| {
+                    let path = PathBuf::from(record.get_filepath());
+                    let new_completed = completed.fetch_add(1, Ordering::SeqCst) + 1;
+                    if !path.exists() || !path.is_file() || record.fingerprint.is_some() {
+                        return None;
+                    }
+                    app.emit(
+                        "search-status",
+                        StatusUpdate {
+                            stage: "fingerprinting".into(),
+                            progress: (new_completed * 100 / total_records) as u64,
+                            message: format!(
+                                "Analyzing audio content for waveform analysis: ({}/{}) ",
+                                new_completed, total_records
+                            ),
+                        },
+                    )
+                    .ok();
+                    app.emit(
+                        "search-sub-status",
+                        StatusUpdate {
+                            stage: "fingerprinting".into(),
+                            progress: ((new_completed % BATCH_SIZE) * 100 / BATCH_SIZE) as u64,
+                            message: format!("{} ", record.get_filename()),
+                        },
+                    )
+                    .ok();
+
+                    let fingerprint_result =
+                        audio::get_chromaprint_fingerprint(record.get_filepath());
+
+                    let fingerprint = fingerprint_result.unwrap_or("FAILED".to_string());
+
+                    record.fingerprint = Some(Arc::from(fingerprint.as_str()));
+
+                    Some((record.id, fingerprint))
+                })
+                .collect();
+
+            record_ids_to_store.extend(local_ids);
+
+            if pref.store_waveforms && record_ids_to_store.len() >= STORE_MIN_INTERVAL {
+                // Store fingerprints in batches to avoid memory issues
+                if let Some(pool) = &pool {
+                    store_fingerprints_batch_optimized(pool, &record_ids_to_store, app).await;
+                }
+                record_ids_to_store.clear(); // Clear after storing
+            }
+        }
+
+        if pref.store_waveforms {
+            // Store fingerprints in batches to avoid memory issues
+            if let Some(pool) = &pool {
+                store_fingerprints_batch_optimized(pool, &record_ids_to_store, app).await;
+            }
+            record_ids_to_store.clear(); // Clear after storing
         }
 
         Ok(())
@@ -928,38 +1011,37 @@ impl Database {
                             return None;
                         }
 
-                        let fingerprint =
-                            match audio::get_chromaprint_fingerprint(record.get_filepath()) {
-                                Some(fp) => {
-                                    println!("SUCCESS fingerprint for: {}", record.get_filepath());
+                        let fingerprint_result: Option<String> =
+                            audio::get_chromaprint_fingerprint(record.get_filepath());
+                        let fingerprint = match fingerprint_result {
+                            Some(fp) => {
+                                println!("SUCCESS fingerprint for: {}", record.get_filepath());
 
-                                    let new_completed =
-                                        completed.fetch_add(1, Ordering::SeqCst) + 1;
-                                    app.emit(
-                                        "search-sub-status",
-                                        StatusUpdate {
-                                            stage: "fingerprinting".into(),
-                                            progress: ((new_completed % batch_size) * 100
-                                                / batch_size)
-                                                as u64,
-                                            message: format!("{} ", record.get_filename()),
-                                        },
-                                    )
-                                    .ok();
-                                    Some(Arc::from(fp.as_str()))
-                                }
-                                None => {
-                                    println!(
-                                        "FAILED fingerprint for: {} (exists: {}, size: {})",
-                                        record.get_filepath(),
-                                        Path::new(record.get_filepath()).exists(),
-                                        Path::new(record.get_filepath())
-                                            .metadata()
-                                            .map_or(0, |m| m.len())
-                                    );
-                                    Some(Arc::from("FAILED"))
-                                }
-                            };
+                                let new_completed = completed.fetch_add(1, Ordering::SeqCst) + 1;
+                                app.emit(
+                                    "search-sub-status",
+                                    StatusUpdate {
+                                        stage: "fingerprinting".into(),
+                                        progress: ((new_completed % batch_size) * 100 / batch_size)
+                                            as u64,
+                                        message: format!("{} ", record.get_filename()),
+                                    },
+                                )
+                                .ok();
+                                Some(Arc::from(fp.as_str()))
+                            }
+                            None => {
+                                println!(
+                                    "FAILED fingerprint for: {} (exists: {}, size: {})",
+                                    record.get_filepath(),
+                                    Path::new(record.get_filepath()).exists(),
+                                    Path::new(record.get_filepath())
+                                        .metadata()
+                                        .map_or(0, |m| m.len())
+                                );
+                                Some(Arc::from("FAILED"))
+                            }
+                        };
 
                         Some((idx, fingerprint))
                     })
