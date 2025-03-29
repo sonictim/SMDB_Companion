@@ -81,12 +81,66 @@ pub async fn search(
     enabled: Enabled,
     pref: Preferences,
 ) -> Result<Vec<FileRecordFrontend>, String> {
-    println!("Starting Search");
-    {
+    let (tx, mut rx) = tokio::sync::oneshot::channel();
+    let app = app.clone();
+    let enabled = enabled.clone();
+    let pref = pref.clone();
+
+    let db = {
         let state = state.lock().await;
         state.db.abort.store(false, Ordering::SeqCst);
-        let _ = state.db.add_column("_fingerprint").await;
+        state.db.clone()
+    };
+    let handle = tokio::spawn(async move {
+        let result = run_search(app, db, enabled, pref).await;
+        let _ = tx.send(result);
+    });
+
+    let mut interval = tokio::time::interval(std::time::Duration::from_millis(100));
+
+    loop {
+        tokio::select! {
+            // Check if the abort flag was set
+            _ = interval.tick() => {
+                let state = state.lock().await;
+                if state.db.abort.load(Ordering::SeqCst) {
+                    println!("Detected abort request, cancelling fingerprinting task");
+                    handle.abort();
+                    return Err("Aborted".to_string());
+                }
+            }
+
+            // Check if we received a result
+            result = &mut rx => {
+                match result {
+                    Ok(result) => {
+                       return result;
+                    }
+                    Err(_) => {
+                        // Task was likely aborted
+                        return Err("Fingerprinting task aborted or failed".to_string());
+                    }
+                }
+            }
+        }
     }
+
+    // This code is unreachable but kept to maintain structure
+    #[allow(unreachable_code)]
+    Ok(
+        Vec::new(), // Placeholder for the actual result
+    )
+}
+
+async fn run_search(
+    app: AppHandle,
+    mut db: Database,
+    enabled: Enabled,
+    pref: Preferences,
+) -> Result<Vec<FileRecordFrontend>, String> {
+    println!("Starting Search");
+
+    let _ = db.add_column("_fingerprint").await;
 
     let mut counter = 0;
     let mut total = 1;
@@ -119,31 +173,14 @@ pub async fn search(
     )
     .ok();
 
-    {
-        let mut state = state.lock().await;
-        if state.db.abort.load(Ordering::SeqCst) {
-            return Err(String::from("Search Canceled"));
-        }
-
-        app.emit(
-            "search-status",
-            StatusUpdate {
-                stage: "starting".into(),
-                progress: counter * 100 / total,
-                message: "Gathering records from database...".into(),
-            },
-        )
-        .unwrap();
-        counter += 1;
-
-        let _ = state.db.fetch_all_filerecords(&enabled, &pref, &app).await;
+    counter += 1;
+    let _ = db.fetch_all_filerecords(&enabled, &pref, &app).await;
+    if db.abort.load(Ordering::SeqCst) {
+        println!("Aborting fingerprint scan - early exit");
+        return Err("Aborted".to_string());
     }
 
     if enabled.dbcompare {
-        let mut state = state.lock().await;
-        if state.db.abort.load(Ordering::SeqCst) {
-            return Err(String::from("Search Canceled"));
-        }
         app.emit(
             "search-status",
             StatusUpdate {
@@ -154,14 +191,14 @@ pub async fn search(
         )
         .unwrap();
         counter += 1;
-        state.db.compare_search(&enabled, &pref, &app).await;
+        db.compare_search(&enabled, &pref, &app).await;
+    }
+    if db.abort.load(Ordering::SeqCst) {
+        println!("Aborting fingerprint scan - early exit");
+        return Err("Aborted".to_string());
     }
 
     if enabled.basic {
-        let mut state = state.lock().await;
-        if state.db.abort.load(Ordering::SeqCst) {
-            return Err(String::from("Search Canceled"));
-        }
         app.emit(
             "search-status",
             StatusUpdate {
@@ -172,7 +209,7 @@ pub async fn search(
         )
         .unwrap();
         counter += 1;
-        state.db.dupe_search(&pref, &enabled, &app);
+        db.dupe_search(&pref, &enabled, &app);
 
         app.emit(
             "search-sub-status",
@@ -184,15 +221,13 @@ pub async fn search(
         )
         .unwrap();
 
-        state.db.records.sort_by(|a, b| a.root.cmp(&b.root));
+        db.records.sort_by(|a, b| a.root.cmp(&b.root));
     }
-
+    if db.abort.load(Ordering::SeqCst) {
+        println!("Aborting fingerprint scan - early exit");
+        return Err("Aborted".to_string());
+    }
     if enabled.waveform {
-        let mut state = state.lock().await;
-        if state.db.abort.load(Ordering::SeqCst) {
-            return Err(String::from("Search Canceled"));
-        }
-
         app.emit(
             "search-status",
             StatusUpdate {
@@ -204,14 +239,9 @@ pub async fn search(
         .unwrap();
         counter += 1;
 
-        let _ = state.db.wave_search_chromaprint(&pref, &app).await;
+        let _ = db.wave_search_chromaprint(&pref, &app).await;
     }
-    {
-        let state = state.lock().await;
-        if state.db.abort.load(Ordering::SeqCst) {
-            return Err(String::from("Search Canceled"));
-        }
-    }
+    {}
 
     app.emit(
         "search-status",
@@ -222,9 +252,8 @@ pub async fn search(
         },
     )
     .unwrap();
-
     println!("Search Ended");
-    get_results(state).await
+    Ok(db.records_2_frontend().await)
 }
 
 #[tauri::command]
@@ -498,10 +527,7 @@ pub async fn cancel_search(state: State<'_, Mutex<AppState>>) -> Result<String, 
     let state = state.lock().await;
     // *state.db.abort.write().await = true;
     state.db.abort.store(true, Ordering::SeqCst);
-    println!(
-        "❌❌❌❌❌ ABORTING SEARCH!!!!!!!!!{}",
-        state.db.abort.load(Ordering::SeqCst)
-    );
+    println!("❌❌❌❌❌ ABORTING SEARCH!!!!!!!!!");
 
     Ok(String::from("Search Canceled"))
 }

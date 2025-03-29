@@ -112,6 +112,10 @@ impl Database {
 
         // Group records by root
         for record in &*self.records {
+            if self.abort.load(Ordering::SeqCst) {
+                println!("Aborting duplicate search - early exit");
+                return;
+            }
             count += 1;
             if count % RECORD_DIVISOR == 0 {
                 app.emit(
@@ -151,6 +155,10 @@ impl Database {
             .into_iter()
             .enumerate()
             .flat_map(|(count, (_, mut records))| {
+                if self.abort.load(Ordering::SeqCst) {
+                    println!("Aborting duplicate search - early exit");
+                    return Vec::new();
+                }
                 if count % RECORD_DIVISOR == 0 {
                     app.emit(
                         "search-sub-status",
@@ -220,6 +228,37 @@ impl Database {
         println!("all done!");
     }
 
+    pub async fn records_2_frontend(&self) -> Vec<FileRecordFrontend> {
+        let results: Vec<FileRecordFrontend> = self
+            .records
+            .par_iter() // Parallel iterator from Rayon
+            .map(|record| {
+                let mut algorithm: Vec<_> = record.algorithm.iter().cloned().collect();
+                algorithm.sort_by(|a, b| {
+                    if a == &A::Waveforms {
+                        std::cmp::Ordering::Less
+                    } else if b == &A::Waveforms {
+                        std::cmp::Ordering::Greater
+                    } else {
+                        b.cmp(a)
+                    }
+                });
+                FileRecordFrontend {
+                    id: record.id,
+                    path: Arc::from(record.get_path()),
+                    filename: Arc::from(record.get_filename()),
+                    algorithm,
+                    duration: record.duration.clone(),
+                    description: record.description.clone(),
+                    bitdepth: record.bitdepth,
+                    samplerate: record.samplerate,
+                    channels: record.channels,
+                }
+            })
+            .collect();
+        results
+    }
+
     async fn exact_match(&mut self, pref: &Preferences, app: &AppHandle) -> Result<(), String> {
         app.emit(
             "search-sub-status",
@@ -249,9 +288,6 @@ impl Database {
 
         // Group records by waveform
         for (i, record) in self.records.iter().enumerate() {
-            if self.abort.load(Ordering::SeqCst) {
-                return Err("Aborted".to_string());
-            };
             if i % RECORD_DIVISOR == 0 || i == 0 || i == self.records.len() - 1 {
                 app.emit(
                     "search-sub-status",
@@ -605,10 +641,6 @@ impl Database {
 
             // Use chunks to process groups in batches
             for groups_chunk in similarity_groups.iter().collect::<Vec<_>>().chunks(50) {
-                if self.abort.load(Ordering::SeqCst) {
-                    return Err("Aborted during similarity group processing".to_string());
-                }
-
                 // Process this batch of groups
                 for (_, group) in groups_chunk {
                     groups_processed += 1;
@@ -714,9 +746,7 @@ impl Database {
     ) -> Result<(), String> {
         println!("Starting Waveform Search");
         self.gather_fingerprints(pref, app).await?;
-        if self.abort.load(Ordering::SeqCst) {
-            return Err("Aborted".to_string());
-        };
+
         if pref.exact_waveform {
             self.exact_match(pref, app).await?;
         } else {
@@ -744,20 +774,13 @@ impl Database {
         let mut record_ids_to_store: Vec<(usize, String)> = Vec::with_capacity(batch_size);
 
         for chunk in self.records.chunks_mut(batch_size) {
-            tokio::task::yield_now().await; // Yield to allow other tasks to run
-            let abort = self.abort.clone();
-            if abort.load(Ordering::SeqCst) {
-                println!("Aborting fingerprint scan");
+            if self.abort.load(Ordering::SeqCst) {
+                println!("Aborting fingerprint scan - early exit");
                 return Err("Aborted".to_string());
             }
-
             let local_ids: Vec<(usize, String)> = chunk
                 .par_iter_mut()
                 .filter_map(|record| {
-                    if abort.load(Ordering::SeqCst) {
-                        println!("❌❌❌ Aborting fingerprint scan");
-                        return None;
-                    }
                     let path = PathBuf::from(record.get_filepath());
                     let new_completed = completed.fetch_add(1, Ordering::SeqCst) + 1;
                     if !path.exists()

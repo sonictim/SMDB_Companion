@@ -115,6 +115,8 @@ fn set_library_path() {
 #[derive(Default)]
 pub struct AppState {
     db: Database,
+    // handle: JoinHandle<Result<Vec<FileRecordFrontend>>>,
+    // abort: Arc<AtomicBool>,
     // enabled: Enabled,
     // pref: Preferences,
     // reg: Registration,
@@ -128,7 +130,7 @@ struct StatusUpdate {
 }
 
 #[derive(Serialize, Deserialize)] // Need Deserialize to receive it back
-struct FileRecordFrontend {
+pub struct FileRecordFrontend {
     id: usize,
     path: Arc<str>,
     filename: Arc<str>,
@@ -342,7 +344,7 @@ impl FileRecord {
 static FILENAME_REGEX: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^(?P<base>.+?)(?:\.(?:\d+|M))*$").unwrap());
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Database {
     path: Option<PathBuf>,
     size: usize,
