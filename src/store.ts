@@ -141,7 +141,7 @@ export const defaultPreferences: Preferences = {
     erase_files: "Keep",
     autoselects: [],
     exact_waveform: true,
-    similarity_threshold: 90,
+    similarity_threshold: 80,
     store_waveforms: true,
     fetch_waveforms: true,
     algorithms: defaultAlgorithms,

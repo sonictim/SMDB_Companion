@@ -564,7 +564,7 @@
       },
       Tags: { component: Tag, tooltip: "Duplicate contains Tag" },
       FileTags: { component: Tag, tooltip: "Filename contains tag" },
-      Waveforms: { component: AudioWaveform, tooltip: "Waveform Match" },
+      Waveform: { component: AudioWaveform, tooltip: "Waveform Match" },
       Duration: { component: Clock, tooltip: "Duration Match" },
       Compare: { component: GitCompareArrowsIcon, tooltip: "Database Compare" },
       SimilarAudio: { component: Activity, tooltip: "Similar Audio" },
@@ -762,7 +762,6 @@
               {#each columnConfigs as column, i}
                 <div class="resizer-cell">
                   {#if i > 0 && i < 5}
-                    <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <div
                       class="resizer"
                       on:mousedown={(event) => startResize(i, event)}
@@ -803,8 +802,6 @@
                     {#each columnConfigs as column, i}
                       {#if column.name === "audio"}
                         <!-- Audio Column with sticky positioning if it's the first column -->
-                        <!-- svelte-ignore a11y_click_events_have_key_events -->
-                        <!-- svelte-ignore a11y_no_static_element_interactions -->
                         <div
                           class="grid-item {i === 0
                             ? 'sticky-column'
@@ -823,8 +820,6 @@
                         </div>
                       {:else if column.name === "checkbox"}
                         <!-- Checkbox Column with sticky positioning if it's the first column -->
-                        <!-- svelte-ignore a11y_click_events_have_key_events -->
-                        <!-- svelte-ignore a11y_no_static_element_interactions -->
                         <div
                           class="grid-item {i === 0
                             ? 'sticky-column'
@@ -847,8 +842,6 @@
                         </div>
                       {:else if column.name === "algorithm"}
                         <!-- Algorithm Column -->
-                        <!-- svelte-ignore a11y_click_events_have_key_events -->
-                        <!-- svelte-ignore a11y_no_static_element_interactions -->
                         <div
                           class="grid-item"
                           on:click={(event) =>
@@ -877,10 +870,7 @@
                             {/each}
                           </div>
                         </div>
-                        <!-- svelte-ignore a11y_click_events_have_key_events -->
                       {:else}
-                        <!-- svelte-ignore a11y_click_events_have_key_events -->
-                        <!-- svelte-ignore a11y_no_static_element_interactions -->
                         <div
                           class="grid-item {column.name === 'filename'
                             ? 'bold'
@@ -1137,10 +1127,10 @@
     background-color: var(--accent-color) !important;
   }
 
-  /* For checked items (not just selected)
+  /* For checked items (not just selected) */
   .checked-item .grid-item.sticky-column,
   .checked-item .grid-item.sticky-column-right {
     /* If you need different styling for checked vs unchecked */
-  /* background-color: var(--checked-bg-color);
-  } */
+    /* background-color: var(--checked-bg-color); */
+  }
 </style>

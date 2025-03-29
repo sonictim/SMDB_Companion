@@ -731,7 +731,7 @@ impl Database {
         pref: &Preferences,
         app: &AppHandle,
     ) -> Result<(), String> {
-        let mut batch_size: usize = 20;
+        let mut batch_size: usize = 1000;
         let total_records = self.records.len();
         if batch_size > total_records {
             batch_size = total_records;

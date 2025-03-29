@@ -265,8 +265,8 @@
                 >
                     <div class="flex items-center gap-2">
                         {#if $isSearching}
-                            <!-- <X size={18} />
-                            <span>Cancel</span> -->
+                            <X size={18} />
+                            <span>Cancel</span>
                         {:else}
                             <Search size={18} />
                             <span>Search</span>
