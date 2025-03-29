@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 
 use crate::FileRecord;
 
-#[derive(Default, Debug, Serialize, Deserialize)]
+#[derive(Default, Debug, Serialize, Deserialize, Clone)]
 pub struct Preferences {
     pub columns: Vec<Arc<str>>,
     pub match_criteria: Vec<Arc<str>>,
@@ -307,7 +307,7 @@ pub enum OrderOperator {
     IsNotEmpty,
 }
 
-#[derive(Default, Debug, Serialize, Deserialize)]
+#[derive(Default, Debug, Serialize, Deserialize, Clone)]
 pub struct Enabled {
     pub basic: bool,
     pub invalidpath: bool,

@@ -498,6 +498,10 @@ pub async fn cancel_search(state: State<'_, Mutex<AppState>>) -> Result<String, 
     let state = state.lock().await;
     // *state.db.abort.write().await = true;
     state.db.abort.store(true, Ordering::SeqCst);
+    println!(
+        "❌❌❌❌❌ ABORTING SEARCH!!!!!!!!!{}",
+        state.db.abort.load(Ordering::SeqCst)
+    );
 
     Ok(String::from("Search Canceled"))
 }

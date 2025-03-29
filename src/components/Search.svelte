@@ -179,10 +179,8 @@
             {} as Record<string, boolean | number | string>,
         );
 
-        // Only affect audiosuite when basic is disabled
         if (!algorithmState.basic) {
             algorithmState.audiosuite = false;
-            // Filename is now completely independent
         }
 
         await invoke<FileRecord[]>("search", {
@@ -191,25 +189,7 @@
         })
             .then((result) => {
                 console.log("Search Results:", result);
-                // if (result && result.length > 0) {
-                //     const firstRecord = result[0];
-
-                //     // Deep inspect the data property
-                //     console.log(
-                //         "Data object:",
-                //         JSON.stringify(firstRecord.data, null, 2),
-                //     );
-                //     console.log(
-                //         "Data keys:",
-                //         Object.keys(firstRecord.data || {}),
-                //     );
-                //     console.log(
-                //         "Data entries:",
-                //         Object.entries(firstRecord.data || {}),
-                //     );
-                // }
-
-                resultsStore.set(result); // ✅ Store the results in session storage
+                resultsStore.set(result);
             })
             .catch((error) => {
                 $isSearching = false;
@@ -218,7 +198,7 @@
 
         if ($isSearching) {
             $isSearching = false;
-            activeTab = "results"; // Ensure this updates properly
+            activeTab = "results";
         }
     }
 
@@ -230,11 +210,7 @@
         await initializeSearchListeners();
 
         console.log("Search component mounted, isSearching:", $isSearching);
-
-        // No need to fetch status from backend, the store already has the state
     });
-
-    // No need for onDestroy cleanup as listeners stay active throughout app lifecycle
 
     async function cancelSearch() {
         await invoke("cancel_search")
@@ -263,7 +239,6 @@
             invalidpath: "Files with invalid paths will be marked for removal.",
             filetags:
                 "Filenames containting tags in this list will be marked for removal.",
-            // Add descriptions for your other algorithms
         };
 
         return tooltips[id] || "No description available";
@@ -290,8 +265,8 @@
                 >
                     <div class="flex items-center gap-2">
                         {#if $isSearching}
-                            <X size={18} />
-                            <span>Cancel</span>
+                            <!-- <X size={18} />
+                            <span>Cancel</span> -->
                         {:else}
                             <Search size={18} />
                             <span>Search</span>

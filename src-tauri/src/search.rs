@@ -11,6 +11,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tauri::{AppHandle, Emitter};
+// use tokio::task;
 
 impl Database {
     pub async fn compare_search(&mut self, enabled: &Enabled, pref: &Preferences, app: &AppHandle) {
@@ -730,7 +731,7 @@ impl Database {
         pref: &Preferences,
         app: &AppHandle,
     ) -> Result<(), String> {
-        let mut batch_size: usize = 2000;
+        let mut batch_size: usize = 20;
         let total_records = self.records.len();
         if batch_size > total_records {
             batch_size = total_records;
@@ -743,7 +744,9 @@ impl Database {
         let mut record_ids_to_store: Vec<(usize, String)> = Vec::with_capacity(batch_size);
 
         for chunk in self.records.chunks_mut(batch_size) {
-            if self.abort.load(Ordering::SeqCst) {
+            tokio::task::yield_now().await; // Yield to allow other tasks to run
+            let abort = self.abort.clone();
+            if abort.load(Ordering::SeqCst) {
                 println!("Aborting fingerprint scan");
                 return Err("Aborted".to_string());
             }
@@ -751,9 +754,17 @@ impl Database {
             let local_ids: Vec<(usize, String)> = chunk
                 .par_iter_mut()
                 .filter_map(|record| {
+                    if abort.load(Ordering::SeqCst) {
+                        println!("❌❌❌ Aborting fingerprint scan");
+                        return None;
+                    }
                     let path = PathBuf::from(record.get_filepath());
                     let new_completed = completed.fetch_add(1, Ordering::SeqCst) + 1;
-                    if !path.exists() || !path.is_file() || record.fingerprint.is_some() {
+                    if !path.exists()
+                        || !path.is_file()
+                        || record.fingerprint.is_some()
+                        || self.abort.load(Ordering::SeqCst)
+                    {
                         return None;
                     }
                     app.emit(

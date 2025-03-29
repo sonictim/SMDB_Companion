@@ -9,6 +9,7 @@ export type Metadata = { find: string; replace: string; column: string; case_sen
 export const metadataDefault = { find: '', replace: '', column: 'FilePath', case_sensitive: false, mark_dirty: true };
 
 export const isSearching = writable(false);
+export const currentTaskId = writable<number | null>(null);
 
 export type SearchProgressState = {
     searchProgress: number;
