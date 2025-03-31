@@ -844,6 +844,430 @@ impl Database {
 
         Ok(())
     }
+
+    async fn find_segment_candidates(
+        &self,
+        feature_index: &HashMap<u64, Vec<(usize, usize)>>,
+        app: &AppHandle,
+    ) -> Result<HashMap<(usize, usize), usize>, String> {
+        app.emit(
+            "search-sub-status",
+            StatusUpdate {
+                stage: "segment".into(),
+                progress: 30,
+                message: "Finding potential segment matches...".into(),
+            },
+        )
+        .ok();
+
+        // Map to store potential matches: (container_id, segment_id) -> match_count
+        let mut candidates: HashMap<(usize, usize), usize> = HashMap::new();
+        let mut processed = 0;
+        let total_records = self.records.len();
+
+        // Process files in small batches to manage memory
+        for batch_idx in 0..((total_records + 999) / 1000) {
+            let start_idx = batch_idx * 1000;
+            let end_idx = (start_idx + 1000).min(total_records);
+
+            // Get batch of records to process
+            let batch_records: Vec<(usize, Option<Arc<str>>)> = self.records[start_idx..end_idx]
+                .iter()
+                .map(|record| (record.id, record.fingerprint.clone()))
+                .collect();
+
+            // Process this batch
+            let batch_candidates = tokio::task::spawn_blocking(move || {
+                let mut local_candidates: HashMap<(usize, usize), usize> = HashMap::new();
+                let mut match_counts: HashMap<(usize, usize, usize), usize> = HashMap::new();
+                let mut processed_ids = HashSet::new();
+
+                // For each record in the batch
+                for (id, maybe_fp) in batch_records {
+                    if processed_ids.contains(&id) || maybe_fp.is_none() {
+                        continue;
+                    }
+
+                    let fp = maybe_fp.unwrap();
+                    if fp.as_ref() == "FAILED" || fp.starts_with("PCM:") {
+                        continue;
+                    }
+
+                    let decoded = decode_fingerprint(&fp);
+                    if decoded.len() < 10 {
+                        continue;
+                    }
+
+                    // Extract features from this fingerprint
+                    for pos in 0..(decoded.len().saturating_sub(4)) {
+                        if pos + 4 <= decoded.len() {
+                            let feature = fingerprint_feature_hash(&decoded[pos..pos + 4]);
+
+                            // Look up matching files in the index
+                            if let Some(matches) = feature_index.get(&feature) {
+                                for &(other_id, other_pos) in matches {
+                                    if other_id == id {
+                                        continue;
+                                    }
+
+                                    let pair_key = if other_id < id {
+                                        (other_id, id)
+                                    } else {
+                                        (id, other_id)
+                                    };
+
+                                    // Track relative positions
+                                    let pos_diff =
+                                        (pos as isize - other_pos as isize).abs() as usize;
+
+                                    // Group features by position delta for better segment detection
+                                    let key = (pair_key.0, pair_key.1, pos_diff / 8); // 8-block grouping
+                                    *match_counts.entry(key).or_insert(0) += 1;
+                                }
+                            }
+                        }
+                    }
+
+                    processed_ids.insert(id);
+                }
+
+                // Convert position-specific matches to file-level matches
+                for ((file1, file2, _), count) in match_counts {
+                    if count >= 5 {
+                        // Require at least 5 matching features in a position group
+                        *local_candidates.entry((file1, file2)).or_insert(0) += count;
+                    }
+                }
+
+                local_candidates
+            })
+            .await
+            .map_err(|e| format!("Candidate finding failed: {:?}", e))?;
+
+            // Merge batch results into main results
+            for ((file1, file2), count) in batch_candidates {
+                *candidates.entry((file1, file2)).or_insert(0) += count;
+            }
+
+            processed += end_idx - start_idx;
+
+            // Update progress
+            app.emit(
+                "search-sub-status",
+                StatusUpdate {
+                    stage: "segment".into(),
+                    progress: 30 + ((processed * 15) / total_records) as u64,
+                    message: format!(
+                        "Finding segment candidates: {}/{}",
+                        processed, total_records
+                    ),
+                },
+            )
+            .ok();
+        }
+
+        // Filter out pairs with too few matches
+        let candidates: HashMap<(usize, usize), usize> = candidates
+            .into_iter()
+            .filter(|(_, count)| *count >= 15) // Higher threshold for final candidates
+            .collect();
+
+        println!("Found {} potential segment pairs", candidates.len());
+        Ok(candidates)
+    }
+
+    async fn verify_segment_matches(
+        &self,
+        candidates: HashMap<(usize, usize), usize>,
+        threshold: f64,
+        app: &AppHandle,
+    ) -> Result<HashMap<usize, Vec<(usize, f64)>>, String> {
+        app.emit(
+            "search-sub-status",
+            StatusUpdate {
+                stage: "segment".into(),
+                progress: 50,
+                message: format!(
+                    "Verifying {} potential segment matches...",
+                    candidates.len()
+                ),
+            },
+        )
+        .ok();
+
+        // Group that stores verified segments: container_id -> [(segment_id, similarity)]
+        let mut segment_groups: HashMap<usize, Vec<(usize, f64)>> = HashMap::new();
+        let mut processed = 0;
+        let total_candidates = candidates.len();
+
+        // Cache decoded fingerprints to avoid repeated decoding
+        let mut fingerprint_cache: HashMap<usize, Vec<u32>> = HashMap::with_capacity(1000);
+
+        // Process verification in batches
+        let candidate_vec: Vec<_> = candidates.into_iter().collect();
+        for candidate_batch in candidate_vec.chunks(100) {
+            let verified_batch = tokio::task::spawn_blocking({
+                let fingerprint_cache = &mut fingerprint_cache; // Borrow
+                let records = &self.records; // Borrow
+
+                move || {
+                    let mut batch_results: Vec<(usize, usize, f64)> = Vec::new();
+
+                    for &((file1, file2), match_count) in candidate_batch {
+                        // Skip if the match count is too low (already filtered, but double-check)
+                        if match_count < 15 {
+                            continue;
+                        }
+
+                        // Get or decode the fingerprints
+                        let fp1 = get_or_decode_fingerprint(file1, records, fingerprint_cache);
+                        let fp2 = get_or_decode_fingerprint(file2, records, fingerprint_cache);
+
+                        if fp1.is_empty() || fp2.is_empty() {
+                            continue;
+                        }
+
+                        // Determine which file might be a segment of the other
+                        // Generally, the shorter one is a segment of the longer one
+                        let (container_id, segment_id, similarity) = if fp1.len() > fp2.len() {
+                            // Check if fp2 is a segment of fp1
+                            let sim = detect_segment(&fp2, &fp1, threshold)
+                                .map(|m| m.similarity)
+                                .unwrap_or(0.0);
+                            (file1, file2, sim)
+                        } else {
+                            // Check if fp1 is a segment of fp2
+                            let sim = detect_segment(&fp1, &fp2, threshold)
+                                .map(|m| m.similarity)
+                                .unwrap_or(0.0);
+                            (file2, file1, sim)
+                        };
+
+                        // If similarity is above threshold, add to results
+                        if similarity >= threshold {
+                            batch_results.push((container_id, segment_id, similarity));
+                        }
+                    }
+
+                    // Check cache size inside the closure
+                    let should_clear_cache = fingerprint_cache.len() > 5000;
+
+                    (batch_results, should_clear_cache)
+                }
+            })
+            .await
+            .map_err(|e| format!("Verification failed: {:?}", e))?;
+
+            // Unpack results
+            let (batch_results, should_clear_cache) = verified_batch;
+
+            // Add verified segments to the groups
+            for (container_id, segment_id, similarity) in batch_results {
+                segment_groups
+                    .entry(container_id)
+                    .or_default()
+                    .push((segment_id, similarity));
+            }
+
+            processed += candidate_batch.len();
+
+            // Update progress
+            app.emit(
+                "search-sub-status",
+                StatusUpdate {
+                    stage: "segment".into(),
+                    progress: 50 + ((processed * 20) / total_candidates) as u64,
+                    message: format!("Verifying matches: {}/{}", processed, total_candidates),
+                },
+            )
+            .ok();
+
+            // Replace cache with a new one if it gets too large
+            if should_clear_cache {
+                fingerprint_cache = HashMap::with_capacity(1000);
+            }
+        }
+
+        // Sort segments by similarity within each container
+        for segments in segment_groups.values_mut() {
+            segments.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        }
+
+        println!("Found {} containers with segments", segment_groups.len());
+        Ok(segment_groups)
+    }
+
+    async fn mark_segment_groups(
+        &mut self,
+        segment_groups: HashMap<usize, Vec<(usize, f64)>>,
+        app: &AppHandle,
+    ) -> Result<(), String> {
+        app.emit(
+            "search-sub-status",
+            StatusUpdate {
+                stage: "segment".into(),
+                progress: 80,
+                message: "Marking segment relationships...".into(),
+            },
+        )
+        .ok();
+
+        // Keep track of all records
+        let all_records = self.records.clone();
+
+        // Create a BitSet to track which records have been processed
+        let mut processed_ids = BitSet::with_capacity(self.records.len());
+        let mut processed_records = Vec::with_capacity(self.records.len());
+
+        // Process all segment groups
+        let total_groups = segment_groups.len();
+        let mut processed_groups = 0;
+
+        for (container_id, segments) in segment_groups {
+            // Find the container record
+            if let Some(container_record) = all_records.iter().find(|r| r.id == container_id) {
+                // Clone and mark the container record
+                let mut container_record = container_record.clone();
+                container_record.algorithm.insert(Algorithm::Waveforms);
+                processed_ids.insert(container_record.id);
+                processed_records.push(container_record);
+
+                // Process all segments for this container
+                for (segment_id, _similarity) in segments {
+                    if let Some(segment_record) = all_records.iter().find(|r| r.id == segment_id) {
+                        let mut segment_record = segment_record.clone();
+                        segment_record.algorithm.insert(Algorithm::Waveforms);
+                        segment_record.algorithm.remove(&A::Keep); // Segments are marked as duplicates
+                        processed_ids.insert(segment_record.id);
+                        processed_records.push(segment_record);
+                    }
+                }
+            }
+
+            processed_groups += 1;
+
+            // Update progress every 10 groups or for the last one
+            if processed_groups % 10 == 0 || processed_groups == total_groups {
+                app.emit(
+                    "search-sub-status",
+                    StatusUpdate {
+                        stage: "segment".into(),
+                        progress: 80 + ((processed_groups * 15) / total_groups) as u64,
+                        message: format!("Marking groups: {}/{}", processed_groups, total_groups),
+                    },
+                )
+                .ok();
+            }
+        }
+
+        // Add any records not in a segment group
+        for record in all_records {
+            if !processed_ids.contains(record.id) {
+                processed_records.push(record);
+            }
+        }
+
+        self.records = processed_records;
+
+        // Final completion update
+        app.emit(
+            "search-sub-status",
+            StatusUpdate {
+                stage: "segment".into(),
+                progress: 100,
+                message: "Segment analysis complete".into(),
+            },
+        )
+        .ok();
+
+        Ok(())
+    }
+
+    async fn subset_match(&mut self, pref: &Preferences, app: &AppHandle) -> Result<(), String> {
+        let threshold = pref.similarity_threshold / 100.0;
+
+        app.emit(
+            "search-sub-status",
+            StatusUpdate {
+                stage: "segment".into(),
+                progress: 0,
+                message: "Starting segment detection analysis...".into(),
+            },
+        )
+        .ok();
+
+        // STEP 1: Build feature index for all fingerprints
+        app.emit(
+            "search-sub-status",
+            StatusUpdate {
+                stage: "segment".into(),
+                progress: 10,
+                message: "Building fingerprint feature index...".into(),
+            },
+        )
+        .ok();
+
+        // Build feature index using a spawned blocking task to prevent UI freeze
+        let feature_index = tokio::task::spawn_blocking({
+            let records = self.records.clone();
+            move || {
+                let mut feature_index: HashMap<u64, Vec<(usize, usize)>> = HashMap::new();
+
+                // Process fingerprints to build index
+                for record in &records {
+                    if let Some(raw_fp) = &record.fingerprint {
+                        if raw_fp.as_ref() == "FAILED" || raw_fp.starts_with("PCM:") {
+                            continue;
+                        }
+
+                        let decoded = decode_fingerprint(raw_fp);
+                        if decoded.len() < 10 {
+                            continue; // Skip very short fingerprints
+                        }
+
+                        // Extract features from this fingerprint
+                        for pos in 0..(decoded.len().saturating_sub(4)) {
+                            if pos + 4 <= decoded.len() {
+                                let feature = fingerprint_feature_hash(&decoded[pos..pos + 4]);
+                                feature_index
+                                    .entry(feature)
+                                    .or_default()
+                                    .push((record.id, pos));
+                            }
+                        }
+                    }
+                }
+
+                feature_index
+            }
+        })
+        .await
+        .map_err(|e| format!("Feature index building failed: {:?}", e))?;
+
+        // STEP 2: Find candidate segment pairs
+        let candidates = self.find_segment_candidates(&feature_index, app).await?;
+
+        // STEP 3: Verify segment matches
+        let segment_groups = self
+            .verify_segment_matches(candidates, threshold, app)
+            .await?;
+
+        // STEP 4: Mark records as segments
+        self.mark_segment_groups(segment_groups, app).await?;
+
+        // Final completion update
+        app.emit(
+            "search-sub-status",
+            StatusUpdate {
+                stage: "segment".into(),
+                progress: 100,
+                message: "Segment detection complete".into(),
+            },
+        )
+        .ok();
+
+        Ok(())
+    }
 }
 
 async fn store_fingerprints_batch_optimized(
@@ -1096,4 +1520,162 @@ fn calculate_similarity(fp1: &[u32], fp2: &[u32]) -> f64 {
     }
 
     best_similarity
+}
+
+// Function to decode a base64 fingerprint into a vector of u32
+fn decode_fingerprint(raw_fp: &str) -> Vec<u32> {
+    if let Ok(fp_bytes) = general_purpose::STANDARD.decode(raw_fp) {
+        let mut fp = Vec::with_capacity(fp_bytes.len() / 4);
+        for chunk in fp_bytes.chunks_exact(4) {
+            if chunk.len() == 4 {
+                let mut array = [0u8; 4];
+                array.copy_from_slice(chunk);
+                fp.push(u32::from_le_bytes(array));
+            }
+        }
+        fp
+    } else {
+        Vec::new()
+    }
+}
+
+// Function to create a hash from a fingerprint feature (4 blocks)
+fn fingerprint_feature_hash(feature: &[u32]) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    for &block in feature {
+        std::hash::Hash::hash(&block, &mut hasher);
+    }
+    std::hash::Hasher::finish(&hasher)
+}
+
+// Helper function for caching fingerprint decoding that avoids borrowing issues
+fn get_or_decode_fingerprint(
+    id: usize,
+    records: &[FileRecord],
+    cache: &mut HashMap<usize, Vec<u32>>,
+) -> Vec<u32> {
+    if let Some(fp) = cache.get(&id) {
+        return fp.clone();
+    }
+
+    if let Some(record) = records.iter().find(|r| r.id == id) {
+        if let Some(raw_fp) = &record.fingerprint {
+            if raw_fp.as_ref() != "FAILED" && !raw_fp.as_ref().starts_with("PCM:") {
+                let decoded = decode_fingerprint(raw_fp);
+                cache.insert(id, decoded.clone());
+                return decoded;
+            }
+        }
+    }
+
+    Vec::new()
+}
+/// Detects if a shorter audio segment appears within a longer one
+fn detect_segment(short_fp: &[u32], long_fp: &[u32], threshold: f64) -> Option<SegmentMatch> {
+    if short_fp.is_empty() || long_fp.is_empty() || short_fp.len() > long_fp.len() {
+        return None;
+    }
+
+    // Skip if the short fingerprint is too short (causes too many false positives)
+    if short_fp.len() < 20 {
+        return None;
+    }
+
+    let mut best_match = SegmentMatch {
+        position: 0,
+        similarity: 0.0,
+    };
+
+    // For very large fingerprints, use sparse sampling to improve performance
+    let positions_to_check = if long_fp.len() > 1000 {
+        // For very long fingerprints, sample at intervals
+        // Skip exponentially more positions as the fingerprint gets longer
+        let step = ((long_fp.len() as f64).sqrt() as usize).max(5);
+        (0..=long_fp.len() - short_fp.len())
+            .step_by(step)
+            .collect::<Vec<_>>()
+    } else {
+        // For shorter fingerprints, check every position or use a small step
+        let step = if long_fp.len() > 500 { 4 } else { 1 };
+        (0..=long_fp.len() - short_fp.len()).step_by(step).collect()
+    };
+
+    for start_pos in positions_to_check {
+        let mut matching_bits = 0;
+        let total_bits = short_fp.len() * 32;
+
+        // Use SIMD for faster comparison when available
+        #[cfg(target_arch = "x86_64")]
+        {
+            if is_x86_feature_detected!("sse2") {
+                unsafe {
+                    use std::arch::x86_64::*;
+                    let chunk_size = 4;
+                    let mut chunks_processed = 0;
+
+                    for i in (0..short_fp.len() - (short_fp.len() % chunk_size)).step_by(chunk_size)
+                    {
+                        let a = _mm_loadu_si128(short_fp[i..].as_ptr() as *const __m128i);
+                        let b =
+                            _mm_loadu_si128(long_fp[start_pos + i..].as_ptr() as *const __m128i);
+                        let xor = _mm_xor_si128(a, b);
+
+                        let count = (_mm_extract_epi64(xor, 0) as u64).count_ones()
+                            + (_mm_extract_epi64(xor, 1) as u64).count_ones();
+
+                        matching_bits += 128 - count as usize;
+                        chunks_processed += 1;
+                    }
+
+                    // Process remaining elements
+                    for i in (chunks_processed * chunk_size)..short_fp.len() {
+                        let xor_result = short_fp[i] ^ long_fp[start_pos + i];
+                        matching_bits += 32 - xor_result.count_ones() as usize;
+                    }
+                }
+            } else {
+                for i in 0..short_fp.len() {
+                    let xor_result = short_fp[i] ^ long_fp[start_pos + i];
+                    matching_bits += 32 - xor_result.count_ones() as usize;
+                }
+            }
+        }
+
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            for i in 0..short_fp.len() {
+                let xor_result = short_fp[i] ^ long_fp[start_pos + i];
+                matching_bits += 32 - xor_result.count_ones() as usize;
+            }
+        }
+
+        let similarity = matching_bits as f64 / total_bits as f64;
+
+        // Keep track of best match
+        if similarity > best_match.similarity {
+            best_match.similarity = similarity;
+            best_match.position = start_pos;
+        }
+
+        // Early exit if we found an excellent match
+        if similarity >= 0.92 {
+            break;
+        }
+    }
+
+    // Only return matches that exceed the threshold
+    if best_match.similarity >= threshold {
+        Some(best_match)
+    } else {
+        None
+    }
+}
+
+/// Represents a segment match in a longer audio sample
+#[derive(Debug, Clone)]
+struct SegmentMatch {
+    /// Start position in the longer fingerprint (in fingerprint blocks)
+    position: usize,
+    /// Similarity score (0.0-1.0)
+    similarity: f64,
 }

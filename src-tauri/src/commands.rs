@@ -73,7 +73,6 @@ pub async fn get_records_size(state: State<'_, Mutex<AppState>>) -> Result<usize
     let state = state.lock().await;
     Ok(state.db.get_records_size())
 }
-
 #[tauri::command]
 pub async fn search(
     app: AppHandle,
@@ -81,7 +80,7 @@ pub async fn search(
     enabled: Enabled,
     pref: Preferences,
 ) -> Result<Vec<FileRecordFrontend>, String> {
-    let (tx, mut rx) = tokio::sync::oneshot::channel();
+    let (tx, rx) = tokio::sync::oneshot::channel();
     let app = app.clone();
     let enabled = enabled.clone();
     let pref = pref.clone();
@@ -91,45 +90,42 @@ pub async fn search(
         state.db.abort.store(false, Ordering::SeqCst);
         state.db.clone()
     };
+
     let handle = tokio::spawn(async move {
         let result = run_search(app, db, enabled, pref).await;
         let _ = tx.send(result);
     });
 
-    let mut interval = tokio::time::interval(std::time::Duration::from_millis(100));
-
-    loop {
-        tokio::select! {
-            // Check if the abort flag was set
-            _ = interval.tick() => {
+    // Don't use a loop - just await both in parallel once
+    tokio::select! {
+        // Poll for abortion periodically
+        _ = async {
+            let mut interval = tokio::time::interval(std::time::Duration::from_millis(100));
+            loop {
+                interval.tick().await;
                 let state = state.lock().await;
                 if state.db.abort.load(Ordering::SeqCst) {
-                    println!("Detected abort request, cancelling fingerprinting task");
-                    handle.abort();
-                    return Err("Aborted".to_string());
+                    return;
                 }
             }
+        } => {
+            println!("Detected abort request, cancelling search task");
+            handle.abort();
+            return Err("Aborted".to_string());
+        }
 
-            // Check if we received a result
-            result = &mut rx => {
-                match result {
-                    Ok(result) => {
-                       return result;
-                    }
-                    Err(_) => {
-                        // Task was likely aborted
-                        return Err("Fingerprinting task aborted or failed".to_string());
-                    }
+        // Wait for search to complete
+        result = rx => {
+            match result {
+                Ok(result) => {
+                   return result;
+                }
+                Err(_) => {
+                    return Err("Fingerprinting task aborted or failed".to_string());
                 }
             }
         }
     }
-
-    // This code is unreachable but kept to maintain structure
-    #[allow(unreachable_code)]
-    Ok(
-        Vec::new(), // Placeholder for the actual result
-    )
 }
 
 async fn run_search(
