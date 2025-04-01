@@ -1,6 +1,8 @@
+use crate::*;
+use ::chromaprint::Chromaprint;
 use anyhow::{Context, Result};
 use base64::{Engine as _, engine::general_purpose};
-use chromaprint::Chromaprint;
+use bit_set::BitSet;
 use std::path::Path;
 use symphonia::core::audio::SampleBuffer;
 use symphonia::core::codecs::DecoderOptions;
@@ -8,6 +10,846 @@ use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
+
+impl Database {
+    pub async fn wave_search_chromaprint(
+        &mut self,
+        pref: &Preferences,
+        app: &AppHandle,
+    ) -> Result<(), String> {
+        println!("Starting Waveform Search");
+        self.gather_fingerprints(pref, app).await?;
+
+        match pref.waveform_search_type {
+            WaveformMatchType::Subset => {
+                self.subset_match(pref, app).await?;
+            }
+            WaveformMatchType::Exact => {
+                self.exact_match(pref, app).await?;
+            }
+            WaveformMatchType::Similar => {
+                self.similar_match(pref, app).await?;
+            }
+        }
+
+        Ok(())
+    }
+    async fn gather_fingerprints(
+        &mut self,
+        pref: &Preferences,
+        app: &AppHandle,
+    ) -> Result<(), String> {
+        let mut batch_size: usize = 1000;
+        let total_records = self.records.len();
+        if batch_size > total_records {
+            batch_size = total_records;
+        }
+        let completed = AtomicUsize::new(0);
+        const STORE_MIN_INTERVAL: usize = 200;
+
+        let pool = self.get_pool().await;
+
+        let mut record_ids_to_store: Vec<(usize, String)> = Vec::with_capacity(batch_size);
+
+        for chunk in self.records.chunks_mut(batch_size) {
+            if self.abort.load(Ordering::SeqCst) {
+                println!("Aborting fingerprint scan - early exit");
+                return Err("Aborted".to_string());
+            }
+            let local_ids: Vec<(usize, String)> = chunk
+                .par_iter_mut()
+                .filter_map(|record| {
+                    let path = PathBuf::from(record.get_filepath());
+                    let new_completed = completed.fetch_add(1, Ordering::SeqCst) + 1;
+                    if !path.exists()
+                        || !path.is_file()
+                        || record.fingerprint.is_some()
+                        || self.abort.load(Ordering::SeqCst)
+                    {
+                        return None;
+                    }
+                    app.emit(
+                        "search-status",
+                        StatusUpdate {
+                            stage: "fingerprinting".into(),
+                            progress: (new_completed * 100 / total_records) as u64,
+                            message: format!(
+                                "Generating Audio Fingerprints: ({}/{}) ",
+                                new_completed, total_records
+                            ),
+                        },
+                    )
+                    .ok();
+                    app.emit(
+                        "search-sub-status",
+                        StatusUpdate {
+                            stage: "fingerprinting".into(),
+                            progress: ((new_completed % batch_size) * 100 / batch_size) as u64,
+                            message: format!("{} ", record.get_filename()),
+                        },
+                    )
+                    .ok();
+
+                    let fingerprint_result =
+                        audio::chromaprint::get_chromaprint_fingerprint(record.get_filepath());
+
+                    let fingerprint = fingerprint_result.unwrap_or("FAILED".to_string());
+
+                    record.fingerprint = Some(Arc::from(fingerprint.as_str()));
+
+                    Some((record.id, fingerprint))
+                })
+                .collect();
+
+            record_ids_to_store.extend(local_ids);
+
+            if pref.store_waveforms && record_ids_to_store.len() >= STORE_MIN_INTERVAL {
+                // Store fingerprints in batches to avoid memory issues
+                if let Some(pool) = &pool {
+                    store_fingerprints_batch_optimized(pool, &record_ids_to_store, app).await;
+                }
+                record_ids_to_store.clear(); // Clear after storing
+            }
+        }
+
+        if pref.store_waveforms {
+            // Store fingerprints in batches to avoid memory issues
+            if let Some(pool) = &pool {
+                store_fingerprints_batch_optimized(pool, &record_ids_to_store, app).await;
+            }
+            record_ids_to_store.clear(); // Clear after storing
+        }
+
+        Ok(())
+    }
+
+    async fn subset_match(&mut self, pref: &Preferences, app: &AppHandle) -> Result<(), String> {
+        app.emit(
+            "search-sub-status",
+            StatusUpdate {
+                stage: "subset".into(),
+                progress: 0,
+                message: "Starting audio subset detection...".into(),
+            },
+        )
+        .ok();
+
+        // Filter records to only those with valid Chromaprint fingerprints
+        let valid_records: Vec<&FileRecord> = self
+            .records
+            .par_iter()
+            .filter(|record| {
+                record.fingerprint.as_ref().is_some_and(|fp| {
+                    !fp.is_empty() && &**fp != "FAILED" && !fp.starts_with("PCM:")
+                })
+            })
+            .collect();
+
+        let total_records = valid_records.len();
+        println!(
+            "Found {} records with valid fingerprints for subset analysis",
+            total_records
+        );
+
+        if total_records == 0 {
+            return Ok(());
+        }
+
+        // Step 1: Sort records by duration (longer files first)
+        app.emit(
+            "search-sub-status",
+            StatusUpdate {
+                stage: "subset".into(),
+                progress: 5,
+                message: "Preparing files for subset analysis...".into(),
+            },
+        )
+        .ok();
+
+        // Create a sorted list of records by duration
+        let mut records_by_duration = valid_records.clone();
+        records_by_duration.sort_by(|a, b| {
+            let a_duration = a.duration.parse::<f64>().unwrap_or(0.0);
+            let b_duration = b.duration.parse::<f64>().unwrap_or(0.0);
+            b_duration
+                .partial_cmp(&a_duration)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        // Step 2: Decode all fingerprints once to avoid repeated work
+        app.emit(
+            "search-sub-status",
+            StatusUpdate {
+                stage: "subset".into(),
+                progress: 10,
+                message: "Decoding audio fingerprints...".into(),
+            },
+        )
+        .ok();
+
+        // Map of record ID to decoded fingerprint
+        let decoded_fingerprints: HashMap<usize, Vec<u32>> = valid_records
+            .par_iter()
+            .filter_map(|record| {
+                if let Some(fp) = &record.fingerprint {
+                    if let Ok(decoded) = decode_chromaprint(fp) {
+                        return Some((record.id, decoded));
+                    }
+                }
+                None
+            })
+            .collect();
+
+        println!(
+            "Successfully decoded {} fingerprints",
+            decoded_fingerprints.len()
+        );
+
+        // Step 3: Find subset relationships
+        app.emit(
+            "search-sub-status",
+            StatusUpdate {
+                stage: "subset".into(),
+                progress: 20,
+                message: "Finding audio subset relationships...".into(),
+            },
+        )
+        .ok();
+
+        // Track parent-child relationships
+        let mut parent_children_map: HashMap<usize, Vec<usize>> = HashMap::new();
+        let mut child_parent_map: HashMap<usize, usize> = HashMap::new();
+
+        // For large datasets, process in batches
+        let batch_size = 1000;
+        let total_batches = records_by_duration.len().div_ceil(batch_size);
+
+        // Use a threshold slightly lower than for similarity matching
+        let subset_threshold = (pref.similarity_threshold / 100.0) * 0.9;
+
+        for batch_idx in 0..total_batches {
+            let batch_start = batch_idx * batch_size;
+            let batch_end = ((batch_idx + 1) * batch_size).min(records_by_duration.len());
+
+            app.emit(
+                "search-sub-status",
+                StatusUpdate {
+                    stage: "subset".into(),
+                    progress: 20 + (batch_idx * 60 / total_batches) as u64,
+                    message: format!(
+                        "Processing batch {}/{} (files {}-{})",
+                        batch_idx + 1,
+                        total_batches,
+                        batch_start + 1,
+                        batch_end
+                    ),
+                },
+            )
+            .ok();
+
+            // Process this batch of potential parents
+            for i in batch_start..batch_end {
+                let parent_record = records_by_duration[i];
+                let parent_id = parent_record.id;
+
+                // Skip if already marked as a child of another file
+                if child_parent_map.contains_key(&parent_id) {
+                    continue;
+                }
+
+                // Get parent fingerprint
+                let parent_fp = match decoded_fingerprints.get(&parent_id) {
+                    Some(fp) => fp,
+                    None => continue,
+                };
+
+                let parent_duration = parent_record.duration.parse::<f64>().unwrap_or(0.0);
+
+                // Find potential children (shorter duration files)
+                for child_record in &records_by_duration[(i + 1)..] {
+                    let child_id = child_record.id;
+
+                    // Skip if already identified as a child or if it's the same file
+                    if child_parent_map.contains_key(&child_id) || child_id == parent_id {
+                        continue;
+                    }
+
+                    let child_duration = child_record.duration.parse::<f64>().unwrap_or(0.0);
+
+                    if child_duration >= parent_duration {
+                        continue;
+                    }
+
+                    // Get child fingerprint
+                    let child_fp = match decoded_fingerprints.get(&child_id) {
+                        Some(fp) => fp,
+                        None => continue,
+                    };
+
+                    // Check if child is a subset of parent using sliding window approach
+                    if is_fingerprint_subset(child_fp, parent_fp, subset_threshold) {
+                        // Add relationship
+                        parent_children_map
+                            .entry(parent_id)
+                            .or_default()
+                            .push(child_id);
+                        child_parent_map.insert(child_id, parent_id);
+                    }
+                }
+
+                // Report progress periodically
+                if (i - batch_start) % 50 == 0 {
+                    let batch_progress = (i - batch_start) * 100 / (batch_end - batch_start);
+                    app.emit(
+                        "search-sub-status",
+                        StatusUpdate {
+                            stage: "subset".into(),
+                            progress: 20
+                                + ((batch_idx * 100 + batch_progress) * 60 / (total_batches * 100))
+                                    as u64,
+                            message: format!(
+                                "Batch {}/{}: {} subset relationships found",
+                                batch_idx + 1,
+                                total_batches,
+                                parent_children_map.values().map(|v| v.len()).sum::<usize>()
+                            ),
+                        },
+                    )
+                    .ok();
+                }
+            }
+        }
+
+        // Step 4: Apply algorithm markings
+        app.emit(
+            "search-sub-status",
+            StatusUpdate {
+                stage: "subset".into(),
+                progress: 85,
+                message: "Applying algorithm markings to records...".into(),
+            },
+        )
+        .ok();
+
+        let total_parents = parent_children_map.len();
+        let total_children = child_parent_map.len();
+
+        println!(
+            "Found {} parent files containing {} child subsets",
+            total_parents, total_children
+        );
+
+        // Update records with subset relationships
+        self.records.par_iter_mut().for_each(|record| {
+            let id = record.id;
+
+            if parent_children_map.contains_key(&id) {
+                // This is a parent file with subsets
+                record.algorithm.insert(Algorithm::Waveforms);
+                // Parents keep the Keep algorithm
+            } else if let Some(_parent_id) = child_parent_map.get(&id) {
+                // This is a child/subset file
+                record.algorithm.insert(Algorithm::Waveforms);
+                record.algorithm.remove(&Algorithm::Keep);
+            }
+        });
+
+        app.emit(
+            "search-sub-status",
+            StatusUpdate {
+                stage: "subset".into(),
+                progress: 100,
+                message: format!(
+                    "Subset detection complete: {} parent files, {} subset files",
+                    total_parents, total_children
+                ),
+            },
+        )
+        .ok();
+
+        Ok(())
+    }
+
+    async fn exact_match(&mut self, pref: &Preferences, app: &AppHandle) -> Result<(), String> {
+        app.emit(
+            "search-sub-status",
+            StatusUpdate {
+                stage: "grouping".into(),
+                progress: 0,
+                message: "Grouping identical audio fingerprints...".into(),
+            },
+        )
+        .ok();
+
+        let records_without_fingerprints: Vec<FileRecord> = self
+            .records
+            .iter()
+            .filter(|record| {
+                record.fingerprint.is_none()
+                    || record
+                        .fingerprint
+                        .as_ref()
+                        .is_some_and(|fp| &**fp == "FAILED")
+            })
+            .cloned()
+            .collect();
+
+        let mut file_groups: HashMap<Arc<str>, Vec<FileRecord>> =
+            HashMap::with_capacity(self.records.len() / 2);
+
+        // Group records by waveform
+        for (i, record) in self.records.iter().enumerate() {
+            if i % RECORD_DIVISOR == 0 || i == 0 || i == self.records.len() - 1 {
+                app.emit(
+                    "search-sub-status",
+                    StatusUpdate {
+                        stage: "grouping".into(),
+                        progress: ((i + 1) * 100 / self.records.len()) as u64,
+                        message: format!(
+                            "Grouping by fingerprint: {}/{}",
+                            i + 1,
+                            self.records.len()
+                        ),
+                    },
+                )
+                .ok();
+            }
+
+            if let Some(fingerprint) = &record.fingerprint {
+                file_groups
+                    .entry(fingerprint.clone())
+                    .or_default()
+                    .push(record.clone());
+            }
+        }
+
+        println!("Marking duplicate audio files");
+        app.emit(
+            "search-sub-status",
+            StatusUpdate {
+                stage: "marking".into(),
+                progress: 0,
+                message: "Marking duplicate audio files...".into(),
+            },
+        )
+        .ok();
+
+        // Process groups
+        let group_count = file_groups.len();
+        let processed_records: Vec<FileRecord> = file_groups
+            .into_iter()
+            .enumerate()
+            .flat_map(|(i, (_, mut records))| {
+                if i % RECORD_DIVISOR == 0 || i == 0 || i == group_count - 1 {
+                    app.emit(
+                        "search-sub-status",
+                        StatusUpdate {
+                            stage: "marking".into(),
+                            progress: ((i + 1) * 100 / group_count) as u64,
+                            message: format!("Processing group: {}/{}", i + 1, group_count),
+                        },
+                    )
+                    .ok();
+                }
+
+                if records.len() < 2 {
+                    return records;
+                }
+                pref.sort_vec(&mut records);
+
+                records.iter_mut().enumerate().for_each(|(i, record)| {
+                    if i > 0 {
+                        record.algorithm.remove(&A::Keep);
+                    }
+                    record.algorithm.insert(A::Waveforms);
+                });
+
+                records
+            })
+            .collect();
+
+        let mut final_records = processed_records;
+        final_records.extend(records_without_fingerprints);
+        self.records = final_records;
+
+        app.emit(
+            "search-sub-status",
+            StatusUpdate {
+                stage: "complete".into(),
+                progress: 100,
+                message: "Exact Audio fingerprint analysis complete".into(),
+            },
+        )
+        .ok();
+
+        Ok(())
+    }
+
+    async fn similar_match(&mut self, pref: &Preferences, app: &AppHandle) -> Result<(), String> {
+        let threshold = pref.similarity_threshold / 100.0;
+
+        app.emit(
+            "search-sub-status",
+            StatusUpdate {
+                stage: "similarity".into(),
+                progress: 0,
+                message: "Starting combined similarity/hash analysis...".into(),
+            },
+        )
+        .ok();
+
+        // Keep track of all records, not just ones with fingerprints
+        let all_records = self.records.clone();
+
+        // STEP 1: Separate fingerprints into Chromaprint vs PCM hash groups
+        let (chromaprint_records, pcm_hash_records): (Vec<&FileRecord>, Vec<&FileRecord>) = self
+            .records
+            .par_iter() // Changed from par_iter_mut() to par_iter() to match the expected immutable references
+            .filter(|record| {
+                // Add check to exclude FAILED fingerprints
+                record
+                    .fingerprint
+                    .as_ref()
+                    .is_some_and(|fp| !fp.is_empty() && &**fp != "FAILED")
+            })
+            .partition(|record| {
+                let fp = record.fingerprint.as_ref().unwrap();
+                !fp.starts_with("PCM:")
+            });
+
+        println!(
+            "Found {} records with Chromaprint fingerprints and {} with PCM hashes",
+            chromaprint_records.len(),
+            pcm_hash_records.len()
+        );
+
+        // Create a BitSet to track which records have been processed
+        let mut processed_ids = BitSet::with_capacity(self.records.len());
+        let mut processed_records = Vec::with_capacity(self.records.len());
+
+        // STEP 2: Process PCM hashes with exact matching (similar to exact_match function)
+        if !pcm_hash_records.is_empty() {
+            app.emit(
+                "search-sub-status",
+                StatusUpdate {
+                    stage: "pcm_hash".into(),
+                    progress: 0,
+                    message: format!("Processing {} PCM hash records...", pcm_hash_records.len()),
+                },
+            )
+            .ok();
+
+            // Group PCM hash records by hash value
+            let mut hash_groups: HashMap<Arc<str>, Vec<FileRecord>> = HashMap::new();
+
+            for (i, record) in pcm_hash_records.iter().enumerate() {
+                if i % RECORD_DIVISOR == 0 {
+                    app.emit(
+                        "search-sub-status",
+                        StatusUpdate {
+                            stage: "pcm_hash".into(),
+                            progress: ((i + 1) * 50 / pcm_hash_records.len()) as u64,
+                            message: format!(
+                                "Grouping PCM hashes: {}/{}",
+                                i + 1,
+                                pcm_hash_records.len()
+                            ),
+                        },
+                    )
+                    .ok();
+                }
+
+                if let Some(hash) = &record.fingerprint {
+                    hash_groups
+                        .entry(hash.clone())
+                        .or_default()
+                        .push((*record).clone());
+                }
+            }
+
+            // Process hash groups - mark duplicates
+            let hash_group_count = hash_groups.len();
+
+            for (i, (_, mut records)) in hash_groups.into_iter().enumerate() {
+                if i % RECORD_DIVISOR == 0 {
+                    app.emit(
+                        "search-sub-status",
+                        StatusUpdate {
+                            stage: "pcm_hash".into(),
+                            progress: 50 + ((i + 1) * 50 / hash_group_count) as u64,
+                            message: format!(
+                                "Processing hash groups: {}/{}",
+                                i + 1,
+                                hash_group_count
+                            ),
+                        },
+                    )
+                    .ok();
+                }
+
+                if records.len() < 2 {
+                    // Single record in group - just mark it as processed
+                    for record in records {
+                        processed_ids.insert(record.id);
+                        processed_records.push(record);
+                    }
+                    continue;
+                }
+
+                // Sort and mark duplicates
+                pref.sort_vec(&mut records);
+
+                for (j, mut record) in records.into_iter().enumerate() {
+                    processed_ids.insert(record.id);
+
+                    // Mark as PCM duplicate
+                    record.algorithm.insert(Algorithm::Waveforms);
+
+                    // Remove Keep from duplicates
+                    if j > 0 {
+                        record.algorithm.remove(&A::Keep);
+                    }
+
+                    processed_records.push(record);
+                }
+            }
+        }
+
+        // STEP 3: Process Chromaprint fingerprints with similarity matching
+        if !chromaprint_records.is_empty() {
+            // Existing similarity match code...
+            app.emit(
+                "search-sub-status",
+                StatusUpdate {
+                    stage: "similarity".into(),
+                    progress: 10,
+                    message: format!(
+                        "Decoding {} Chromaprint fingerprints...",
+                        chromaprint_records.len()
+                    ),
+                },
+            )
+            .ok();
+
+            // Your existing code for processing fingerprints
+            let total_records = chromaprint_records.len();
+            let similarity_groups = {
+                // First pass - decode all fingerprints with progress
+                let decoded_fps: Vec<Option<Vec<u32>>> = chromaprint_records
+                    .par_iter()
+                    .enumerate()
+                    .map(|(i, record)| {
+                        // Progress reporting code...
+                        let update_interval = (total_records.max(20) / 100).max(1);
+                        if i % update_interval == 0 {
+                            app.emit(
+                                "search-sub-status",
+                                StatusUpdate {
+                                    stage: "similarity".into(),
+                                    progress: 10 + ((i * 30) / total_records) as u64,
+                                    message: format!(
+                                        "Decoding fingerprints: {}/{}",
+                                        i, total_records
+                                    ),
+                                },
+                            )
+                            .ok();
+                        }
+
+                        if let Some(raw_fp) = &record.fingerprint {
+                            if let Ok(fp_bytes) = general_purpose::STANDARD.decode(raw_fp.as_ref())
+                            {
+                                // Decode fingerprint...
+                                let mut fp = Vec::with_capacity(fp_bytes.len() / 4);
+                                for chunk in fp_bytes.chunks_exact(4) {
+                                    if chunk.len() == 4 {
+                                        let mut array = [0u8; 4];
+                                        array.copy_from_slice(chunk);
+                                        fp.push(u32::from_le_bytes(array));
+                                    }
+                                }
+                                return Some(fp);
+                            }
+                        }
+                        None
+                    })
+                    .collect();
+
+                // PROGRESS: Update before starting comparisons
+                app.emit(
+                    "search-sub-status",
+                    StatusUpdate {
+                        stage: "similarity".into(),
+                        progress: 40,
+                        message: "Comparing fingerprints for similarities...".into(),
+                    },
+                )
+                .ok();
+
+                // Second pass - build groups with similarity with progress updates
+                let mut groups: HashMap<usize, Vec<(usize, Vec<u32>)>> = HashMap::new();
+                let mut next_group_id = 0;
+
+                // Process in smaller batches and report progress
+                for i in 0..total_records {
+                    app.emit(
+                        "search-sub-status",
+                        StatusUpdate {
+                            stage: "similarity".into(),
+                            progress: (i * 100 / total_records) as u64,
+                            message: format!("Finding similar audio: {}/{}", i, total_records),
+                        },
+                    )
+                    .ok();
+
+                    let idx = chromaprint_records[i].id;
+                    if let Some(ref fp_i) = decoded_fps[i] {
+                        // Comparison logic...
+                        let mut found_group = None;
+
+                        for (&group_id, group_members) in &groups {
+                            for (_, group_fp) in group_members {
+                                let similarity = calculate_similarity_simd(fp_i, group_fp);
+                                if similarity >= threshold {
+                                    found_group = Some(group_id);
+                                    break;
+                                }
+                            }
+                            if found_group.is_some() {
+                                break;
+                            }
+                        }
+
+                        if let Some(group_id) = found_group {
+                            groups.get_mut(&group_id).unwrap().push((idx, fp_i.clone()));
+                        } else {
+                            groups.insert(next_group_id, vec![(idx, fp_i.clone())]);
+                            next_group_id += 1;
+                        }
+                    }
+                }
+
+                groups
+            };
+
+            app.emit(
+                "search-sub-status",
+                StatusUpdate {
+                    stage: "similarity".into(),
+                    progress: 70,
+                    message: format!(
+                        "Processing {} similarity groups...",
+                        similarity_groups.len()
+                    ),
+                },
+            )
+            .ok();
+
+            // Process groups with progress updates - optimized for large databases
+            let total_groups = similarity_groups.len();
+            let mut groups_processed = 0;
+            let max_group_size = 1000; // Limit extremely large groups
+
+            // Use chunks to process groups in batches
+            for groups_chunk in similarity_groups.iter().collect::<Vec<_>>().chunks(50) {
+                // Process this batch of groups
+                for (_, group) in groups_chunk {
+                    groups_processed += 1;
+
+                    // Update progress more frequently
+                    if groups_processed % 10 == 0 || groups_processed == total_groups {
+                        app.emit(
+                            "search-sub-status",
+                            StatusUpdate {
+                                stage: "similarity".into(),
+                                progress: 70 + ((groups_processed * 20) / total_groups) as u64,
+                                message: format!(
+                                    "Processing group {}/{} ({} items)",
+                                    groups_processed,
+                                    total_groups,
+                                    group.len()
+                                ),
+                            },
+                        )
+                        .ok();
+                    }
+
+                    if group.len() > 1 {
+                        // Skip excessively large groups or process them differently
+                        if group.len() > max_group_size {
+                            println!(
+                                "Limiting oversized similarity group: {} items (max: {})",
+                                group.len(),
+                                max_group_size
+                            );
+
+                            // Take a sample of the large group instead
+                            let mut group_records: Vec<FileRecord> = group
+                                .iter()
+                                .take(max_group_size)
+                                .filter_map(|(idx, _)| {
+                                    all_records.iter().find(|r| r.id == *idx).cloned()
+                                })
+                                .collect();
+
+                            pref.sort_vec(&mut group_records);
+
+                            for (j, mut record) in group_records.into_iter().enumerate() {
+                                processed_ids.insert(record.id);
+                                record.algorithm.insert(Algorithm::SimilarAudio);
+                                if j > 0 {
+                                    record.algorithm.remove(&A::Keep);
+                                }
+                                processed_records.push(record);
+                            }
+                        } else {
+                            // Process normal-sized group
+                            let mut group_records: Vec<FileRecord> = group
+                                .iter()
+                                .filter_map(|(idx, _)| {
+                                    all_records.iter().find(|r| r.id == *idx).cloned()
+                                })
+                                .collect();
+
+                            pref.sort_vec(&mut group_records);
+
+                            for (j, mut record) in group_records.into_iter().enumerate() {
+                                processed_ids.insert(record.id);
+                                record.algorithm.insert(Algorithm::SimilarAudio);
+                                if j > 0 {
+                                    record.algorithm.remove(&A::Keep);
+                                }
+                                processed_records.push(record);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // STEP 4: Add any records not in a group
+        for record in all_records {
+            if !processed_ids.contains(record.id) {
+                processed_records.push(record);
+            }
+        }
+
+        self.records = processed_records;
+
+        // PROGRESS: Final completion update
+        app.emit(
+            "search-sub-status",
+            StatusUpdate {
+                stage: "similarity".into(),
+                progress: 100,
+                message: "Analysis complete: combined fingerprint and hash processing".into(),
+            },
+        )
+        .ok();
+
+        Ok(())
+    }
+}
 
 pub fn get_chromaprint_fingerprint<P: AsRef<Path>>(file_path: P) -> Option<String> {
     let path_str = file_path.as_ref().to_string_lossy().to_string();
@@ -276,659 +1118,456 @@ fn convert_to_raw_pcm(input_path: &str) -> Result<Vec<u8>> {
 
     Ok(pcm_data)
 }
-// #[derive(Default, Debug, Serialize, Clone, PartialEq)]
-// pub struct AudioFingerprint {
-//     pub text: Arc<str>,
-//     pub raw: Arc<str>,
-//     pub exact: Arc<str>,
-// }
-
-// impl AudioFingerprint {
-//     pub async fn new(path: &str) -> Result<Self, String> {
-//         let pcm_data = match convert_to_raw_pcm(path) {
-//             Ok(data) => data,
-//             Err(err) => {
-//                 eprintln!("Error converting to PCM: {}", err);
-//                 return Err(format!("Failed to convert audio: {}", err));
-//             }
-//         };
-//         // println!("Got PCM data, length: {} bytes", pcm_data.len());
-
-//         let mut hasher = Sha256::new();
-//         hasher.update(&pcm_data);
-//         let exact = hex::encode(hasher.finalize());
-
-//         // Convert to i16 samples
-//         let samples: Vec<i16> = pcm_data
-//             .chunks(4)
-//             .filter_map(|chunk| {
-//                 if chunk.len() == 4 {
-//                     let bytes = [chunk[0], chunk[1], chunk[2], chunk[3]];
-//                     let float = f32::from_le_bytes(bytes);
-//                     Some((float * 32767.0) as i16)
-//                 } else {
-//                     None
-//                 }
-//             })
-//             .collect();
-
-//         println!("Converted to {} i16 samples", samples.len());
-
-//         let mut c = Chromaprint::new();
-//         c.start(48000, 1);
-//         c.feed(&samples);
-//         c.finish();
-
-//         // Get both fingerprint formats
-//         let text = match c.fingerprint() {
-//             Some(text) => text,
-//             None => {
-//                 eprintln!("Failed to generate text fingerprint");
-//                 return Err("Failed to generate text fingerprint".into());
-//             }
-//         };
-
-//         let raw = match c.raw_fingerprint() {
-//             Some(raw_fingerprint) => {
-//                 // Convert Vec<i32> to bytes before encoding
-//                 let bytes: Vec<u8> = raw_fingerprint
-//                     .iter()
-//                     .flat_map(|&x| x.to_le_bytes())
-//                     .collect();
-//                 general_purpose::STANDARD.encode(bytes)
-//             }
-//             None => {
-//                 eprintln!("Failed to generate raw fingerprint");
-//                 return Err("Failed to generate raw fingerprint".into());
-//             }
-//         };
-//         Ok(Self {
-//             text: Arc::from(text),
-//             raw: Arc::from(raw),
-//             exact: Arc::from(exact),
-//         })
-//     }
-
-//     pub async fn store(&self, pool: &SqlitePool, row: usize) -> Result<(), sqlx::Error> {
-//         // Create a parameterized query to update a specific column in a specific row
-//         let result = sqlx::query(&format!(
-//         "UPDATE {} SET _fingerprint = ?, _fingerprint_raw = ?, _fingerprint_exact = ? WHERE rowid = ?",
-//         TABLE
-//     ))
-//     .bind(self.text.as_ref())
-//     .bind(self.raw.as_ref())
-//     .bind(self.exact.as_ref())
-//     .bind(row as i64)
-//     .execute(pool)
-//     .await;
-
-//         match result {
-//             Ok(result) => {
-//                 if result.rows_affected() == 0 {
-//                     println!(
-//                         "WARNING: No rows affected when updating fingerprints for ID {}",
-//                         row
-//                     );
-//                 } else {
-//                     println!("Successfully updated fingerprints for ID {}", row);
-//                 }
-//             }
-//             Err(e) => {
-//                 println!("ERROR updating fingerprints for ID {}: {}", row, e);
-//             }
-//         }
-
-//         // println!("Updated column '{}' in row {} with value '{}'", column_name, row_id, value);
-//         Ok(())
-//     }
-// }
-
-// Process pool size for FFmpeg conversions
-// const MAX_FFMPEG_PROCESSES: usize = 4;
-// Downsampling factor for large audio files
-// const DOWNSAMPLE_FACTOR: usize = 4;
-// Threshold for large files (in bytes)
-// const LARGE_FILE_THRESHOLD: u64 = 100_000_000; // 100MB
-
-// Cached audio data with timestamp for invalidation
-// #[derive(Clone)]
-// struct CachedAudioData {
-//     data: Vec<u8>,
-//     timestamp: std::time::SystemTime,
-// }
-
-// // Thread pool for FFmpeg processes
-// lazy_static::lazy_static! {
-//     // Replace mutex with a counting semaphore implementation
-//     static ref FFMPEG_SEMAPHORE: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
-//     static ref PROCESS_CACHE: Arc<RwLock<lru::LruCache<String, CachedAudioData>>> =
-//         Arc::new(RwLock::new(lru::LruCache::new(std::num::NonZeroUsize::new(100).unwrap())));
-//     static ref FFMPEG_PATH: Arc<String> = Arc::new(get_ffmpeg_path());
-// }
-
-// pub fn process_files_in_parallel(
-//     file_paths: &[String],
-//     ignore_filetype: bool,
-// ) -> Vec<(String, Result<String>)> {
-//     // Create a work queue with bounded capacity
-//     let (sender, receiver) = bounded::<(String, bool)>(32);
-//     let (result_sender, result_receiver) = unbounded::<(String, Result<String>)>();
-
-//     // Spawn worker threads based on CPU count
-//     let num_workers = num_cpus::get();
-//     let mut handles = Vec::with_capacity(num_workers);
-
-//     for _ in 0..num_workers {
-//         let receiver = receiver.clone();
-//         let result_sender = result_sender.clone();
-//         let handle = thread::spawn(move || {
-//             while let Ok((path, ignore)) = receiver.recv() {
-//                 let hash_result = hash_audio_content(&path, ignore);
-//                 result_sender.send((path.to_string(), hash_result)).unwrap();
-//             }
-//         });
-//         handles.push(handle);
-//     }
-
-//     // Send work to the queue
-//     for path in file_paths {
-//         sender.send((path.clone(), ignore_filetype)).unwrap();
-//     }
-//     drop(sender); // Close sender to signal no more work
-//     drop(result_sender); // Close original sender
-
-//     // Collect results
-//     let mut results = Vec::with_capacity(file_paths.len());
-//     while let Ok(result) = result_receiver.recv() {
-//         results.push(result);
-//     }
-
-//     // Wait for all threads to complete
-//     for handle in handles {
-//         handle.join().unwrap();
-//     }
-
-//     results
-// }
-
-// pub fn hash_audio_content(file_path: &str, ignore_filetypes: bool) -> Result<String> {
-//     // Check if file exists and get its modified time
-//     let file_timestamp = match std::fs::metadata(file_path) {
-//         Ok(metadata) => metadata.modified().unwrap_or(std::time::SystemTime::now()),
-//         Err(_) => return Err(anyhow::anyhow!("File does not exist: {}", file_path)),
-//     };
-
-//     // Check cache first, with timestamp validation
-//     {
-//         let cache = PROCESS_CACHE.read();
-//         if let Some(cached_data) = cache.peek(file_path) {
-//             // Only use cache if file hasn't been modified
-//             if cached_data.timestamp >= file_timestamp {
-//                 return hash_audio_bytes(&cached_data.data);
-//             }
-//         }
-//     }
-
-//     let audio_data = read_audio_data(file_path, ignore_filetypes)
-//         .context(format!("Failed to read audio data from {}", file_path))?;
-
-//     // Cache the result for future use with timestamp
-//     {
-//         let mut cache = PROCESS_CACHE.write();
-//         cache.put(
-//             file_path.to_string(),
-//             CachedAudioData {
-//                 data: audio_data.clone(),
-//                 timestamp: file_timestamp,
-//             },
-//         );
-//     }
-
-//     hash_audio_bytes(&audio_data)
-// }
-
-// fn hash_audio_bytes(audio_data: &[u8]) -> Result<String> {
-//     // For very large files, use downsampled hashing
-//     if audio_data.len() > 50_000_000 {
-//         // 50MB threshold
-//         return hash_downsampled_audio(audio_data);
-//     }
-
-//     // For large files, use chunked parallel hashing
-//     if audio_data.len() > 10_000_000 {
-//         // 10MB threshold
-//         return hash_large_audio_content(audio_data);
-//     }
-
-//     // For medium files, use rayon's par_chunks
-//     if audio_data.len() > 1_000_000 {
-//         // 1MB threshold
-//         return hash_medium_audio_content(audio_data);
-//     }
-
-//     // For smaller files, use regular hashing
-//     let mut hasher = Sha256::new();
-//     hasher.update(audio_data);
-//     let hash = hasher.finalize();
-//     Ok(hex::encode(hash))
-// }
-
-// // New function to handle extremely large files
-// fn hash_downsampled_audio(audio_data: &[u8]) -> Result<String> {
-//     // Create a downsampled version by taking every Nth sample
-//     let downsampled: Vec<u8> = audio_data
-//         .chunks(4) // Group by 4 bytes (assuming 32-bit samples)
-//         .step_by(DOWNSAMPLE_FACTOR)
-//         .flat_map(|chunk| chunk.iter().copied())
-//         .collect();
-
-//     // Hash the downsampled data
-//     let mut hasher = Sha256::new();
-//     hasher.update(&downsampled);
-//     Ok(hex::encode(hasher.finalize()))
-// }
-
-// // Optimized for medium-sized files
-// fn hash_medium_audio_content(audio_data: &[u8]) -> Result<String> {
-//     const CHUNK_SIZE: usize = 262_144; // 256KB chunks
-
-//     let hash = audio_data
-//         .par_chunks(CHUNK_SIZE)
-//         .fold(Sha256::new, |mut hasher, chunk| {
-//             hasher.update(chunk);
-//             hasher
-//         })
-//         .reduce(Sha256::new, |mut acc, partial| {
-//             acc.update(partial.finalize());
-//             acc
-//         });
-
-//     Ok(hex::encode(hash.finalize()))
-// }
-
-// // Optimized for large files
-// fn hash_large_audio_content(audio_data: &[u8]) -> Result<String> {
-//     const CHUNK_SIZE: usize = 1_000_000; // 1MB chunks
-
-//     let chunks: Vec<&[u8]> = audio_data.chunks(CHUNK_SIZE).collect();
-//     let chunk_hashes: Vec<Vec<u8>> = chunks
-//         .par_iter()
-//         .map(|chunk| {
-//             let mut chunk_hasher = Sha256::new();
-//             chunk_hasher.update(chunk);
-//             chunk_hasher.finalize().to_vec()
-//         })
-//         .collect();
-
-//     // Combine chunk hashes
-//     let mut final_hasher = Sha256::new();
-//     for hash in chunk_hashes {
-//         final_hasher.update(hash);
-//     }
-
-//     let final_hash = final_hasher.finalize();
-//     Ok(hex::encode(final_hash))
-// }
-
-// fn get_ffmpeg_path() -> String {
-//     // Try to get ffmpeg from system path first
-//     if let Ok(output) = Command::new("which").arg("ffmpeg").output() {
-//         if !output.stdout.is_empty() {
-//             return String::from_utf8_lossy(&output.stdout).trim().to_string();
-//         }
-//     }
-
-//     // Fall back to local path
-//     let current_dir = env::current_dir().expect("Failed to get current dir");
-//     let ffmpeg_path = current_dir.join("assets").join("ffmpeg").join("ffmpeg");
-//     ffmpeg_path.to_string_lossy().to_string()
-// }
-
-// fn read_audio_data(file_path: &str, ignore_filetypes: bool) -> Result<Vec<u8>> {
-//     // Skip processing if file doesn't exist
-//     if !Path::new(file_path).exists() {
-//         return Err(anyhow::anyhow!("File does not exist: {}", file_path));
-//     }
-
-//     // Check file size - use FFmpeg directly for large files regardless of type
-//     if let Ok(metadata) = std::fs::metadata(file_path) {
-//         if metadata.len() > LARGE_FILE_THRESHOLD {
-//             return convert_to_raw_pcm(file_path);
-//         }
-//     }
-
-//     if ignore_filetypes {
-//         return convert_to_raw_pcm(file_path);
-//     }
-
-//     let extension = Path::new(file_path)
-//         .extension()
-//         .and_then(|ext| ext.to_str())
-//         .unwrap_or("")
-//         .to_lowercase();
-
-//     match extension.as_str() {
-//         "flac" => {
-//             let file = File::open(file_path)?;
-//             read_flac_audio_data(&file)
-//         }
-//         "wav" => {
-//             let file = File::open(file_path)?;
-//             read_wav_audio_data(&file)
-//         }
-//         "mp3" => {
-//             let file = File::open(file_path)?;
-//             read_mp3_audio_data(&file)
-//         }
-//         _ => convert_to_raw_pcm(file_path),
-//     }
-// }
-
-// Replace your convert_to_raw_pcm function with this Symphonia implementation
-
-// Remove the get_ffmpeg_path function and FFMPEG_PATH static reference
-// Remove this:
-// static ref FFMPEG_PATH: Arc<String> = Arc::new(get_ffmpeg_path());
-// And the get_ffmpeg_path function
-
-// fn convert_to_raw_pcm_old(input_path: &str) -> Result<Vec<u8>> {
-//     // Implement proper semaphore with MAX_FFMPEG_PROCESSES limit
-//     {
-//         let mut count = FFMPEG_SEMAPHORE.lock().unwrap();
-//         while *count >= MAX_FFMPEG_PROCESSES {
-//             // Release lock and wait before retrying
-//             drop(count);
-//             thread::sleep(Duration::from_millis(50));
-//             count = FFMPEG_SEMAPHORE.lock().unwrap();
-//         }
-//         *count += 1;
-//     }
-
-//     // Ensure we decrement the counter when done
-//     struct SemaphoreGuard;
-//     impl Drop for SemaphoreGuard {
-//         fn drop(&mut self) {
-//             let mut count = FFMPEG_SEMAPHORE.lock().unwrap();
-//             if *count > 0 {
-//                 *count -= 1;
-//             }
-//         }
-//     }
-//     let _guard = SemaphoreGuard;
-
-//     let ffmpeg_binary_path = FFMPEG_PATH.as_str();
-//     let ffmpeg_command = Command::new(ffmpeg_binary_path)
-//         .arg("-i")
-//         .arg(input_path)
-//         .arg("-ar")
-//         .arg("48000")
-//         .arg("-ac")
-//         .arg("1")
-//         .arg("-f")
-//         .arg("f32le")
-//         .arg("-vn")
-//         .arg("-map_metadata")
-//         .arg("-1")
-//         // Add thread count limit to avoid overloading system
-//         .arg("-threads")
-//         .arg("2")
-//         // Add timeout for stuck processes
-//         .arg("-t")
-//         .arg("300") // 5-minute maximum processing time
-//         .arg("-")
-//         .stderr(Stdio::piped())
-//         .stdout(Stdio::piped())
-//         .spawn()
-//         .context("Failed to start FFmpeg")?;
-
-//     let mut ffmpeg_process = ffmpeg_command
-//         .stdout
-//         .ok_or_else(|| anyhow::anyhow!("Failed to open FFmpeg stdout"))?;
-
-//     let mut pcm_data = Vec::with_capacity(1_000_000); // Pre-allocate 1MB
-//     ffmpeg_process.read_to_end(&mut pcm_data)?;
-
-//     Ok(pcm_data)
-// }
-
-// fn read_flac_audio_data(file: &File) -> Result<Vec<u8>> {
-//     let mut reader = BufReader::with_capacity(65536, file); // 64KB buffer
-//     let mut flac_reader = FlacReader::new(&mut reader)?;
-//     let stream_info = flac_reader.streaminfo();
-//     let estimated_size =
-//         (stream_info.samples.unwrap_or(0) * (stream_info.bits_per_sample as u64) / 8) as usize;
-
-//     let mut audio_data = Vec::with_capacity(estimated_size.max(1024));
-
-//     // Use blocking approach for better performance
-//     let block_size = 4096;
-//     let mut buffer = Vec::with_capacity(block_size);
-
-//     for sample in flac_reader.samples() {
-//         let sample = sample?;
-//         buffer.extend_from_slice(&sample.to_le_bytes());
-
-//         if buffer.len() >= block_size {
-//             audio_data.append(&mut buffer);
-//             buffer = Vec::with_capacity(block_size);
-//         }
-//     }
-
-//     // Add any remaining data
-//     if !buffer.is_empty() {
-//         audio_data.append(&mut buffer);
-//     }
-
-//     Ok(audio_data)
-// }
-
-// fn read_wav_audio_data(file: &File) -> Result<Vec<u8>> {
-//     let mut reader = BufReader::with_capacity(65536, file); // 64KB buffer
-//     let wav_reader = WavReader::new(&mut reader)?;
-//     let spec = wav_reader.spec();
-//     let estimated_size = (wav_reader.duration() * (spec.bits_per_sample as u32) / 8) as usize;
-
-//     let mut audio_data = Vec::with_capacity(estimated_size.max(1024));
-
-//     // Process in blocks for better memory efficiency
-//     const BLOCK_SIZE: usize = 4096;
-//     let mut buffer = Vec::with_capacity(BLOCK_SIZE);
-//     let mut count = 0;
-
-//     for sample in wav_reader.into_samples::<i32>() {
-//         match sample {
-//             Ok(s) => {
-//                 buffer.extend_from_slice(&s.to_le_bytes());
-//                 count += 1;
-
-//                 if count % BLOCK_SIZE == 0 {
-//                     audio_data.append(&mut buffer);
-//                     buffer = Vec::with_capacity(BLOCK_SIZE);
-//                 }
-//             }
-//             Err(e) => {
-//                 eprintln!("Error reading sample: {:?}", e);
-//                 break;
-//             }
-//         }
-//     }
-
-//     // Add any remaining data
-//     if !buffer.is_empty() {
-//         audio_data.append(&mut buffer);
-//     }
-
-//     Ok(audio_data)
-// }
-
-// fn read_mp3_audio_data(file: &File) -> Result<Vec<u8>> {
-//     let mut reader = BufReader::with_capacity(65536, file); // 64KB buffer
-//     let mut decoder = Decoder::new(&mut reader);
-//     let mut audio_data = Vec::with_capacity(1_000_000); // Pre-allocate 1MB
-
-//     // Process MP3 frames in batches
-//     let mut batch = Vec::with_capacity(65536);
-//     let mut frame_count = 0;
-
-//     loop {
-//         match decoder.next_frame() {
-//             Ok(Frame { data, .. }) => {
-//                 for sample in data {
-//                     batch.extend_from_slice(&sample.to_le_bytes());
-//                 }
-
-//                 frame_count += 1;
-
-//                 // Every 20 frames, append to main data vector
-//                 if frame_count % 20 == 0 {
-//                     audio_data.append(&mut batch);
-//                     batch = Vec::with_capacity(65536);
-//                 }
-//             }
-//             Err(e) => {
-//                 // Check if we're at the end of the file
-//                 if format!("{:?}", e).contains("EOF") {
-//                     break;
-//                 }
-//                 eprintln!("Error decoding MP3 frame: {:?}", e);
-//                 break;
-//             }
-//         }
-//     }
-
-//     // Add any remaining data
-//     if !batch.is_empty() {
-//         audio_data.append(&mut batch);
-//     }
-
-//     Ok(audio_data)
-// }
-
-// Utility function to measure performance
-// pub fn measure_performance<F, T>(func: F) -> (T, Duration)
-// where
-//     F: FnOnce() -> T,
-// {
-//     let start = std::time::Instant::now();
-//     let result = func();
-//     let duration = start.elapsed();
-//     (result, duration)
-// }
-
-// pub fn get_chromaprint_rust_fingerprint<P: AsRef<Path>>(file_path: P) -> Result<(String, String)> {
-//     let path_str = file_path.as_ref().to_string_lossy().to_string();
-//     println!("Generating Chromaprint fingerprint for: {}", path_str);
-
-//     // Get PCM data (reuse your existing function)
-//     let pcm_data = convert_to_raw_pcm(&path_str)?;
-//     println!("Got PCM data, length: {} bytes", pcm_data.len());
-
-//     // Convert to i16 samples
-//     let samples: Vec<i16> = pcm_data
-//         .chunks(4)
-//         .filter_map(|chunk| {
-//             if chunk.len() == 4 {
-//                 let bytes = [chunk[0], chunk[1], chunk[2], chunk[3]];
-//                 let float = f32::from_le_bytes(bytes);
-//                 Some((float * 32767.0) as i16)
-//             } else {
-//                 None
-//             }
-//         })
-//         .collect();
-
-//     println!("Converted to {} i16 samples", samples.len());
-
-//     let mut c = ChromaprintContext::new(chromaprint_rust::Algorithm::default());
-//     let _ = c.start(48000, 1);
-//     let _ = c.feed(&samples);
-//     let _ = c.finish();
-
-//     let mut text_fingerprint = String::new();
-//     let mut raw_fingerprint_data: Vec<u32> = Vec::new();
-//     // let mut encoded_fingerprint = String::new();
-
-//     // Get both fingerprint formats
-//     if let Ok(fingerprint) = c.get_fingerprint_hash() {
-//         let fingerprint = fingerprint.get();
-//         text_fingerprint = fingerprint.to_string();
-//     };
-//     if let Ok(fingerprint) = c.get_fingerprint_raw() {
-//         raw_fingerprint_data = fingerprint.get().to_vec();
-//     };
-
-//     // if let Ok(Fingerprint) = c.get_fingerprint_base64() {
-//     //     encoded_fingerprint = Fingerprint.get().unwrap_or_default().to_string();
-//     // }
-
-//     // Base64-encode the raw fingerprint (more efficient for database storage)
-//     let encoded = if !raw_fingerprint_data.is_empty() {
-//         // Convert Vec<u32> to bytes before encoding
-//         let bytes: Vec<u8> = raw_fingerprint_data
-//             .iter()
-//             .flat_map(|&x| x.to_le_bytes())
-//             .collect();
-//         general_purpose::STANDARD.encode(bytes)
-//     } else {
-//         String::new()
-//     };
-
-//     Ok((text_fingerprint, encoded))
-// }
-
-// pub struct AudioManager {
-//     _stream: OutputStream, // Underscore prevents "unused" warning
-//     stream_handle: OutputStreamHandle,
-//     sink: Option<Sink>, // Use Option to recreate when needed
-// }
-
-// impl AudioManager {
-//     pub fn new() -> Self {
-//         let (_stream, stream_handle) = OutputStream::try_default().unwrap();
-//         println!("AudioManager initialized");
-//         Self {
-//             _stream,
-//             stream_handle,
-//             sink: None,
-//         }
-//     }
-
-//     pub fn play(&mut self, path: &str) {
-//         println!("Starting playback of: {}", path);
-
-//         // Create a new sink each time
-//         let sink = Sink::try_new(&self.stream_handle).unwrap();
-
-//         // Open and decode file
-//         match std::fs::File::open(path) {
-//             Ok(file) => {
-//                 match RodioDecoder::new(BufReader::new(file)) {
-//                     Ok(source) => {
-//                         sink.append(source);
-//                         sink.detach(); // CRITICAL: Keep sink alive after function returns
-//                         println!("Playback started successfully");
-//                         self.sink = Some(sink);
-//                     }
-//                     Err(e) => println!("Failed to decode audio: {}", e),
-//                 }
-//             }
-//             Err(e) => println!("Failed to open file: {}", e),
-//         }
-//     }
-
-//     pub fn stop(&mut self) {
-//         if let Some(sink) = self.sink.take() {
-//             sink.stop();
-//             println!("Playback stopped");
-//         }
-//     }
-// }
-
-// pub fn rodio_play(path: &str) {
-//     let (_stream, stream_handle) = OutputStream::try_default().unwrap();
-//     let sink = Sink::try_new(&stream_handle).unwrap();
-//     let file = std::fs::File::open(path).unwrap();
-//     let source = RodioDecoder::new(BufReader::new(file)).unwrap();
-//     sink.append(source);
-//     sink.sleep_until_end();
-// }
+
+fn decode_chromaprint(raw_fp: &str) -> Result<Vec<u32>, &'static str> {
+    if raw_fp.starts_with("PCM:") {
+        return Err("Not a Chromaprint fingerprint");
+    }
+
+    match general_purpose::STANDARD.decode(raw_fp) {
+        Ok(fp_bytes) => {
+            let mut fp = Vec::with_capacity(fp_bytes.len() / 4);
+            for chunk in fp_bytes.chunks_exact(4) {
+                if chunk.len() == 4 {
+                    let mut array = [0u8; 4];
+                    array.copy_from_slice(chunk);
+                    fp.push(u32::from_le_bytes(array));
+                }
+            }
+            Ok(fp)
+        }
+        Err(_) => Err("Failed to decode fingerprint"),
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+fn calculate_similarity_simd(fp1: &[u32], fp2: &[u32]) -> f64 {
+    use std::arch::x86_64::*;
+
+    let min_len = fp1.len().min(fp2.len());
+    if min_len == 0 {
+        return 0.0;
+    }
+
+    if is_x86_feature_detected!("sse2") {
+        unsafe {
+            let chunk_size = 4;
+            let mut matching_bits = 0;
+            let mut chunks_processed = 0;
+
+            for i in (0..min_len - (min_len % chunk_size)).step_by(chunk_size) {
+                let a = _mm_loadu_si128(fp1[i..].as_ptr() as *const __m128i);
+                let b = _mm_loadu_si128(fp2[i..].as_ptr() as *const __m128i);
+                let xor = _mm_xor_si128(a, b);
+
+                let count = (_mm_extract_epi64(xor, 0) as u64).count_ones()
+                    + (_mm_extract_epi64(xor, 1) as u64).count_ones();
+
+                matching_bits += 128 - count as usize;
+                chunks_processed += 1;
+            }
+
+            for i in (chunks_processed * chunk_size)..min_len {
+                let xor_result = fp1[i] ^ fp2[i];
+                matching_bits += 32 - xor_result.count_ones() as usize;
+            }
+
+            return matching_bits as f64 / (min_len * 32) as f64;
+        }
+    }
+
+    calculate_similarity(fp1, fp2)
+}
+
+#[cfg(target_arch = "aarch64")]
+fn calculate_similarity_simd(fp1: &[u32], fp2: &[u32]) -> f64 {
+    use std::arch::aarch64::*;
+
+    let min_len = fp1.len().min(fp2.len());
+    if min_len == 0 {
+        return 0.0;
+    }
+
+    unsafe {
+        let chunk_size = 4;
+        let mut matching_bits = 0;
+        let mut chunks_processed = 0;
+
+        for i in (0..min_len - (min_len % chunk_size)).step_by(chunk_size) {
+            let a = vld1q_u32(fp1[i..].as_ptr());
+            let b = vld1q_u32(fp2[i..].as_ptr());
+
+            let xor_result = veorq_u32(a, b);
+
+            let mut cnt = vcntq_u8(vreinterpretq_u8_u32(xor_result));
+            let sum = vaddv_u8(vget_low_u8(cnt)) + vaddv_u8(vget_high_u8(cnt));
+
+            matching_bits += 128 - sum as usize;
+            chunks_processed += 1;
+        }
+
+        for i in (chunks_processed * chunk_size)..min_len {
+            let xor_result = fp1[i] ^ fp2[i];
+            matching_bits += 32 - xor_result.count_ones() as usize;
+        }
+
+        return matching_bits as f64 / (min_len * 32) as f64;
+    }
+}
+
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+fn calculate_similarity_simd(fp1: &[u32], fp2: &[u32]) -> f64 {
+    calculate_similarity(fp1, fp2)
+}
+
+fn calculate_similarity(fp1: &[u32], fp2: &[u32]) -> f64 {
+    let min_len = fp1.len().min(fp2.len());
+    if min_len == 0 {
+        return 0.0;
+    }
+
+    const MAX_OFFSET: usize = 3;
+    let mut best_similarity = 0.0;
+
+    for offset in 0..=MAX_OFFSET {
+        if offset >= min_len {
+            break;
+        }
+
+        let matching_len = min_len - offset;
+        let mut matching_bits = 0;
+        let total_bits = matching_len * 32;
+
+        for i in 0..matching_len {
+            let xor_result = fp1[i] ^ fp2[i + offset];
+            matching_bits += 32 - xor_result.count_ones() as usize;
+        }
+
+        let similarity = matching_bits as f64 / total_bits as f64;
+        best_similarity = f64::max(best_similarity, similarity);
+
+        if offset > 0 && offset < fp2.len() {
+            let matching_bits = (0..matching_len)
+                .map(|i| 32 - (fp1[i + offset] ^ fp2[i]).count_ones() as usize)
+                .sum::<usize>();
+
+            let similarity = matching_bits as f64 / total_bits as f64;
+            best_similarity = f64::max(best_similarity, similarity);
+        }
+    }
+
+    best_similarity
+}
+
+fn is_fingerprint_subset(shorter_fp: &[u32], longer_fp: &[u32], threshold: f64) -> bool {
+    if shorter_fp.is_empty() || longer_fp.is_empty() || shorter_fp.len() > longer_fp.len() {
+        return false;
+    }
+
+    // Apply a dynamic threshold based on fingerprint length
+    let adjusted_threshold = if shorter_fp.len() < 30 {
+        // For very short fingerprints, use a lower threshold
+        threshold * 0.75
+    } else if shorter_fp.len() < 60 {
+        // For medium-short fingerprints
+        threshold * 0.8
+    } else {
+        // For normal fingerprints
+        threshold * 0.85
+    };
+
+    // For extremely short fingerprints, use feature-based matching
+    if shorter_fp.len() < 15 {
+        return feature_based_match(shorter_fp, longer_fp, adjusted_threshold);
+    }
+
+    // Use a more efficient window scanning approach
+    // For long fingerprints, use larger step sizes
+    let step_size = if longer_fp.len() > 1000 {
+        // Use larger steps for very long fingerprints
+        (longer_fp.len() / 200).max(1)
+    } else {
+        // Use smaller steps for moderate length fingerprints
+        (longer_fp.len() / 400).max(1)
+    };
+
+    // Try multiple window sizes to account for tempo/speed differences
+    let window_sizes = [
+        shorter_fp.len(),
+        (shorter_fp.len() as f64 * 1.1) as usize, // 10% longer
+        (shorter_fp.len() as f64 * 0.9) as usize, // 10% shorter
+        (shorter_fp.len() as f64 * 1.2) as usize, // 20% longer
+        (shorter_fp.len() as f64 * 0.8) as usize, // 20% shorter
+    ];
+
+    let mut best_similarity = 0.0;
+
+    // Try each window size
+    for &window_size in &window_sizes {
+        // Skip if window size is too large for the longer fingerprint
+        if window_size > longer_fp.len() {
+            continue;
+        }
+
+        // Scan through the longer fingerprint with the determined step size
+        for window_start in (0..=(longer_fp.len() - window_size)).step_by(step_size) {
+            let window = &longer_fp[window_start..window_start + window_size];
+
+            // Calculate similarity based on window size
+            let similarity = if window_size == shorter_fp.len() {
+                // For exact size, use the optimized SIMD function
+                calculate_similarity_simd(shorter_fp, window)
+            } else {
+                // For different sizes, use flexible similarity
+                calculate_flexible_similarity(shorter_fp, window)
+            };
+
+            best_similarity = f64::max(best_similarity, similarity);
+
+            // Early exit for strong matches
+            if best_similarity > 0.9 {
+                return true;
+            }
+        }
+    }
+
+    best_similarity >= adjusted_threshold
+}
+
+// Add this new function specifically for very short fingerprints
+fn feature_based_match(short_fp: &[u32], long_fp: &[u32], threshold: f64) -> bool {
+    // Extract distinctive bit patterns from short fingerprint
+    let short_patterns: Vec<u32> = short_fp.windows(2).map(|w| w[0] & w[1]).collect();
+
+    // Count how many of these patterns appear in the long fingerprint
+    let mut matches = 0;
+    for window in long_fp.windows(2) {
+        let pattern = window[0] & window[1];
+        if short_patterns.contains(&pattern) {
+            matches += 1;
+        }
+    }
+
+    // Calculate match percentage
+    let match_ratio = matches as f64 / short_patterns.len() as f64;
+    match_ratio >= threshold
+}
+
+// Compare fingerprints of different lengths by aligning features
+fn calculate_flexible_similarity(fp1: &[u32], fp2: &[u32]) -> f64 {
+    // Extract feature sequences from both fingerprints
+    let features1 = extract_features(fp1);
+    let features2 = extract_features(fp2);
+
+    // Find longest common subsequence of features
+    let lcs_length = longest_common_subsequence(&features1, &features2);
+
+    // Return ratio of matching features
+    lcs_length as f64 / features1.len().min(features2.len()) as f64
+}
+
+/// Extract distinctive features from a fingerprint
+/// Returns a vector of "features" which are small hashes derived from fingerprint blocks
+fn extract_features(fp: &[u32]) -> Vec<u16> {
+    if fp.len() < 2 {
+        return Vec::new();
+    }
+
+    // Use sliding window to extract overlapping features
+    let mut features = Vec::with_capacity(fp.len() - 1);
+
+    for window in fp.windows(2) {
+        // Create a compact feature from consecutive blocks
+        // We use XOR and AND operations to create distinctive patterns
+        let feature = ((window[0] & 0xFFFF) ^ (window[1] >> 16)) as u16;
+        features.push(feature);
+    }
+
+    // For longer fingerprints, also add some wider-range features
+    if fp.len() >= 4 {
+        for window in fp.windows(4) {
+            let feature = ((window[0] & 0xFF) | ((window[3] & 0xFF) << 8)) as u16;
+            features.push(feature);
+        }
+    }
+
+    features
+}
+
+/// Find the longest common subsequence between two feature sequences
+/// This is crucial for determining if one fingerprint is contained within another
+fn longest_common_subsequence(seq1: &[u16], seq2: &[u16]) -> usize {
+    if seq1.is_empty() || seq2.is_empty() {
+        return 0;
+    }
+
+    // For very large sequences, use a faster approximate method
+    if seq1.len() * seq2.len() > 1_000_000 {
+        return approximate_lcs(seq1, seq2);
+    }
+
+    // Classic dynamic programming approach for LCS
+    let mut dp = vec![vec![0; seq2.len() + 1]; seq1.len() + 1];
+
+    for i in 1..=seq1.len() {
+        for j in 1..=seq2.len() {
+            if seq1[i - 1] == seq2[j - 1] {
+                dp[i][j] = dp[i - 1][j - 1] + 1;
+            } else {
+                dp[i][j] = dp[i - 1][j].max(dp[i][j - 1]);
+            }
+        }
+    }
+
+    dp[seq1.len()][seq2.len()]
+}
+
+/// A more memory-efficient approximation of LCS for very large sequences
+fn approximate_lcs(seq1: &[u16], seq2: &[u16]) -> usize {
+    // Use feature hashing to avoid O(n²) memory usage
+    let shorter = if seq1.len() <= seq2.len() { seq1 } else { seq2 };
+    let longer = if seq1.len() <= seq2.len() { seq2 } else { seq1 };
+
+    // Create a hash set of features from the shorter sequence
+    let feature_set: HashSet<u16> = shorter.iter().copied().collect();
+
+    // Count matches in the longer sequence
+    let matches = longer.iter().filter(|&x| feature_set.contains(x)).count();
+
+    // Normalize to account for random matches
+    (matches as f64 * 0.8) as usize
+}
+// Helper function to decode a Chromaprint fingerprint from base64 to u32 vector
+
+async fn store_fingerprints_batch_optimized(
+    pool: &SqlitePool,
+    fingerprints: &[(usize, String)],
+    app: &AppHandle,
+) {
+    if fingerprints.is_empty() {
+        println!("No fingerprints to store");
+        return;
+    }
+
+    println!("Storing {} fingerprints in database", fingerprints.len());
+
+    app.emit(
+        "search-sub-status",
+        StatusUpdate {
+            stage: "db-storage".into(),
+            progress: 0,
+            message: format!("Storing {} fingerprints in database...", fingerprints.len()),
+        },
+    )
+    .ok();
+
+    match pool.begin().await {
+        Ok(mut tx) => {
+            let _ = sqlx::query("PRAGMA journal_mode = WAL")
+                .execute(&mut *tx)
+                .await;
+            let _ = sqlx::query("PRAGMA synchronous = NORMAL")
+                .execute(&mut *tx)
+                .await;
+
+            let total = fingerprints.len();
+            let mut success_count = 0;
+            let mut error_count = 0;
+
+            for (i, (id, fingerprint)) in fingerprints.iter().enumerate() {
+                if i % 25 == 0 || i == total - 1 {
+                    app.emit(
+                        "search-sub-status",
+                        StatusUpdate {
+                            stage: "db-storage".into(),
+                            progress: ((i + 1) * 100 / total) as u64,
+                            message: format!("Storing fingerprints: {}/{}", i + 1, total),
+                        },
+                    )
+                    .ok();
+                }
+
+                let result = sqlx::query(&format!(
+                    "UPDATE {} SET _fingerprint = ? WHERE rowid = ?",
+                    TABLE
+                ))
+                .bind(fingerprint)
+                .bind(*id as i64)
+                .execute(&mut *tx)
+                .await;
+
+                match result {
+                    Ok(result) => {
+                        if result.rows_affected() == 0 {
+                            println!(
+                                "WARNING: No rows affected when updating fingerprints for ID {}",
+                                id
+                            );
+                        } else {
+                            success_count += 1;
+                        }
+                    }
+                    Err(e) => {
+                        println!("ERROR updating fingerprints for ID {}: {}", id, e);
+                        error_count += 1;
+                    }
+                }
+            }
+
+            app.emit(
+                "search-sub-status",
+                StatusUpdate {
+                    stage: "db-storage".into(),
+                    progress: 99,
+                    message: "Committing all changes to database...".to_string(),
+                },
+            )
+            .ok();
+
+            match tx.commit().await {
+                Ok(_) => {
+                    println!(
+                        "Transaction committed successfully: {} fingerprints updated, {} errors",
+                        success_count, error_count
+                    );
+
+                    let checkpoint_result = sqlx::query("PRAGMA wal_checkpoint(FULL)")
+                        .execute(pool)
+                        .await;
+
+                    if let Err(e) = checkpoint_result {
+                        println!("WARNING: Checkpoint failed: {}", e);
+                    } else {
+                        println!("Database checkpoint successful");
+                    }
+                }
+                Err(e) => println!("ERROR: Transaction failed to commit: {}", e),
+            }
+
+            app.emit(
+                "search-sub-status",
+                StatusUpdate {
+                    stage: "db-storage".into(),
+                    progress: 100,
+                    message: format!(
+                        "Database update complete: {} fingerprints stored",
+                        success_count
+                    ),
+                },
+            )
+            .ok();
+        }
+        Err(e) => {
+            println!("ERROR: Failed to start transaction: {}", e);
+            app.emit(
+                "search-sub-status",
+                StatusUpdate {
+                    stage: "db-storage".into(),
+                    progress: 100,
+                    message: format!("ERROR: Database update failed: {}", e),
+                },
+            )
+            .ok();
+        }
+    }
+}
