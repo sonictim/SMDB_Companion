@@ -247,7 +247,7 @@
             <input
                 type="text"
                 class="input-field"
-                placeholder="Enter New Configuraion Preset Name"
+                placeholder="Enter New Configuration Preset Name"
                 style=" margin-right: 10px;"
                 bind:value={newPreset}
             />

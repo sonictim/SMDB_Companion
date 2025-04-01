@@ -85,10 +85,10 @@
         (col) => !$preferencesStore.match_criteria.includes(col),
     );
 
-    function updateExactWaveform(value: boolean) {
+    function updateWaveformSearchType(value: string) {
         preferencesStore.update((p) => ({
             ...p,
-            exact_waveform: value,
+            waveform_search_type: value,
         }));
     }
 
@@ -114,6 +114,17 @@
                 confirmRemove = false;
                 isRemoving = false;
             });
+    }
+
+    function getAlgorithmTooltip(id: string): string {
+        const tooltips: Record<string, string> = {
+            Exact: "Exact Match: Finds identical audio files with different filenames",
+            Similar:
+                "Relative Match: Finds similar audio files with different filenames using a threshold comparison.  Helpful for finding files that have been altered from their source",
+            Subset: "Subset Match: Finds audio files that are smaller piece of a longer audio files",
+        };
+
+        return tooltips[id] || "No description available";
     }
 </script>
 
@@ -160,10 +171,12 @@
             </button>
         </div>
         <div class="block inner">
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
             <VirtualList
                 items={Array.from($preferencesStore.match_criteria)}
                 let:item
             >
+                <!-- svelte-ignore a11y_click_events_have_key_events -->
                 <div
                     on:click={() => toggleMatch(item)}
                     class="list-item"
@@ -194,21 +207,27 @@
                     <span>Store audio fingerprints in database</span>
                 </button>
             </span>
-            <span>
+            <span class="tooltip-trigger">
                 Compare Algorithm:
                 <select
                     class="select-field"
-                    value={$preferencesStore.exact_waveform}
+                    bind:value={$preferencesStore.waveform_search_type}
                     on:change={(e) =>
-                        updateExactWaveform(
-                            (e.target as HTMLSelectElement).value === "true",
+                        updateWaveformSearchType(
+                            (e.target as HTMLSelectElement).value,
                         )}
                 >
-                    {#each [{ text: "Exact Match", val: true }, { text: "Relative Match", val: false }] as { text, val }}
+                    {#each [{ text: "Exact Match", val: "Exact" }, { text: "Relative Match", val: "Similar" }, { text: "Subset Match", val: "Subset" }] as { text, val }}
                         <option value={val}>{text}</option>
                     {/each}
                 </select>
+                <span class="tooltip-text">
+                    {getAlgorithmTooltip(
+                        $preferencesStore.waveform_search_type,
+                    )}
+                </span>
             </span>
+
             <span>
                 <button
                     type="button"
@@ -223,7 +242,7 @@
                     <span>Fetch stored audio fingerprints from database</span>
                 </button>
             </span>
-            {#if pref.exact_waveform == false}
+            {#if pref.waveform_search_type === "Similar"}
                 <span style="margin-left: 70px">
                     Threshold:
                     <input
@@ -293,5 +312,17 @@
         grid-template-columns: 1fr;
         grid-template-rows: 2fr 1fr;
         gap: 20px;
+    }
+
+    .algorithm-help {
+        font-size: 10px;
+        /* margin-top: 8px; */
+        /* margin-left: 70px; */
+        /* padding: 8px; */
+        /* background-color: #f5f5f5; */
+        /* border-left: 3px solid #007bff; */
+        /* font-size: 13px; */
+        /* color: #555; */
+        /* max-width: 400px; */
     }
 </style>

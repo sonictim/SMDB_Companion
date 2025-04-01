@@ -343,8 +343,8 @@
                             >
                                 {algo.name}
                                 <span class="tooltip-text"
-                                    >{getAlgorithmTooltip(algo.id)}</span
-                                >
+                                    >{getAlgorithmTooltip(algo.id)}
+                                </span>
                             </span>
                         </button>
 
@@ -525,49 +525,5 @@
 
     :global(.checkbox.inactive) {
         color: var(--inactive-color);
-    }
-
-    /* Tooltip styles */
-    .tooltip-trigger {
-        position: relative;
-        display: inline-flex;
-        align-items: center;
-    }
-
-    .tooltip-text {
-        visibility: hidden;
-        width: 220px;
-        background-color: var(--tooltip-bg, #333);
-        color: var(--tooltip-text, white);
-        text-align: center;
-        border-radius: 6px;
-        padding: 8px;
-        position: absolute;
-        z-index: 100;
-        bottom: 125%;
-        left: 50%;
-        transform: translateX(-50%);
-        opacity: 0;
-        transition: opacity 0.3s;
-        font-size: 12px;
-        pointer-events: none;
-        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
-    }
-
-    .tooltip-text::after {
-        content: "";
-        position: absolute;
-        top: 100%;
-        left: 50%;
-        margin-left: -5px;
-        border-width: 5px;
-        border-style: solid;
-        border-color: var(--tooltip-bg, #333) transparent transparent
-            transparent;
-    }
-
-    .tooltip-trigger:hover .tooltip-text {
-        visibility: visible;
-        opacity: 1;
     }
 </style>

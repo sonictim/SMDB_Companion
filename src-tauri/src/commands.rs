@@ -235,7 +235,9 @@ async fn run_search(
         .unwrap();
         counter += 1;
 
-        let _ = db.wave_search_chromaprint(&pref, &app).await;
+        // let _ = db.wave_search_chromaprint(&pref, &app).await;
+        // let _ = demo_usage();
+        let _ = db.process_large_collection(&app, &pref).await;
     }
     {}
 

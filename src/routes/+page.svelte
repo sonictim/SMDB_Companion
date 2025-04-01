@@ -199,20 +199,15 @@
       const visible = await preferencesWindow.isVisible();
 
       if (visible) {
-        // Window exists and is visible - check if it has focus
-        try {
-          // First try to set focus (bring to front)
-          await preferencesWindow.setFocus();
+        // Check focus BEFORE changing it
+        const wasFocused = await preferencesWindow.isFocused();
 
-          // If the window is already focused by the user, hide it instead
-          const isFocused = await preferencesWindow.isFocused();
-          if (isFocused) {
-            await preferencesWindow.hide();
-          }
-        } catch (error) {
-          console.error("Error focusing preferences window:", error);
-          // Fallback to just showing the window if setFocus fails
-          await preferencesWindow.show();
+        if (wasFocused) {
+          // If it was already focused, hide it
+          await preferencesWindow.hide();
+        } else {
+          // If it wasn't focused, just bring it to front
+          await preferencesWindow.setFocus();
         }
       } else {
         // Window exists but isn't visible - show it
@@ -392,7 +387,7 @@
   <!-- Main Content Area -->
   <main class="content">
     {#if activeTab === "search"}
-      <SearchComponent {dbSize} bind:selectedDb bind:activeTab bind:isRemove />
+      <SearchComponent bind:selectedDb bind:activeTab bind:isRemove />
     {:else if activeTab === "results"}
       {#if isRegistered}
         <ResultsComponent bind:isRemove bind:activeTab bind:selectedDb />
@@ -407,9 +402,9 @@
 </div>
 
 <style>
-  .hidden {
+  /* .hidden {
     display: none;
-  }
+  } */
 
   .loading-screen,
   .error-screen {

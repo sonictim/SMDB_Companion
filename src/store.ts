@@ -140,7 +140,7 @@ export const defaultPreferences: Preferences = {
     safety_db_tag: "thinned",
     erase_files: "Keep",
     autoselects: [],
-    exact_waveform: true,
+    waveform_search_type: "Exact",
     similarity_threshold: 80,
     store_waveforms: true,
     fetch_waveforms: true,
@@ -446,7 +446,7 @@ const storedPresets = localStorage.getItem('presets');
 // Define types for the store data
 export type Algorithm = { id: string; name: string; enabled: boolean; min_dur?: number, db?: string | null };
 export type Registration = { name: string; email: string; license: string };
-export type Preferences = { match_criteria: string[]; ignore_filetype: boolean; autoselects: string[]; tags: string[], preservation_order: PreservationLogic[], columns: string[], display_all_records: boolean, safety_db: boolean, safety_db_tag: string, erase_files: string, exact_waveform: boolean, similarity_threshold: number, store_waveforms: boolean, fetch_waveforms: boolean, colors: Colors, algorithms: Algorithm[] };
+export type Preferences = { match_criteria: string[]; ignore_filetype: boolean; autoselects: string[]; tags: string[], preservation_order: PreservationLogic[], columns: string[], display_all_records: boolean, safety_db: boolean, safety_db_tag: string, erase_files: string, waveform_search_type: string, similarity_threshold: number, store_waveforms: boolean, fetch_waveforms: boolean, colors: Colors, algorithms: Algorithm[] };
 export type PreservationLogic = { column: string, operator: string, variable: string };
 export type FileRecord = {
     data(data: any, arg1: null, arg2: number): any; root: string; path: string; algorithm: string[]; id: number

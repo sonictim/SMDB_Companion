@@ -1,8 +1,11 @@
-mod audio;
-mod audioplayer;
+// mod audio;
+// mod audioplayer;
 mod commands;
 mod preferences;
 mod search;
+
+pub use crate::audio::*;
+pub mod audio;
 
 use anyhow::Result;
 pub use dirs::home_dir;
@@ -23,7 +26,7 @@ use tauri::async_runtime::Mutex;
 use tauri::{AppHandle, Emitter};
 use tauri::{Manager, State};
 
-use audioplayer::*;
+// use audioplayer::*;
 use commands::*;
 
 pub const TABLE: &str = "justinmetadata";
@@ -43,7 +46,7 @@ pub fn run() {
                 .get("main")
                 .unwrap()
                 .set_title(&format!("SMDB Companion :: v{}", version));
-            audioplayer::init_audio_system();
+            audio::playback::init_audio_system();
             app.manage(Mutex::new(AppState::default())); // Use Mutex to allow async access
             Ok(())
         })
@@ -338,6 +341,15 @@ impl FileRecord {
             Arc::from(format!("{}.{}", name, self.get_extension()))
         };
         println!("Final Root: {}", self.root);
+    }
+
+    pub fn get_duration(&self) -> Result<f64, String> {
+        if let Some((minutes, rest)) = self.duration.split_once(':') {
+            if let (Ok(mins), Ok(secs)) = (minutes.parse::<f64>(), rest.parse::<f64>()) {
+                return Ok((mins * 60.0) + secs);
+            }
+        }
+        Err("Unable to parse duration".to_string())
     }
 }
 

@@ -6,7 +6,7 @@ use chrono::{Duration, NaiveDateTime};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::FileRecord;
+use crate::{FileRecord, search::MatchType};
 
 #[derive(Default, Debug, Serialize, Deserialize, Clone)]
 pub struct Preferences {
@@ -17,7 +17,7 @@ pub struct Preferences {
     pub autoselects: Vec<Arc<str>>,
     pub preservation_order: Vec<PreservationLogic>,
     pub display_all_records: bool,
-    pub exact_waveform: bool,
+    pub waveform_search_type: MatchType,
     pub store_waveforms: bool,
     pub fetch_waveforms: bool,
     pub similarity_threshold: f64,
@@ -385,4 +385,12 @@ pub enum Algorithm {
     Manual,
     #[default]
     Keep,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum MatchType {
+    #[default]
+    Exact,
+    Similar,
+    Subset,
 }
