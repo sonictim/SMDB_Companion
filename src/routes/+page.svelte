@@ -392,7 +392,7 @@
   <!-- Main Content Area -->
   <main class="content">
     {#if activeTab === "search"}
-      <SearchComponent {dbSize} bind:selectedDb bind:activeTab bind:isRemove />
+      <SearchComponent bind:selectedDb bind:activeTab bind:isRemove />
     {:else if activeTab === "results"}
       {#if isRegistered}
         <ResultsComponent bind:isRemove bind:activeTab bind:selectedDb />
@@ -407,9 +407,9 @@
 </div>
 
 <style>
-  .hidden {
+  /* .hidden {
     display: none;
-  }
+  } */
 
   .loading-screen,
   .error-screen {
