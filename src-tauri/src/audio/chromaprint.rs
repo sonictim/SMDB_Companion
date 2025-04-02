@@ -3,13 +3,67 @@ use ::chromaprint::Chromaprint;
 use anyhow::{Context, Result};
 use base64::{Engine as _, engine::general_purpose};
 use bit_set::BitSet;
-use std::path::Path;
-use symphonia::core::audio::SampleBuffer;
-use symphonia::core::codecs::DecoderOptions;
-use symphonia::core::formats::FormatOptions;
-use symphonia::core::io::MediaSourceStream;
-use symphonia::core::meta::MetadataOptions;
-use symphonia::core::probe::Hint;
+
+impl FileRecord {
+    pub fn get_chromaprint_fingerprint(&mut self) -> Option<String> {
+        let pcm = audio::decode::convert_to_raw_pcm(&self.get_filepath());
+
+        let samples = pcm.
+        let samples = audio::decode::decode_and_resample_for_fingerprint(&self.path);
+
+        const MIN_SAMPLES: usize = 48000; // 1 second minimum at 48kHz
+
+        // Check if we have enough samples for Chromaprint
+        if samples.len() >= MIN_SAMPLES {
+            // Try Chromaprint fingerprinting
+            let mut c = Chromaprint::new();
+            c.start(48000, 1);
+            c.feed(&samples);
+            c.finish();
+
+            if let Some(fingerprint) = c.raw_fingerprint() {
+                println!(
+                    "Generated raw fingerprint for: {} size; {}",
+                    self.get_filename(),
+                    fingerprint.len()
+                );
+                // Convert Vec<i32> to bytes before encoding
+                let bytes: Vec<u8> = fingerprint.iter().flat_map(|&x| x.to_le_bytes()).collect();
+                let encoded = general_purpose::STANDARD.encode(&bytes);
+                if !encoded.is_empty() {
+                    self.fingerprint = Some(Arc::from(encoded.as_str()));
+                    return Some(encoded);
+                }
+            }
+
+            eprintln!("Chromaprint failed despite sufficient samples");
+        }
+
+        // Fallback to PCM hash if:
+        // 1. File is too short for Chromaprint, or
+        // 2. Chromaprint failed to generate a fingerprint
+        if !samples.is_empty() {
+            use sha2::{Digest, Sha256};
+
+            let mut hasher = Sha256::new();
+            for sample in &samples {
+                hasher.update(sample.to_le_bytes());
+            }
+
+            let hash = hasher.finalize();
+            println!("Generated PCM hash for: {}", self.get_filename());
+            let fingerprint = format!("PCM:{}", general_purpose::STANDARD.encode(hash));
+            self.fingerprint = Some(Arc::from(fingerprint.as_str()));
+            return Some(fingerprint);
+        }
+
+        eprintln!(
+            "Failed to generate any fingerprint for: {}",
+            self.get_filepath()
+        );
+        None
+    }
+}
 
 impl Database {
     pub async fn wave_search_chromaprint(
@@ -90,12 +144,9 @@ impl Database {
                     )
                     .ok();
 
-                    let fingerprint_result =
-                        audio::chromaprint::get_chromaprint_fingerprint(record.get_filepath());
+                    let fingerprint_result = record.get_chromaprint_fingerprint();
 
                     let fingerprint = fingerprint_result.unwrap_or("FAILED".to_string());
-
-                    record.fingerprint = Some(Arc::from(fingerprint.as_str()));
 
                     Some((record.id, fingerprint))
                 })
@@ -851,274 +902,6 @@ impl Database {
     }
 }
 
-pub fn get_chromaprint_fingerprint<P: AsRef<Path>>(file_path: P) -> Option<String> {
-    let path_str = file_path.as_ref().to_string_lossy().to_string();
-    let pcm_data = match convert_to_raw_pcm(&path_str) {
-        Ok(data) => data,
-        Err(e) => {
-            eprintln!("Failed to convert audio to PCM: {}", e);
-            return None;
-        }
-    };
-
-    // Convert to i16 samples
-    let samples: Vec<i16> = pcm_data
-        .chunks(4)
-        .filter_map(|chunk| {
-            if chunk.len() == 4 {
-                let bytes = [chunk[0], chunk[1], chunk[2], chunk[3]];
-                let float = f32::from_le_bytes(bytes);
-                Some((float * 32767.0) as i16)
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    const MIN_SAMPLES: usize = 48000; // 1 second minimum at 48kHz
-
-    // Check if we have enough samples for Chromaprint
-    if samples.len() >= MIN_SAMPLES {
-        // Try Chromaprint fingerprinting
-        let mut c = Chromaprint::new();
-        c.start(48000, 1);
-        c.feed(&samples);
-        c.finish();
-
-        if let Some(fingerprint) = c.raw_fingerprint() {
-            println!(
-                "Generated raw fingerprint for: {} size; {}",
-                file_path.as_ref().to_string_lossy(),
-                fingerprint.len()
-            );
-            // Convert Vec<i32> to bytes before encoding
-            let bytes: Vec<u8> = fingerprint.iter().flat_map(|&x| x.to_le_bytes()).collect();
-            let encoded = general_purpose::STANDARD.encode(&bytes);
-            if !encoded.is_empty() {
-                return Some(encoded);
-            }
-        }
-
-        eprintln!("Chromaprint failed despite sufficient samples");
-    }
-
-    // Fallback to PCM hash if:
-    // 1. File is too short for Chromaprint, or
-    // 2. Chromaprint failed to generate a fingerprint
-    if !samples.is_empty() {
-        use sha2::{Digest, Sha256};
-
-        let mut hasher = Sha256::new();
-        for sample in &samples {
-            hasher.update(sample.to_le_bytes());
-        }
-
-        let hash = hasher.finalize();
-        println!(
-            "Generated PCM hash for: {}",
-            file_path.as_ref().to_string_lossy()
-        );
-        return Some(format!("PCM:{}", general_purpose::STANDARD.encode(hash)));
-    }
-
-    eprintln!("Failed to generate any fingerprint for: {}", path_str);
-    None
-}
-
-fn convert_to_raw_pcm(input_path: &str) -> Result<Vec<u8>> {
-    use rubato::{Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType};
-
-    let file = std::fs::File::open(input_path)?;
-    let mss = MediaSourceStream::new(Box::new(file), Default::default());
-
-    // Create a hint to help the format registry guess what format the file is
-    let mut hint = Hint::new();
-    if let Some(extension) = Path::new(input_path).extension() {
-        if let Some(ext_str) = extension.to_str() {
-            hint.with_extension(ext_str);
-        }
-    }
-
-    // Use the default options for format and metadata
-    let format_opts = FormatOptions {
-        enable_gapless: true,
-        ..Default::default()
-    };
-    let metadata_opts = MetadataOptions::default();
-
-    // Probe the media source to determine its format
-    let mut probed = symphonia::default::get_probe()
-        .format(&hint, mss, &format_opts, &metadata_opts)
-        .context("Failed to probe media format")?;
-
-    // Get the default track
-    let track = probed
-        .format
-        .default_track()
-        .ok_or_else(|| anyhow::anyhow!("No default track found"))?;
-
-    // Create a decoder for the track
-    let mut decoder = symphonia::default::get_codecs()
-        .make(&track.codec_params, &DecoderOptions::default())
-        .context("Failed to create decoder")?;
-
-    // Store the decoded PCM data
-    let mut pcm_data = Vec::with_capacity(1_000_000); // Pre-allocate 1MB
-
-    // Decode the track
-    let mut sample_count = 0;
-    let target_sample_rate = 48000; // Target sample rate for fingerprinting
-
-    // Initialize resampler storage (only created if needed)
-    let mut resampler = None;
-    let mut last_spec = None;
-
-    loop {
-        // Get the next packet from the format reader
-        let packet = match probed.format.next_packet() {
-            Ok(packet) => packet,
-            Err(symphonia::core::errors::Error::ResetRequired) => {
-                // Reset the decoder when required
-                decoder.reset();
-                continue;
-            }
-            Err(symphonia::core::errors::Error::IoError(ref e))
-                if e.kind() == std::io::ErrorKind::UnexpectedEof =>
-            {
-                // End of file reached
-                break;
-            }
-            Err(e) => {
-                // Some other error occurred
-                return Err(anyhow::anyhow!("Error reading packet: {}", e));
-            }
-        };
-
-        // Decode the packet
-        let decoded = match decoder.decode(&packet) {
-            Ok(decoded) => decoded,
-            Err(symphonia::core::errors::Error::IoError(_)) => {
-                // Skip decoding errors
-                continue;
-            }
-            Err(e) => {
-                eprintln!("Error decoding packet: {}", e);
-                continue;
-            }
-        };
-
-        // Get the decoded audio buffer
-        let spec = *decoded.spec();
-        last_spec = Some(spec);
-
-        // Create a buffer for the decoded audio
-        let mut sample_buffer = SampleBuffer::<f32>::new(decoded.capacity() as u64, spec);
-
-        // Copy the decoded audio to the sample buffer
-        sample_buffer.copy_interleaved_ref(decoded);
-        let samples = sample_buffer.samples();
-
-        // Check if we need to resample
-        if spec.rate != target_sample_rate {
-            // Create resampler if this is the first packet or if format changed
-            if resampler.is_none() {
-                println!(
-                    "Resampling from {}Hz to {}Hz for {}",
-                    spec.rate, target_sample_rate, input_path
-                );
-
-                // Calculate frames (samples per channel)
-                let frames = samples.len() / spec.channels.count();
-
-                // Create the resampler
-                let resampler_result = SincFixedIn::<f32>::new(
-                    target_sample_rate as f64 / spec.rate as f64,
-                    2.0, // Oversampling factor
-                    SincInterpolationParameters {
-                        sinc_len: 256,
-                        f_cutoff: 0.95,
-                        interpolation: SincInterpolationType::Linear,
-                        oversampling_factor: 256,
-                        window: rubato::WindowFunction::Blackman,
-                    },
-                    frames,
-                    spec.channels.count(),
-                );
-
-                match resampler_result {
-                    Ok(r) => resampler = Some(r),
-                    Err(e) => {
-                        eprintln!("Failed to create resampler: {}", e);
-                        resampler = None;
-                    }
-                }
-            }
-
-            // Prepare samples for resampling (convert interleaved to per-channel)
-            let channels = spec.channels.count();
-            let frames = samples.len() / channels;
-
-            // Split interleaved samples into separate channel vectors
-            let mut channel_samples = vec![Vec::with_capacity(frames); channels];
-            for (i, &sample) in samples.iter().enumerate() {
-                channel_samples[i % channels].push(sample);
-            }
-
-            // Perform resampling
-            if let Some(resampler) = resampler.as_mut() {
-                match resampler.process(&channel_samples, None) {
-                    Ok(resampled) => {
-                        // Calculate how many samples we have after resampling
-                        let resampled_frames = resampled[0].len();
-                        let _total_resampled_samples = resampled_frames * channels;
-
-                        // Add resampled samples to PCM data (converting back to interleaved)
-                        for frame in 0..resampled_frames {
-                            for channel_data in resampled.iter() {
-                                let sample = channel_data[frame];
-                                pcm_data.extend_from_slice(&sample.to_le_bytes());
-                                sample_count += 1;
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("Resampling error: {}", e);
-                        // Fall back to original samples if resampling fails
-                        for &sample in samples {
-                            pcm_data.extend_from_slice(&sample.to_le_bytes());
-                            sample_count += 1;
-                        }
-                    }
-                }
-            }
-        } else {
-            // No resampling needed, use original samples
-            for &sample in samples {
-                pcm_data.extend_from_slice(&sample.to_le_bytes());
-                sample_count += 1;
-            }
-        }
-
-        // Apply a limit to prevent excessive memory usage (equivalent to 10 minutes at 48kHz)
-        if sample_count > 10 * 60 * target_sample_rate {
-            break;
-        }
-    }
-
-    // Print audio format info for debugging
-    if let Some(spec) = last_spec {
-        println!(
-            "Processed audio: {} channels, {}Hz, {} samples ({:.1} seconds)",
-            spec.channels.count(),
-            spec.rate,
-            sample_count,
-            sample_count as f32 / target_sample_rate as f32
-        );
-    }
-
-    Ok(pcm_data)
-}
-
 fn decode_chromaprint(raw_fp: &str) -> Result<Vec<u32>, &'static str> {
     if raw_fp.starts_with("PCM:") {
         return Err("Not a Chromaprint fingerprint");
@@ -1220,7 +1003,7 @@ fn calculate_similarity_simd(fp1: &[u32], fp2: &[u32]) -> f64 {
     calculate_similarity(fp1, fp2)
 }
 
-fn calculate_similarity(fp1: &[u32], fp2: &[u32]) -> f64 {
+pub fn calculate_similarity(fp1: &[u32], fp2: &[u32]) -> f64 {
     let min_len = fp1.len().min(fp2.len());
     if min_len == 0 {
         return 0.0;

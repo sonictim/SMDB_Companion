@@ -1,7 +1,5 @@
 use crate::*;
 
-use anyhow::Result;
-
 use preferences::*;
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
@@ -253,5 +251,35 @@ impl Database {
             })
             .collect();
         results
+    }
+
+    pub async fn dual_mono_search(&mut self, app: &AppHandle) {
+        println!("Starting Dual Mono Search");
+        let total = self.records.len();
+        let completed = AtomicUsize::new(0);
+
+        self.records.par_iter_mut().for_each(|record| {
+            if self.abort.load(Ordering::SeqCst) {
+                println!("Aborting dual mono search - early exit");
+                return;
+            }
+            let new_completed = completed.fetch_add(1, Ordering::SeqCst) + 1;
+            app.emit(
+                "search-sub-status",
+                StatusUpdate {
+                    stage: "dupes".into(),
+                    progress: (new_completed * 100 / total) as u64,
+                    message: format!("Dual Mono Search: {}/{}", new_completed, total),
+                },
+            )
+            .ok();
+
+            let identical = audio::decode::are_channels_identical(&record.path);
+            println!("Checking: {} result: {}", record.get_filename(), identical);
+
+            if record.channels > 1 && record.check_path() && identical {
+                record.algorithm.insert(A::DualMono);
+            }
+        });
     }
 }

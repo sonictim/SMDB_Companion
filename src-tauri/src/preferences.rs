@@ -307,20 +307,6 @@ pub enum OrderOperator {
     IsNotEmpty,
 }
 
-#[derive(Default, Debug, Serialize, Deserialize, Clone)]
-pub struct Enabled {
-    pub basic: bool,
-    pub invalidpath: bool,
-    pub filename: bool,
-    pub filetags: bool,
-    pub audiosuite: bool,
-    pub waveform: bool,
-    pub duration: bool,
-    pub dbcompare: bool,
-    pub min_dur: f64,
-    pub compare_db: Arc<str>,
-}
-
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub struct Registration {
     pub name: Arc<str>,
@@ -383,8 +369,24 @@ pub enum Algorithm {
     Duration,
     Replace,
     Manual,
+    DualMono,
     #[default]
     Keep,
+}
+
+#[derive(Default, Debug, Serialize, Deserialize, Clone)]
+pub struct Enabled {
+    pub basic: bool,
+    pub invalidpath: bool,
+    pub filename: bool,
+    pub filetags: bool,
+    pub audiosuite: bool,
+    pub waveform: bool,
+    pub duration: bool,
+    pub min_dur: f64,
+    pub dbcompare: bool,
+    pub compare_db: Arc<str>,
+    pub dual_mono: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]

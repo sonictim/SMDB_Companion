@@ -219,6 +219,19 @@ async fn run_search(
 
         db.records.sort_by(|a, b| a.root.cmp(&b.root));
     }
+    if enabled.dual_mono {
+        app.emit(
+            "search-status",
+            StatusUpdate {
+                stage: "dualm".into(),
+                progress: counter * 100 / total,
+                message: "Performing Dual Mono Search".into(),
+            },
+        )
+        .unwrap();
+        counter += 1;
+        db.dual_mono_search(&app).await;
+    }
     if db.abort.load(Ordering::SeqCst) {
         println!("Aborting fingerprint scan - early exit");
         return Err("Aborted".to_string());
@@ -235,9 +248,8 @@ async fn run_search(
         .unwrap();
         counter += 1;
 
-        // let _ = db.wave_search_chromaprint(&pref, &app).await;
-        // let _ = demo_usage();
-        let _ = db.process_large_collection(&app, &pref).await;
+        let _ = db.wave_search_chromaprint(&pref, &app).await;
+        // let _ = db.process_large_collection(&app, &pref).await;
     }
     {}
 

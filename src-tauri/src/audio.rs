@@ -1,13 +1,22 @@
 pub mod chromaprint;
 pub mod shazam_fingerprint_processing;
 // pub mod landmarks;
+pub mod claude;
+pub mod decode;
+// pub mod decode_old;
+pub mod fft;
 pub mod playback;
 pub mod shazam_search;
 pub mod shazam_search_claude;
+// pub mod symphonia_play;
 
 pub use chromaprint::*;
 pub use shazam_fingerprint_processing::*;
 // pub use landmarks::*;
+pub use claude::*;
+pub use decode::*;
+pub use fft::*;
 pub use playback::*;
 pub use shazam_search::*;
 pub use shazam_search_claude::*;
+// pub use symphonia_play::*;

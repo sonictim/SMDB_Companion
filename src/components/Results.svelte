@@ -515,6 +515,7 @@
   import {
     CheckSquare,
     Square,
+    SquareEqual,
     NotebookPenIcon,
     OctagonX,
     Volume2,
@@ -569,6 +570,7 @@
       Compare: { component: GitCompareArrowsIcon, tooltip: "Database Compare" },
       SimilarAudio: { component: Activity, tooltip: "Similar Audio" },
       ExactPCM: { component: AudioWaveform, tooltip: "Exact PCM Hash" },
+      DualMono: { component: SquareEqual, tooltip: "Dual Mono" },
       Remove: {
         component: OctagonX,
         tooltip: "Marked for Removal",

@@ -256,7 +256,7 @@
             {#if selectedDb == null || selectedDb == "" || selectedDb == "Select Database" || !checkAnyAlgorithmEnabled()}
                 <button class="cta-button inactive">
                     <Search size={18} />
-                    <span>Search</span>
+                    <span>Search for Records</span>
                 </button>
             {:else}
                 <button
@@ -269,7 +269,7 @@
                             <span>Cancel</span>
                         {:else}
                             <Search size={18} />
-                            <span>Search</span>
+                            <span>Search for Records</span>
                         {/if}
                     </div>
                 </button>
@@ -363,8 +363,7 @@
                                 <button
                                     type="button"
                                     class="small-button"
-                                    on:click={openSqliteFile}
-                                    >Select SQLite File</button
+                                    on:click={openSqliteFile}>Select DB</button
                                 >
                             {/if}
                         {/if}
@@ -415,9 +414,9 @@
         <div class="header">
             <h2>Metadata Replacement</h2>
             {#if selectedDb == null || selectedDb == "" || selectedDb == "Select Database" || $metadata.find == "" || $metadata.find == null}
-                <button class="cta-button inactive" style="width: 125px">
+                <button class="cta-button inactive" style="width: 225px">
                     <Search size={18} />
-                    <span> Find </span>
+                    <span> Find Metadata </span>
                 </button>
             {:else}
                 <button
@@ -426,7 +425,7 @@
                     on:click={replaceMetadata}
                 >
                     <Search size={18} />
-                    <span> Find </span>
+                    <span> Find Metadata </span>
                 </button>
             {/if}
         </div>
@@ -513,6 +512,10 @@
 </div>
 
 <style>
+    .grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+
     .page-columns {
         display: grid;
         grid-template-columns: repeat(1, 1fr); /* 3 equal columns */
