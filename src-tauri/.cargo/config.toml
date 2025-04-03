@@ -7,20 +7,24 @@ SCCACHE_CACHE_SIZE = "10G"
 SCCACHE_DIR = "/Users/tfarrell/.cache/sccache"
 RUSTC_WRAPPER = "sccache"
 
-FFMPEG_PKG_CONFIG_PATH = "NONE"
-LIBAVCODEC_NO_PKG_CONFIG = "1"
-LIBAVDEVICE_NO_PKG_CONFIG = "1"
-LIBAVFILTER_NO_PKG_CONFIG = "1"
-LIBAVFORMAT_NO_PKG_CONFIG = "1"
-LIBAVRESAMPLE_NO_PKG_CONFIG = "1"
-LIBAVUTIL_NO_PKG_CONFIG = "1"
-LIBPOSTPROC_NO_PKG_CONFIG = "1"
-LIBSWRESAMPLE_NO_PKG_CONFIG = "1"
-LIBSWSCALE_NO_PKG_CONFIG = "1"
-FFMPEG_INCLUDE_DIR = { value = "/Users/tfarrell/Documents/CODE/SMDB_Companion/src-tauri/resources/ffmpeg/universal/include", relative = false }
-
-
 [profile.dev]
 incremental = true
-debug = 1
-opt-level = 1
+debug = 1          # Reduced debug info for faster builds
+opt-level = 1      # Slight optimization without impacting compile time much
+codegen-units = 16 # More parallel code generation
+
+# Special profile for procedural macros
+[profile.dev.build-override]
+opt-level = 3      # Full optimization for proc macros
+codegen-units = 16
+debug = false      # No debug info for proc macros to speed things up
+
+[profile.dev.package."*"]
+# Force consistent build settings for dependencies
+incremental = true
+
+# Clear these settings if they exist in your .cargo directory
+[source]
+crates-io.replace-with = "vendored-sources"
+[source.vendored-sources]
+directory = "vendor"
