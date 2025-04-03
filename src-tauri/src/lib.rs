@@ -1,33 +1,19 @@
 // mod audio;
 // mod audioplayer;
-mod commands;
-mod preferences;
-mod search;
-
+pub mod commands;
+pub mod preferences;
+pub mod search;
 pub use crate::audio::*;
 pub mod audio;
-
-use anyhow::{Context, Result};
 pub use dirs::home_dir;
-use once_cell::sync::Lazy;
-use preferences::*;
-use rayon::prelude::*;
+pub use preferences::*;
+pub mod prelude;
 pub use regex::Regex;
-use serde::{Deserialize, Serialize};
-use sqlx::Row;
+pub use sqlx::Row;
 pub use sqlx::sqlite::{SqlitePool, SqliteRow};
-use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
-use std::env;
-pub use std::fs::{self};
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use tauri::async_runtime::Mutex;
-use tauri::{AppHandle, Emitter};
-use tauri::{Manager, State};
 
 // use audioplayer::*;
-use commands::*;
+pub use commands::*;
 
 pub const TABLE: &str = "justinmetadata";
 pub const RECORD_DIVISOR: usize = 1231;

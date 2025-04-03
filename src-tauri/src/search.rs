@@ -1,11 +1,4 @@
-use crate::*;
-
-use preferences::*;
-use rayon::prelude::*;
-use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
-use std::sync::atomic::Ordering;
-use tauri::{AppHandle, Emitter};
+pub use crate::prelude::*;
 
 impl Database {
     pub async fn compare_search(&mut self, enabled: &Enabled, pref: &Preferences, app: &AppHandle) {
@@ -278,8 +271,7 @@ impl Database {
                 let mut futures = Vec::new();
 
                 // Process each record in the batch concurrently
-                for j in i..chunk_end {
-                    let record = &records[j];
+                for record in &records[i..chunk_end] {
                     let record_path = record.path.clone();
                     let record_filename = record.get_filename().to_string();
                     let channels = record.channels;

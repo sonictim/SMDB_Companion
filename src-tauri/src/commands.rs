@@ -1,11 +1,6 @@
-use crate::*;
-
+pub use crate::prelude::*;
 pub use rfd::FileDialog;
 use std::process::Command;
-use std::result::Result;
-pub use std::sync::Arc;
-use tauri::async_runtime::Mutex;
-use tauri::{AppHandle, Emitter};
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command(rename_all = "snake_case")]
@@ -470,8 +465,6 @@ pub async fn replace_metadata(
     println!("Replace Ended");
     Ok(String::from("Replace Success"))
 }
-
-use rayon::prelude::*;
 
 #[tauri::command]
 pub async fn get_results(

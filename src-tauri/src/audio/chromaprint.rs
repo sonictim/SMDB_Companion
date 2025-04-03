@@ -1,6 +1,6 @@
 use crate::*;
 use ::chromaprint::Chromaprint;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use base64::{Engine as _, engine::general_purpose};
 use bit_set::BitSet;
 

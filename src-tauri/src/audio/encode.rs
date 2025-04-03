@@ -73,16 +73,17 @@ pub fn pcm_to_flac(
     // [dependencies]
     // claxon = "0.4.3"
 
-    use claxon::encoder::Encoder as FlacEncoder;
-    use claxon::metadata::StreamInfo;
+    use claxon::FlacEncoder;
+    use claxon::FlacStreamInfo;
+    use claxon::frame;
 
     let mut encoder = FlacEncoder::new(
         File::create(output_path)?,
-        StreamInfo {
+        claxon::FlacStreamInfo {
             sample_rate,
             channels: 1, // Mono
             bits_per_sample: bits_per_sample as u32,
-            total_samples: Some((pcm_data.len() / (bits_per_sample as usize / 8)) as u64),
+            max_frame_len: None, // Let the encoder decide
         },
     )?;
 
@@ -116,8 +117,11 @@ pub fn pcm_to_flac(
     };
 
     // Create a frame (buffer of samples)
-    // Write the samples directly to the encoder
-    encoder.write_block(&samples)?;
+    let frame = Frame::from_mono(&samples);
+
+    // Write the frame
+    encoder.write_frame(&frame)?;
+
     // Finalize the encoder
     encoder.finish()?;
 
