@@ -23,8 +23,4 @@ debug = false      # No debug info for proc macros to speed things up
 # Force consistent build settings for dependencies
 incremental = true
 
-# Clear these settings if they exist in your .cargo directory
-[source]
-crates-io.replace-with = "vendored-sources"
-[source.vendored-sources]
-directory = "vendor"
+
