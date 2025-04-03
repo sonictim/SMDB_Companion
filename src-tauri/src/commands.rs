@@ -320,7 +320,7 @@ pub async fn remove_records(
     .ok();
     let _ = delete.delete_files(files, &app);
 
-    let _ = state.db.clean_multi_mono();
+    // let _ = state.db.clean_multi_mono();
     println!("Remove Ended");
     app.emit(
         "remove-status",

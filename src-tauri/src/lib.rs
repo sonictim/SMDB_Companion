@@ -564,22 +564,22 @@ impl Database {
         Ok(())
     }
 
-    pub fn clean_multi_mono(&self) -> Result<(), sqlx::Error> {
-        self.records.par_iter().for_each(|record| {
-            if record.algorithm.contains(&Algorithm::DualMono) {
-                let _ = audio::ffmpeg::cleanup_multi_mono(&record.path);
-            }
-        });
+    // pub fn clean_multi_mono(&self) -> Result<(), sqlx::Error> {
+    //     self.records.par_iter().for_each(|record| {
+    //         if record.algorithm.contains(&Algorithm::DualMono) {
+    //             let _ = audio::ffmpeg::cleanup_multi_mono(&record.path);
+    //         }
+    //     });
 
-        // if let Some(pool) = self.get_pool().await {
-        //     let query = format!(
-        //         "DELETE FROM {} WHERE channels = 1 AND bitdepth = 1 AND samplerate = 1",
-        //         TABLE
-        //     );
-        //     sqlx::query(&query).execute(&pool).await?;
-        // }
-        Ok(())
-    }
+    //     // if let Some(pool) = self.get_pool().await {
+    //     //     let query = format!(
+    //     //         "DELETE FROM {} WHERE channels = 1 AND bitdepth = 1 AND samplerate = 1",
+    //     //         TABLE
+    //     //     );
+    //     //     sqlx::query(&query).execute(&pool).await?;
+    //     // }
+    //     Ok(())
+    // }
 
     pub async fn fetch(&self, query: &str) -> Vec<SqliteRow> {
         if let Some(pool) = self.get_pool().await {

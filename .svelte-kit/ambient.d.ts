@@ -32,6 +32,7 @@ declare module '$env/static/private' {
 	export const TERM: string;
 	export const SHELL: string;
 	export const TMPDIR: string;
+	export const CARGO_BUILD_JOBS: string;
 	export const TERM_PROGRAM_VERSION: string;
 	export const ZDOTDIR: string;
 	export const TAURI_CLI_VERBOSITY: string;
@@ -39,6 +40,7 @@ declare module '$env/static/private' {
 	export const MallocNanoZone: string;
 	export const TAURI_ENV_DEBUG: string;
 	export const npm_config_registry: string;
+	export const PNPM_HOME: string;
 	export const USER: string;
 	export const TAURI_ENV_TARGET_TRIPLE: string;
 	export const COMMAND_MODE: string;
@@ -68,7 +70,6 @@ declare module '$env/static/private' {
 	export const VSCODE_GIT_ASKPASS_EXTRA_ARGS: string;
 	export const TAURI_ENV_ARCH: string;
 	export const RUSTUP_TOOLCHAIN: string;
-	export const npm_config_node_gyp: string;
 	export const XPC_SERVICE_NAME: string;
 	export const npm_package_version: string;
 	export const VSCODE_INJECTION: string;
@@ -124,6 +125,7 @@ declare module '$env/dynamic/private' {
 		TERM: string;
 		SHELL: string;
 		TMPDIR: string;
+		CARGO_BUILD_JOBS: string;
 		TERM_PROGRAM_VERSION: string;
 		ZDOTDIR: string;
 		TAURI_CLI_VERBOSITY: string;
@@ -131,6 +133,7 @@ declare module '$env/dynamic/private' {
 		MallocNanoZone: string;
 		TAURI_ENV_DEBUG: string;
 		npm_config_registry: string;
+		PNPM_HOME: string;
 		USER: string;
 		TAURI_ENV_TARGET_TRIPLE: string;
 		COMMAND_MODE: string;
@@ -160,7 +163,6 @@ declare module '$env/dynamic/private' {
 		VSCODE_GIT_ASKPASS_EXTRA_ARGS: string;
 		TAURI_ENV_ARCH: string;
 		RUSTUP_TOOLCHAIN: string;
-		npm_config_node_gyp: string;
 		XPC_SERVICE_NAME: string;
 		npm_package_version: string;
 		VSCODE_INJECTION: string;
