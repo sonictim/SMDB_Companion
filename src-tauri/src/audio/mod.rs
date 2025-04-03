@@ -10,7 +10,7 @@ pub mod playback;
 // pub mod shazam_search;
 // pub mod shazam_search_claude;
 // pub mod symphonia_play;
-// pub mod ffmpeg;
+pub mod ffmpeg;
 
 pub use chromaprint::*;
 // pub use shazam_fingerprint_processing::*;
@@ -23,4 +23,4 @@ pub use playback::*;
 // pub use shazam_search::*;
 // pub use shazam_search_claude::*;
 // pub use symphonia_play::*;
-// pub use ffmpeg::*;
+pub use ffmpeg::*;

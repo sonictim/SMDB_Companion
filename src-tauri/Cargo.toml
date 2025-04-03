@@ -55,7 +55,9 @@ hound = "3.5.1"
 ndarray = "0.16.1"
 ndarray-stats = "0.6.0"
 claxon = "0.4.3"
-ffmpeg-next = "7.1.0"
+ffmpeg-next = { version = "7.1.0", default-features = false, features = [
+    "static",
+] }
 
 [profile.dev]
 incremental = true # Compile your binary in smaller steps.
