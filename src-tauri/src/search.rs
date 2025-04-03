@@ -256,30 +256,76 @@ impl Database {
     pub async fn dual_mono_search(&mut self, app: &AppHandle) {
         println!("Starting Dual Mono Search");
         let total = self.records.len();
-        let completed = AtomicUsize::new(0);
+        let mut completed = 0;
 
-        self.records.par_iter_mut().for_each(|record| {
-            if self.abort.load(Ordering::SeqCst) {
-                println!("Aborting dual mono search - early exit");
-                return;
+        // Store paths of records identified as dual mono
+        let mut dual_mono_paths = std::collections::HashSet::new();
+
+        // Process in smaller batches to allow other functions to run
+        let batch_size = 10; // Adjust based on your system
+
+        {
+            // Use immutable reference to avoid multiple mutable borrows
+            let records = &self.records;
+
+            for i in (0..records.len()).step_by(batch_size) {
+                if self.abort.load(Ordering::SeqCst) {
+                    println!("Aborting dual mono search - early exit");
+                    break;
+                }
+
+                let chunk_end = std::cmp::min(i + batch_size, records.len());
+                let mut futures = Vec::new();
+
+                // Process each record in the batch concurrently
+                for j in i..chunk_end {
+                    let record = &records[j];
+                    let record_path = record.path.clone();
+                    let record_filename = record.get_filename().to_string();
+                    let channels = record.channels;
+                    let can_check_path = record.check_path();
+
+                    // This properly moves blocking work to another thread
+                    let future = tokio::task::spawn_blocking(move || {
+                        let identical = audio::decode::are_channels_identical(&record_path);
+                        println!("Checking: {} result: {}", record_filename, identical);
+                        (record_path, channels > 1 && can_check_path && identical)
+                    });
+
+                    futures.push(future);
+                }
+
+                // Wait for all tasks in this batch to complete
+                for future in futures {
+                    if let Ok((path, should_mark)) = future.await {
+                        completed += 1;
+
+                        app.emit(
+                            "search-sub-status",
+                            StatusUpdate {
+                                stage: "dupes".into(),
+                                progress: (completed * 100 / total) as u64,
+                                message: format!("Dual Mono Search: {}/{}", completed, total),
+                            },
+                        )
+                        .ok();
+
+                        if should_mark {
+                            dual_mono_paths.insert(path);
+                        }
+                    }
+                }
+
+                // This critical line yields control back to the runtime
+                tokio::task::yield_now().await;
             }
-            let new_completed = completed.fetch_add(1, Ordering::SeqCst) + 1;
-            app.emit(
-                "search-sub-status",
-                StatusUpdate {
-                    stage: "dupes".into(),
-                    progress: (new_completed * 100 / total) as u64,
-                    message: format!("Dual Mono Search: {}/{}", new_completed, total),
-                },
-            )
-            .ok();
+        } // End of immutable borrow
 
-            let identical = audio::decode::are_channels_identical(&record.path);
-            println!("Checking: {} result: {}", record.get_filename(), identical);
-
-            if record.channels > 1 && record.check_path() && identical {
+        // Now update all the records that were identified as dual mono
+        for record in &mut self.records {
+            if dual_mono_paths.contains(&record.path) {
                 record.algorithm.insert(A::DualMono);
             }
-        });
+        }
     }
 }

@@ -6,7 +6,15 @@ use bit_set::BitSet;
 
 impl FileRecord {
     pub fn get_chromaprint_fingerprint(&mut self) -> Option<String> {
-        let pcm_data = audio::decode::convert_to_raw_pcm(&self.get_filepath());
+        // let samples = audio::decode::decode_and_resample_for_fingerprint(&self.path);
+
+        let pcm_data = match self.get_raw_pcm() {
+            Ok(data) => data,
+            Err(e) => {
+                eprintln!("Failed to convert audio to PCM: {}", e);
+                return None;
+            }
+        };
 
         let samples: Vec<i16> = pcm_data
             .chunks(4)
@@ -20,7 +28,6 @@ impl FileRecord {
                 }
             })
             .collect();
-        // let samples = audio::decode::decode_and_resample_for_fingerprint(&self.path);
 
         const MIN_SAMPLES: usize = 48000; // 1 second minimum at 48kHz
 

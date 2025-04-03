@@ -111,17 +111,17 @@ pub async fn search(
         } => {
             println!("Detected abort request, cancelling search task");
             handle.abort();
-            return Err("Aborted".to_string());
+            Err("Aborted".to_string())
         }
 
         // Wait for search to complete
         result = rx => {
             match result {
                 Ok(result) => {
-                   return result;
+                   result
                 }
                 Err(_) => {
-                    return Err("Fingerprinting task aborted or failed".to_string());
+                    Err("Fingerprinting task aborted or failed".to_string())
                 }
             }
         }

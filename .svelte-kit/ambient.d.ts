@@ -54,6 +54,7 @@ declare module '$env/static/private' {
 	export const npm_config_verify_deps_before_run: string;
 	export const PATH: string;
 	export const CARGO_HOME: string;
+	export const LaunchInstanceID: string;
 	export const __CFBundleIdentifier: string;
 	export const USER_ZDOTDIR: string;
 	export const TAURI_ENV_PLATFORM_VERSION: string;
@@ -85,6 +86,7 @@ declare module '$env/static/private' {
 	export const npm_config_user_agent: string;
 	export const VSCODE_GIT_ASKPASS_NODE: string;
 	export const GIT_ASKPASS: string;
+	export const SECURITYSESSIONID: string;
 	export const COLORTERM: string;
 	export const npm_node_execpath: string;
 	export const NODE_ENV: string;
@@ -147,6 +149,7 @@ declare module '$env/dynamic/private' {
 		npm_config_verify_deps_before_run: string;
 		PATH: string;
 		CARGO_HOME: string;
+		LaunchInstanceID: string;
 		__CFBundleIdentifier: string;
 		USER_ZDOTDIR: string;
 		TAURI_ENV_PLATFORM_VERSION: string;
@@ -178,6 +181,7 @@ declare module '$env/dynamic/private' {
 		npm_config_user_agent: string;
 		VSCODE_GIT_ASKPASS_NODE: string;
 		GIT_ASKPASS: string;
+		SECURITYSESSIONID: string;
 		COLORTERM: string;
 		npm_node_execpath: string;
 		NODE_ENV: string;

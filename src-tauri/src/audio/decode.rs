@@ -1,4 +1,6 @@
+use crate::*;
 use anyhow::{Context, Result};
+use std::collections::HashMap;
 use std::fs::File;
 use std::path::Path;
 
@@ -21,154 +23,154 @@ pub fn decode_audio_for_fingerprint(path: &Path) -> Vec<i16> {
         .collect()
 }
 
-pub fn decode_and_resample_for_fingerprint(path: &Path) -> Vec<i16> {
-    // Open the file once
-    let file = match File::open(path) {
-        Ok(f) => Box::new(f),
-        Err(e) => return Vec::new(), // Handle errors gracefully
-    };
+// pub fn decode_and_resample_for_fingerprint(path: &Path) -> Vec<i16> {
+//     // Open the file once
+//     let file = match File::open(path) {
+//         Ok(f) => Box::new(f),
+//         Err(e) => return Vec::new(), // Handle errors gracefully
+//     };
 
-    let mss = MediaSourceStream::new(file, Default::default());
-    let hint = Hint::new();
+//     let mss = MediaSourceStream::new(file, Default::default());
+//     let hint = Hint::new();
 
-    // Initialize format reader and decoder
-    let probed = match symphonia::default::get_probe().format(
-        &hint,
-        mss,
-        &FormatOptions::default(),
-        &MetadataOptions::default(),
-    ) {
-        Ok(p) => p,
-        Err(_) => return Vec::new(),
-    };
+//     // Initialize format reader and decoder
+//     let probed = match symphonia::default::get_probe().format(
+//         &hint,
+//         mss,
+//         &FormatOptions::default(),
+//         &MetadataOptions::default(),
+//     ) {
+//         Ok(p) => p,
+//         Err(_) => return Vec::new(),
+//     };
 
-    let mut format = probed.format;
-    let track = match format.default_track() {
-        Some(t) => t,
-        None => return Vec::new(),
-    };
+//     let mut format = probed.format;
+//     let track = match format.default_track() {
+//         Some(t) => t,
+//         None => return Vec::new(),
+//     };
 
-    let mut decoder = match symphonia::default::get_codecs()
-        .make(&track.codec_params, &DecoderOptions::default())
-    {
-        Ok(d) => d,
-        Err(_) => return Vec::new(),
-    };
+//     let mut decoder = match symphonia::default::get_codecs()
+//         .make(&track.codec_params, &DecoderOptions::default())
+//     {
+//         Ok(d) => d,
+//         Err(_) => return Vec::new(),
+//     };
 
-    let track_id = track.id;
-    let source_sample_rate = track.codec_params.sample_rate.unwrap_or(48000);
-    let channels = track.codec_params.channels.map(|c| c.count()).unwrap_or(1) as usize;
+//     let track_id = track.id;
+//     let source_sample_rate = track.codec_params.sample_rate.unwrap_or(48000);
+//     let channels = track.codec_params.channels.map(|c| c.count()).unwrap_or(1) as usize;
 
-    // Skip resampling if already at target rate
-    if source_sample_rate == 48000 {
-        return decode_audio_for_fingerprint(path);
-    }
+//     // Skip resampling if already at target rate
+//     if source_sample_rate == 48000 {
+//         return decode_audio_for_fingerprint(path);
+//     }
 
-    // Set up the resampler once
-    let params = SincInterpolationParameters {
-        sinc_len: 256,
-        f_cutoff: 0.95,
-        interpolation: SincInterpolationType::Linear,
-        oversampling_factor: 256,
-        window: WindowFunction::BlackmanHarris2,
-    };
+//     // Set up the resampler once
+//     let params = SincInterpolationParameters {
+//         sinc_len: 256,
+//         f_cutoff: 0.95,
+//         interpolation: SincInterpolationType::Linear,
+//         oversampling_factor: 256,
+//         window: WindowFunction::BlackmanHarris2,
+//     };
 
-    // Create resampler with a smaller sliding window
-    let mut resampler = match SincFixedIn::<f32>::new(
-        48000.0 / source_sample_rate as f64,
-        2.0,
-        params,
-        4096, // Process in smaller chunks
-        channels,
-    ) {
-        Ok(r) => r,
-        Err(_) => return Vec::new(),
-    };
+//     // Create resampler with a smaller sliding window
+//     let mut resampler = match SincFixedIn::<f32>::new(
+//         48000.0 / source_sample_rate as f64,
+//         2.0,
+//         params,
+//         4096, // Process in smaller chunks
+//         channels,
+//     ) {
+//         Ok(r) => r,
+//         Err(_) => return Vec::new(),
+//     };
 
-    // Preallocate buffers once
-    let mut input_buffer = vec![Vec::with_capacity(4096); channels];
-    let mut result_samples = Vec::new();
-    let mut sample_buf = None;
+//     // Preallocate buffers once
+//     let mut input_buffer = vec![Vec::with_capacity(4096); channels];
+//     let mut result_samples = Vec::new();
+//     let mut sample_buf = None;
 
-    // Process in chunks
-    'outer: loop {
-        // Get next packet
-        let packet = match format.next_packet() {
-            Ok(packet) => packet,
-            Err(err) => {
-                if ignore_end_of_stream_error(Err(err)).is_ok() {
-                    // Final flush
-                    if !input_buffer[0].is_empty() {
-                        if let Ok(output) = resampler.process(&input_buffer, None) {
-                            for frame in 0..output[0].len() {
-                                for ch in 0..channels {
-                                    result_samples.push((output[ch][frame] * 32767.0) as i16);
-                                }
-                            }
-                        }
-                    }
-                    break;
-                } else {
-                    continue;
-                }
-            }
-        };
+//     // Process in chunks
+//     'outer: loop {
+//         // Get next packet
+//         let packet = match format.next_packet() {
+//             Ok(packet) => packet,
+//             Err(err) => {
+//                 if ignore_end_of_stream_error(Err(err)).is_ok() {
+//                     // Final flush
+//                     if !input_buffer[0].is_empty() {
+//                         if let Ok(output) = resampler.process(&input_buffer, None) {
+//                             for frame in 0..output[0].len() {
+//                                 for ch in 0..channels {
+//                                     result_samples.push((output[ch][frame] * 32767.0) as i16);
+//                                 }
+//                             }
+//                         }
+//                     }
+//                     break;
+//                 } else {
+//                     continue;
+//                 }
+//             }
+//         };
 
-        if packet.track_id() != track_id {
-            continue;
-        }
+//         if packet.track_id() != track_id {
+//             continue;
+//         }
 
-        // Decode
-        match decoder.decode(&packet) {
-            Ok(audio_buf) => {
-                // Initialize sample buffer if needed
-                if sample_buf.is_none() {
-                    sample_buf = Some(SampleBuffer::<f32>::new(
-                        audio_buf.capacity() as u64,
-                        *audio_buf.spec(),
-                    ));
-                }
+//         // Decode
+//         match decoder.decode(&packet) {
+//             Ok(audio_buf) => {
+//                 // Initialize sample buffer if needed
+//                 if sample_buf.is_none() {
+//                     sample_buf = Some(SampleBuffer::<f32>::new(
+//                         audio_buf.capacity() as u64,
+//                         *audio_buf.spec(),
+//                     ));
+//                 }
 
-                // Convert to f32 samples
-                if let Some(buf) = &mut sample_buf {
-                    buf.copy_interleaved_ref(audio_buf);
-                    let samples = buf.samples();
+//                 // Convert to f32 samples
+//                 if let Some(buf) = &mut sample_buf {
+//                     buf.copy_interleaved_ref(audio_buf);
+//                     let samples = buf.samples();
 
-                    // De-interleave directly into input buffer
-                    for (i, &sample) in samples.iter().enumerate() {
-                        input_buffer[i % channels].push(sample);
-                    }
+//                     // De-interleave directly into input buffer
+//                     for (i, &sample) in samples.iter().enumerate() {
+//                         input_buffer[i % channels].push(sample);
+//                     }
 
-                    // When buffer is full enough, process a chunk
-                    if input_buffer[0].len() >= 2048 {
-                        if let Ok(output) = resampler.process(&input_buffer, None) {
-                            // Convert directly to i16
-                            for frame in 0..output[0].len() {
-                                for ch in 0..channels {
-                                    result_samples.push((output[ch][frame] * 32767.0) as i16);
-                                }
-                            }
-                        }
+//                     // When buffer is full enough, process a chunk
+//                     if input_buffer[0].len() >= 2048 {
+//                         if let Ok(output) = resampler.process(&input_buffer, None) {
+//                             // Convert directly to i16
+//                             for frame in 0..output[0].len() {
+//                                 for ch in 0..channels {
+//                                     result_samples.push((output[ch][frame] * 32767.0) as i16);
+//                                 }
+//                             }
+//                         }
 
-                        // Clear input buffers
-                        for ch in 0..channels {
-                            input_buffer[ch].clear();
-                        }
-                    }
-                }
-            }
-            Err(Error::DecodeError(_)) => continue,
-            Err(err) => {
-                if ignore_end_of_stream_error(Err(err)).is_ok() {
-                    break;
-                }
-                continue;
-            }
-        }
-    }
+//                         // Clear input buffers
+//                         for ch in 0..channels {
+//                             input_buffer[ch].clear();
+//                         }
+//                     }
+//                 }
+//             }
+//             Err(Error::DecodeError(_)) => continue,
+//             Err(err) => {
+//                 if ignore_end_of_stream_error(Err(err)).is_ok() {
+//                     break;
+//                 }
+//                 continue;
+//             }
+//         }
+//     }
 
-    result_samples
-}
+//     result_samples
+// }
 
 pub struct DecodedAudioInterleaved {
     pub samples: Vec<f32>,
@@ -309,6 +311,7 @@ pub struct DecodedAudioSeparated {
     pub channels_samples: Vec<Vec<f32>>, // Each inner Vec represents samples for one channel
     pub sample_rate: u32,
     pub channels: u16,
+    pub metadata: HashMap<String, String>,
 }
 
 pub fn decode_separated(path: &Path) -> DecodedAudioSeparated {
@@ -333,6 +336,15 @@ pub fn decode_separated(path: &Path) -> DecodedAudioSeparated {
         .channels
         .map(|c| c.count() as u16)
         .unwrap_or(1);
+    let mut metadata = HashMap::new();
+
+    if let Some(data) = format.metadata().current() {
+        for tag in data.tags() {
+            let key = tag.key.to_string();
+            let value = tag.value.to_string();
+            metadata.insert(key, value);
+        }
+    }
 
     // Initialize a vector of vectors, one for each channel
     let mut channels_samples: Vec<Vec<f32>> = (0..channels).map(|_| Vec::new()).collect();
@@ -391,6 +403,7 @@ pub fn decode_separated(path: &Path) -> DecodedAudioSeparated {
         channels_samples,
         sample_rate,
         channels,
+        metadata,
     }
 }
 
@@ -625,201 +638,397 @@ pub fn resample_separated(
         channels_samples: output_frames,
         sample_rate: target_sample_rate,
         channels: data.channels,
+        metadata: data.metadata,
     }
 }
-pub fn convert_to_raw_pcm(input_path: &str) -> Result<Vec<u8>> {
-    use rubato::{Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType};
 
-    let file = std::fs::File::open(input_path)?;
-    let mss = MediaSourceStream::new(Box::new(file), Default::default());
+impl FileRecord {
+    pub fn get_raw_pcm(&self) -> Result<Vec<u8>> {
+        use rubato::{Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType};
 
-    // Create a hint to help the format registry guess what format the file is
-    let mut hint = Hint::new();
-    if let Some(extension) = Path::new(input_path).extension() {
-        if let Some(ext_str) = extension.to_str() {
-            hint.with_extension(ext_str);
-        }
-    }
+        let file = std::fs::File::open(self.get_filepath())?;
+        let mss = MediaSourceStream::new(Box::new(file), Default::default());
 
-    // Use the default options for format and metadata
-    let format_opts = FormatOptions {
-        enable_gapless: true,
-        ..Default::default()
-    };
-    let metadata_opts = MetadataOptions::default();
+        // Create a hint to help the format registry guess what format the file is
+        let mut hint = Hint::new();
+        hint.with_extension(self.get_extension());
 
-    // Probe the media source to determine its format
-    let mut probed = symphonia::default::get_probe()
-        .format(&hint, mss, &format_opts, &metadata_opts)
-        .context("Failed to probe media format")?;
-
-    // Get the default track
-    let track = probed
-        .format
-        .default_track()
-        .ok_or_else(|| anyhow::anyhow!("No default track found"))?;
-
-    // Create a decoder for the track
-    let mut decoder = symphonia::default::get_codecs()
-        .make(&track.codec_params, &DecoderOptions::default())
-        .context("Failed to create decoder")?;
-
-    // Store the decoded PCM data
-    let mut pcm_data = Vec::with_capacity(1_000_000); // Pre-allocate 1MB
-
-    // Decode the track
-    let mut sample_count = 0;
-    let target_sample_rate = 48000; // Target sample rate for fingerprinting
-
-    // Initialize resampler storage (only created if needed)
-    let mut resampler = None;
-    let mut last_spec = None;
-
-    loop {
-        // Get the next packet from the format reader
-        let packet = match probed.format.next_packet() {
-            Ok(packet) => packet,
-            Err(symphonia::core::errors::Error::ResetRequired) => {
-                // Reset the decoder when required
-                decoder.reset();
-                continue;
-            }
-            Err(symphonia::core::errors::Error::IoError(ref e))
-                if e.kind() == std::io::ErrorKind::UnexpectedEof =>
-            {
-                // End of file reached
-                break;
-            }
-            Err(e) => {
-                // Some other error occurred
-                return Err(anyhow::anyhow!("Error reading packet: {}", e));
-            }
+        // Use the default options for format and metadata
+        let format_opts = FormatOptions {
+            enable_gapless: true,
+            ..Default::default()
         };
+        let metadata_opts = MetadataOptions::default();
 
-        // Decode the packet
-        let decoded = match decoder.decode(&packet) {
-            Ok(decoded) => decoded,
-            Err(symphonia::core::errors::Error::IoError(_)) => {
-                // Skip decoding errors
-                continue;
-            }
-            Err(e) => {
-                eprintln!("Error decoding packet: {}", e);
-                continue;
-            }
-        };
+        // Probe the media source to determine its format
+        let mut probed = ::symphonia::default::get_probe()
+            .format(&hint, mss, &format_opts, &metadata_opts)
+            .context("Failed to probe media format")?;
 
-        // Get the decoded audio buffer
-        let spec = *decoded.spec();
-        last_spec = Some(spec);
+        // Get the default track
+        let track = probed
+            .format
+            .default_track()
+            .ok_or_else(|| anyhow::anyhow!("No default track found"))?;
 
-        // Create a buffer for the decoded audio
-        let mut sample_buffer = SampleBuffer::<f32>::new(decoded.capacity() as u64, spec);
+        // Create a decoder for the track
+        let mut decoder = ::symphonia::default::get_codecs()
+            .make(&track.codec_params, &DecoderOptions::default())
+            .context("Failed to create decoder")?;
 
-        // Copy the decoded audio to the sample buffer
-        sample_buffer.copy_interleaved_ref(decoded);
-        let samples = sample_buffer.samples();
+        // Store the decoded PCM data
+        let mut pcm_data = Vec::with_capacity(1_000_000); // Pre-allocate 1MB
 
-        // Check if we need to resample
-        if spec.rate != target_sample_rate {
-            // Create resampler if this is the first packet or if format changed
-            if resampler.is_none() {
-                println!(
-                    "Resampling from {}Hz to {}Hz for {}",
-                    spec.rate, target_sample_rate, input_path
-                );
+        // Decode the track
+        let mut sample_count = 0;
+        let target_sample_rate = 48000; // Target sample rate for fingerprinting
 
-                // Calculate frames (samples per channel)
-                let frames = samples.len() / spec.channels.count();
+        // Initialize resampler storage (only created if needed)
+        let mut resampler = None;
+        let mut last_spec = None;
 
-                // Create the resampler
-                let resampler_result = SincFixedIn::<f32>::new(
-                    target_sample_rate as f64 / spec.rate as f64,
-                    2.0, // Oversampling factor
-                    SincInterpolationParameters {
-                        sinc_len: 256,
-                        f_cutoff: 0.95,
-                        interpolation: SincInterpolationType::Linear,
-                        oversampling_factor: 256,
-                        window: rubato::WindowFunction::Blackman,
-                    },
-                    frames,
-                    spec.channels.count(),
-                );
+        loop {
+            // Get the next packet from the format reader
+            let packet = match probed.format.next_packet() {
+                Ok(packet) => packet,
+                Err(::symphonia::core::errors::Error::ResetRequired) => {
+                    // Reset the decoder when required
+                    decoder.reset();
+                    continue;
+                }
+                Err(::symphonia::core::errors::Error::IoError(ref e))
+                    if e.kind() == std::io::ErrorKind::UnexpectedEof =>
+                {
+                    // End of file reached
+                    break;
+                }
+                Err(e) => {
+                    // Some other error occurred
+                    return Err(anyhow::anyhow!("Error reading packet: {}", e));
+                }
+            };
 
-                match resampler_result {
-                    Ok(r) => resampler = Some(r),
-                    Err(e) => {
-                        eprintln!("Failed to create resampler: {}", e);
-                        resampler = None;
+            // Decode the packet
+            let decoded = match decoder.decode(&packet) {
+                Ok(decoded) => decoded,
+                Err(::symphonia::core::errors::Error::IoError(_)) => {
+                    // Skip decoding errors
+                    continue;
+                }
+                Err(e) => {
+                    eprintln!("Error decoding packet: {}", e);
+                    continue;
+                }
+            };
+
+            // Get the decoded audio buffer
+            let spec = *decoded.spec();
+            last_spec = Some(spec);
+
+            // Create a buffer for the decoded audio
+            let mut sample_buffer = SampleBuffer::<f32>::new(decoded.capacity() as u64, spec);
+
+            // Copy the decoded audio to the sample buffer
+            sample_buffer.copy_interleaved_ref(decoded);
+            let samples = sample_buffer.samples();
+
+            // Check if we need to resample
+            if spec.rate != target_sample_rate {
+                // Create resampler if this is the first packet or if format changed
+                if resampler.is_none() {
+                    println!(
+                        "Resampling from {}Hz to {}Hz for {}",
+                        spec.rate,
+                        target_sample_rate,
+                        self.get_filename()
+                    );
+
+                    // Calculate frames (samples per channel)
+                    let frames = samples.len() / spec.channels.count();
+
+                    // Create the resampler
+                    let resampler_result = SincFixedIn::<f32>::new(
+                        target_sample_rate as f64 / spec.rate as f64,
+                        2.0, // Oversampling factor
+                        SincInterpolationParameters {
+                            sinc_len: 256,
+                            f_cutoff: 0.95,
+                            interpolation: SincInterpolationType::Linear,
+                            oversampling_factor: 256,
+                            window: rubato::WindowFunction::Blackman,
+                        },
+                        frames,
+                        spec.channels.count(),
+                    );
+
+                    match resampler_result {
+                        Ok(r) => resampler = Some(r),
+                        Err(e) => {
+                            eprintln!("Failed to create resampler: {}", e);
+                            resampler = None;
+                        }
                     }
                 }
-            }
 
-            // Prepare samples for resampling (convert interleaved to per-channel)
-            let channels = spec.channels.count();
-            let frames = samples.len() / channels;
+                // Prepare samples for resampling (convert interleaved to per-channel)
+                let channels = spec.channels.count();
+                let frames = samples.len() / channels;
 
-            // Split interleaved samples into separate channel vectors
-            let mut channel_samples = vec![Vec::with_capacity(frames); channels];
-            for (i, &sample) in samples.iter().enumerate() {
-                channel_samples[i % channels].push(sample);
-            }
+                // Split interleaved samples into separate channel vectors
+                let mut channel_samples = vec![Vec::with_capacity(frames); channels];
+                for (i, &sample) in samples.iter().enumerate() {
+                    channel_samples[i % channels].push(sample);
+                }
 
-            // Perform resampling
-            if let Some(resampler) = resampler.as_mut() {
-                match resampler.process(&channel_samples, None) {
-                    Ok(resampled) => {
-                        // Calculate how many samples we have after resampling
-                        let resampled_frames = resampled[0].len();
-                        let _total_resampled_samples = resampled_frames * channels;
+                // Perform resampling
+                if let Some(resampler) = resampler.as_mut() {
+                    match resampler.process(&channel_samples, None) {
+                        Ok(resampled) => {
+                            // Calculate how many samples we have after resampling
+                            let resampled_frames = resampled[0].len();
+                            let _total_resampled_samples = resampled_frames * channels;
 
-                        // Add resampled samples to PCM data (converting back to interleaved)
-                        for frame in 0..resampled_frames {
-                            for channel_data in resampled.iter() {
-                                let sample = channel_data[frame];
+                            // Add resampled samples to PCM data (converting back to interleaved)
+                            for frame in 0..resampled_frames {
+                                for channel_data in resampled.iter() {
+                                    let sample = channel_data[frame];
+                                    pcm_data.extend_from_slice(&sample.to_le_bytes());
+                                    sample_count += 1;
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Resampling error: {}", e);
+                            // Fall back to original samples if resampling fails
+                            for &sample in samples {
                                 pcm_data.extend_from_slice(&sample.to_le_bytes());
                                 sample_count += 1;
                             }
                         }
                     }
-                    Err(e) => {
-                        eprintln!("Resampling error: {}", e);
-                        // Fall back to original samples if resampling fails
-                        for &sample in samples {
-                            pcm_data.extend_from_slice(&sample.to_le_bytes());
-                            sample_count += 1;
-                        }
-                    }
+                }
+            } else {
+                // No resampling needed, use original samples
+                for &sample in samples {
+                    pcm_data.extend_from_slice(&sample.to_le_bytes());
+                    sample_count += 1;
                 }
             }
-        } else {
-            // No resampling needed, use original samples
-            for &sample in samples {
-                pcm_data.extend_from_slice(&sample.to_le_bytes());
-                sample_count += 1;
+
+            // Apply a limit to prevent excessive memory usage (equivalent to 10 minutes at 48kHz)
+            if sample_count > 10 * 60 * target_sample_rate {
+                break;
             }
         }
 
-        // Apply a limit to prevent excessive memory usage (equivalent to 10 minutes at 48kHz)
-        if sample_count > 10 * 60 * target_sample_rate {
-            break;
+        // Print audio format info for debugging
+        if let Some(spec) = last_spec {
+            println!(
+                "Processed audio: {} channels, {}Hz, {} samples ({:.1} seconds)",
+                spec.channels.count(),
+                spec.rate,
+                sample_count,
+                sample_count as f32 / target_sample_rate as f32
+            );
         }
-    }
 
-    // Print audio format info for debugging
-    if let Some(spec) = last_spec {
-        println!(
-            "Processed audio: {} channels, {}Hz, {} samples ({:.1} seconds)",
-            spec.channels.count(),
-            spec.rate,
-            sample_count,
-            sample_count as f32 / target_sample_rate as f32
-        );
+        Ok(pcm_data)
     }
-
-    Ok(pcm_data)
 }
+
+// pub fn convert_to_raw_pcm(input_path: &str) -> Result<Vec<u8>> {
+//     use rubato::{Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType};
+
+//     let file = std::fs::File::open(input_path)?;
+//     let mss = MediaSourceStream::new(Box::new(file), Default::default());
+
+//     // Create a hint to help the format registry guess what format the file is
+//     let mut hint = Hint::new();
+//     if let Some(extension) = Path::new(input_path).extension() {
+//         if let Some(ext_str) = extension.to_str() {
+//             hint.with_extension(ext_str);
+//         }
+//     }
+
+//     // Use the default options for format and metadata
+//     let format_opts = FormatOptions {
+//         enable_gapless: true,
+//         ..Default::default()
+//     };
+//     let metadata_opts = MetadataOptions::default();
+
+//     // Probe the media source to determine its format
+//     let mut probed = symphonia::default::get_probe()
+//         .format(&hint, mss, &format_opts, &metadata_opts)
+//         .context("Failed to probe media format")?;
+
+//     // Get the default track
+//     let track = probed
+//         .format
+//         .default_track()
+//         .ok_or_else(|| anyhow::anyhow!("No default track found"))?;
+
+//     // Create a decoder for the track
+//     let mut decoder = symphonia::default::get_codecs()
+//         .make(&track.codec_params, &DecoderOptions::default())
+//         .context("Failed to create decoder")?;
+
+//     // Store the decoded PCM data
+//     let mut pcm_data = Vec::with_capacity(1_000_000); // Pre-allocate 1MB
+
+//     // Decode the track
+//     let mut sample_count = 0;
+//     let target_sample_rate = 48000; // Target sample rate for fingerprinting
+
+//     // Initialize resampler storage (only created if needed)
+//     let mut resampler = None;
+//     let mut last_spec = None;
+
+//     loop {
+//         // Get the next packet from the format reader
+//         let packet = match probed.format.next_packet() {
+//             Ok(packet) => packet,
+//             Err(symphonia::core::errors::Error::ResetRequired) => {
+//                 // Reset the decoder when required
+//                 decoder.reset();
+//                 continue;
+//             }
+//             Err(symphonia::core::errors::Error::IoError(ref e))
+//                 if e.kind() == std::io::ErrorKind::UnexpectedEof =>
+//             {
+//                 // End of file reached
+//                 break;
+//             }
+//             Err(e) => {
+//                 // Some other error occurred
+//                 return Err(anyhow::anyhow!("Error reading packet: {}", e));
+//             }
+//         };
+
+//         // Decode the packet
+//         let decoded = match decoder.decode(&packet) {
+//             Ok(decoded) => decoded,
+//             Err(symphonia::core::errors::Error::IoError(_)) => {
+//                 // Skip decoding errors
+//                 continue;
+//             }
+//             Err(e) => {
+//                 eprintln!("Error decoding packet: {}", e);
+//                 continue;
+//             }
+//         };
+
+//         // Get the decoded audio buffer
+//         let spec = *decoded.spec();
+//         last_spec = Some(spec);
+
+//         // Create a buffer for the decoded audio
+//         let mut sample_buffer = SampleBuffer::<f32>::new(decoded.capacity() as u64, spec);
+
+//         // Copy the decoded audio to the sample buffer
+//         sample_buffer.copy_interleaved_ref(decoded);
+//         let samples = sample_buffer.samples();
+
+//         // Check if we need to resample
+//         if spec.rate != target_sample_rate {
+//             // Create resampler if this is the first packet or if format changed
+//             if resampler.is_none() {
+//                 println!(
+//                     "Resampling from {}Hz to {}Hz for {}",
+//                     spec.rate, target_sample_rate, input_path
+//                 );
+
+//                 // Calculate frames (samples per channel)
+//                 let frames = samples.len() / spec.channels.count();
+
+//                 // Create the resampler
+//                 let resampler_result = SincFixedIn::<f32>::new(
+//                     target_sample_rate as f64 / spec.rate as f64,
+//                     2.0, // Oversampling factor
+//                     SincInterpolationParameters {
+//                         sinc_len: 256,
+//                         f_cutoff: 0.95,
+//                         interpolation: SincInterpolationType::Linear,
+//                         oversampling_factor: 256,
+//                         window: rubato::WindowFunction::Blackman,
+//                     },
+//                     frames,
+//                     spec.channels.count(),
+//                 );
+
+//                 match resampler_result {
+//                     Ok(r) => resampler = Some(r),
+//                     Err(e) => {
+//                         eprintln!("Failed to create resampler: {}", e);
+//                         resampler = None;
+//                     }
+//                 }
+//             }
+
+//             // Prepare samples for resampling (convert interleaved to per-channel)
+//             let channels = spec.channels.count();
+//             let frames = samples.len() / channels;
+
+//             // Split interleaved samples into separate channel vectors
+//             let mut channel_samples = vec![Vec::with_capacity(frames); channels];
+//             for (i, &sample) in samples.iter().enumerate() {
+//                 channel_samples[i % channels].push(sample);
+//             }
+
+//             // Perform resampling
+//             if let Some(resampler) = resampler.as_mut() {
+//                 match resampler.process(&channel_samples, None) {
+//                     Ok(resampled) => {
+//                         // Calculate how many samples we have after resampling
+//                         let resampled_frames = resampled[0].len();
+//                         let _total_resampled_samples = resampled_frames * channels;
+
+//                         // Add resampled samples to PCM data (converting back to interleaved)
+//                         for frame in 0..resampled_frames {
+//                             for channel_data in resampled.iter() {
+//                                 let sample = channel_data[frame];
+//                                 pcm_data.extend_from_slice(&sample.to_le_bytes());
+//                                 sample_count += 1;
+//                             }
+//                         }
+//                     }
+//                     Err(e) => {
+//                         eprintln!("Resampling error: {}", e);
+//                         // Fall back to original samples if resampling fails
+//                         for &sample in samples {
+//                             pcm_data.extend_from_slice(&sample.to_le_bytes());
+//                             sample_count += 1;
+//                         }
+//                     }
+//                 }
+//             }
+//         } else {
+//             // No resampling needed, use original samples
+//             for &sample in samples {
+//                 pcm_data.extend_from_slice(&sample.to_le_bytes());
+//                 sample_count += 1;
+//             }
+//         }
+
+//         // Apply a limit to prevent excessive memory usage (equivalent to 10 minutes at 48kHz)
+//         if sample_count > 10 * 60 * target_sample_rate {
+//             break;
+//         }
+//     }
+
+//     // Print audio format info for debugging
+//     if let Some(spec) = last_spec {
+//         println!(
+//             "Processed audio: {} channels, {}Hz, {} samples ({:.1} seconds)",
+//             spec.channels.count(),
+//             spec.rate,
+//             sample_count,
+//             sample_count as f32 / target_sample_rate as f32
+//         );
+//     }
+
+//     Ok(pcm_data)
+// }
 
 /// Splits interleaved PCM data into multiple separate channel vectors.
 pub fn split_channels(pcm_data: &[u8], num_channels: usize) -> Vec<Vec<u8>> {

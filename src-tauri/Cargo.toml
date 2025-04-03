@@ -54,6 +54,8 @@ rustfft = "6.2.0"
 hound = "3.5.1"
 ndarray = "0.16.1"
 ndarray-stats = "0.6.0"
+claxon = "0.4.3"
+ffmpeg-next = "7.1.0"
 
 [profile.dev]
 incremental = true # Compile your binary in smaller steps.
