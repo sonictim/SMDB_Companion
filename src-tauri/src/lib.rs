@@ -1,5 +1,3 @@
-// mod audio;
-// mod audioplayer;
 pub mod commands;
 pub mod preferences;
 pub mod search;
@@ -8,12 +6,10 @@ pub mod audio;
 pub use dirs::home_dir;
 pub use preferences::*;
 pub mod prelude;
+pub use commands::*;
 pub use regex::Regex;
 pub use sqlx::Row;
 pub use sqlx::sqlite::{SqlitePool, SqliteRow};
-
-// use audioplayer::*;
-pub use commands::*;
 
 pub const TABLE: &str = "justinmetadata";
 pub const RECORD_DIVISOR: usize = 1231;
@@ -104,6 +100,7 @@ fn set_library_path() {
 #[derive(Default)]
 pub struct AppState {
     db: Database,
+    // search_results: Vec<FileRecordFrontEnd>,
     // handle: JoinHandle<Result<Vec<FileRecordFrontend>>>,
     // abort: Arc<AtomicBool>,
     // enabled: Enabled,
@@ -130,6 +127,12 @@ pub struct FileRecordFrontend {
     duration: Arc<str>,
     description: Arc<str>,
     // data: HashMap<Arc<str>, Arc<str>>,
+}
+
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+pub struct DualMono {
+    pub id: usize,
+    pub path: String,
 }
 
 #[derive(Default, Debug, Serialize, Clone, PartialEq)]
@@ -564,22 +567,38 @@ impl Database {
         Ok(())
     }
 
-    // pub fn clean_multi_mono(&self) -> Result<(), sqlx::Error> {
-    //     self.records.par_iter().for_each(|record| {
-    //         if record.algorithm.contains(&Algorithm::DualMono) {
-    //             let _ = audio::ffmpeg::cleanup_multi_mono(&record.path);
-    //         }
-    //     });
+    pub async fn clean_multi_mono(
+        &self,
+        app: &AppHandle,
+        records: &Vec<DualMono>,
+    ) -> Result<(), sqlx::Error> {
+        println!("Cleaning up multi-mono files");
+        println!("{} Records Found", records.len());
+        let completed = AtomicUsize::new(0);
+        records.par_iter().for_each(|record| {
+            let new_completed = completed.fetch_add(1, Ordering::SeqCst) + 1;
+            let path = Path::new(&record.path);
+            app.emit(
+                "remove-sub-status",
+                StatusUpdate {
+                    stage: "clean multi mono".into(),
+                    progress: (new_completed * 100 / records.len()) as u64,
+                    message: path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_str()
+                        .unwrap_or("")
+                        .to_string(),
+                },
+            )
+            .ok();
 
-    //     // if let Some(pool) = self.get_pool().await {
-    //     //     let query = format!(
-    //     //         "DELETE FROM {} WHERE channels = 1 AND bitdepth = 1 AND samplerate = 1",
-    //     //         TABLE
-    //     //     );
-    //     //     sqlx::query(&query).execute(&pool).await?;
-    //     // }
-    //     Ok(())
-    // }
+            let _ = audio::ffmpeg::cleanup_multi_mono(path);
+        });
+        let record_ids = records.iter().map(|record| record.id).collect::<Vec<_>>();
+        self.update_channel_count_to_mono(app, &record_ids).await?;
+        Ok(())
+    }
 
     pub async fn fetch(&self, query: &str) -> Vec<SqliteRow> {
         if let Some(pool) = self.get_pool().await {
@@ -683,6 +702,78 @@ impl Database {
         // }
 
         Ok(columns)
+    }
+    pub async fn update_channel_count_to_mono(
+        &self,
+        app: &AppHandle,
+        record_ids: &[usize],
+    ) -> Result<(), sqlx::Error> {
+        const BATCH_SIZE: usize = 1000; // Smaller batch size for updates
+
+        if let Some(pool) = self.get_pool().await {
+            let mut counter = 0;
+
+            // Begin a transaction for better performance
+            let mut tx = pool.begin().await?;
+
+            // Process in batches
+            for chunk in record_ids.chunks(BATCH_SIZE) {
+                // Create placeholders for SQL IN clause
+                let placeholders = std::iter::repeat("?")
+                    .take(chunk.len())
+                    .collect::<Vec<_>>()
+                    .join(",");
+
+                // Build update query
+                let query = format!(
+                    "UPDATE {} SET Channels = 1, _Dirty = 1 WHERE rowid IN ({})",
+                    TABLE, placeholders
+                );
+
+                // Create query builder
+                let mut query_builder = sqlx::query(&query);
+
+                // Bind all IDs
+                for &id in chunk {
+                    query_builder = query_builder.bind(id as i64);
+                }
+
+                // Execute the query within transaction
+                query_builder.execute(&mut *tx).await?;
+
+                // Update progress
+                counter += chunk.len();
+                app.emit(
+                    "remove-status",
+                    StatusUpdate {
+                        stage: "updating".into(),
+                        progress: (counter * 100 / record_ids.len()) as u64,
+                        message: format!(
+                            "Updating channel metadata: {}/{}",
+                            counter,
+                            record_ids.len()
+                        ),
+                    },
+                )
+                .ok();
+            }
+
+            // Commit the transaction
+            tx.commit().await?;
+
+            // Final status update
+            app.emit(
+                "remove-status",
+                StatusUpdate {
+                    stage: "complete".into(),
+                    progress: 100,
+                    message: format!("Updated {} records to mono", record_ids.len()),
+                },
+            )
+            .ok();
+        }
+
+        Ok(())
     }
 }
 

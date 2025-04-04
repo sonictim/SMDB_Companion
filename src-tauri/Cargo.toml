@@ -50,11 +50,13 @@ cpal = "0.15.2"
 rb = "0.4.1"
 rubato = "0.16.1"
 tokio = "1.44.1"
-rustfft = "6.2.0"
-hound = "3.5.1"
+# rustfft = "6.2.0"
+# hound = "3.5.1"
 ndarray = "0.16.1"
 ndarray-stats = "0.6.0"
-claxon = "0.4.3"
+# claxon = "0.4.3"
+# ffmpeg-next = "7.1.0"
+tempfile = "3.19.1"
 # ffmpeg-next = { version = "7.1.0", default-features = false, features = [
 #     "static",
 # ] }

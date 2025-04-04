@@ -1,12 +1,10 @@
-use std::{cmp::Ordering, collections::HashSet, sync::Arc};
-
+use crate::FileRecord;
 pub use Algorithm as A;
 pub use OrderOperator as O;
 use chrono::{Duration, NaiveDateTime};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-
-use crate::FileRecord;
+use std::{cmp::Ordering, collections::HashSet, sync::Arc};
 
 #[derive(Default, Debug, Serialize, Deserialize, Clone)]
 pub struct Preferences {

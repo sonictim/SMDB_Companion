@@ -14,7 +14,7 @@
       {
         "label": "main",
         "title": "SMDB Companion",
-        "width": 1200,
+        "width": 1400,
         "height": 900,
         "resizable": true,
         "devtools": true,
@@ -45,6 +45,8 @@
       "frameworks": []
     },
     "resources": [
+      "resources/ffmpeg/arm64/ffmpeg",
+      "resources/ffmpeg/x86_64/ffmpeg",
       "resources/*"
     ]
   },

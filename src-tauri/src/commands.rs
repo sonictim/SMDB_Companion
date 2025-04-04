@@ -244,7 +244,6 @@ async fn run_search(
         counter += 1;
 
         let _ = db.wave_search_chromaprint(&pref, &app).await;
-        // let _ = db.process_large_collection(&app, &pref).await;
     }
     {}
 
@@ -273,15 +272,19 @@ pub async fn clear_fingerprints(state: State<'_, Mutex<AppState>>) -> Result<Arc
 #[tauri::command]
 pub async fn remove_records(
     state: State<'_, Mutex<AppState>>,
+    app: AppHandle,
     clone: bool,
     clone_tag: String,
     records: Vec<usize>,
     delete: Delete,
     files: Vec<&str>,
-    app: AppHandle,
+    dual_mono: Vec<DualMono>,
+    strip_dual_mono: bool,
 ) -> Result<Arc<str>, String> {
     println!("Removing Records");
+    println!("Dual Mono: {:?}", dual_mono);
     let mut state = state.lock().await;
+
     if clone {
         app.emit(
             "remove-status",
@@ -298,7 +301,7 @@ pub async fn remove_records(
         "remove-status",
         StatusUpdate {
             stage: "starting".into(),
-            progress: 50,
+            progress: 40,
             message: "Removing Records from {}...".into(),
         },
     )
@@ -308,7 +311,7 @@ pub async fn remove_records(
         "remove-status",
         StatusUpdate {
             stage: "starting".into(),
-            progress: 80,
+            progress: 70,
             message: match delete {
                 Delete::Trash => "Moving files to Trash",
                 Delete::Delete => "Deleting Files",
@@ -320,7 +323,18 @@ pub async fn remove_records(
     .ok();
     let _ = delete.delete_files(files, &app);
 
-    // let _ = state.db.clean_multi_mono();
+    if strip_dual_mono {
+        app.emit(
+            "remove-status",
+            StatusUpdate {
+                stage: "starting".into(),
+                progress: 85,
+                message: "Stripping Dual Mono Records...".into(),
+            },
+        )
+        .ok();
+        let _ = state.db.clean_multi_mono(&app, &dual_mono).await;
+    }
     println!("Remove Ended");
     app.emit(
         "remove-status",
@@ -331,6 +345,7 @@ pub async fn remove_records(
         },
     )
     .ok();
+
     Ok(state.db.get_name().unwrap_or(Arc::from("Select Database")))
 }
 

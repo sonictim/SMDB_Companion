@@ -239,6 +239,8 @@
             invalidpath: "Files with invalid paths will be marked for removal.",
             filetags:
                 "Filenames containting tags in this list will be marked for removal.",
+            dual_mono:
+                "Files where all channels contain identical audio will be identified.  User can choose to remove extra channels in results panel.",
         };
 
         return tooltips[id] || "No description available";

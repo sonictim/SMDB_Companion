@@ -6,7 +6,7 @@
   import { preferencesStore } from "../store";
   import { resultsStore, metadataStore } from "../session-store";
   import type { FileRecord } from "../session-store";
-  import { ask } from "@tauri-apps/plugin-dialog";
+  import { ask, message } from "@tauri-apps/plugin-dialog";
   import { createVirtualizer } from "@tanstack/svelte-virtual";
 
   export let isRemove: boolean;
@@ -23,6 +23,7 @@
   let currentFilter = "Relevant";
   let idsToRemove: number[] = [];
   let filesToRemove: string[] = [];
+  let dualMono: { id: number; path: string }[] = [];
   let filteredItems: FileRecord[] = [];
   let enableSelections = true;
   let lastPlayed = "Timbo";
@@ -359,19 +360,15 @@
     }
   });
 
-  let filters = [
-    { id: "All", name: "All Records" },
-    { id: "Relevant", name: "Relevant Records" },
-    { id: "Keep", name: "Records to Keep" },
-    { id: "Remove", name: "Records to Remove" },
-    { id: "Basic", name: "Basic Duplicate Search" },
-    { id: "InvalidPath", name: "Valid Filename" },
-    { id: "SimilarFilename", name: "Similar Filename Search" },
-    { id: "Tags", name: "Audiosuite Tags" },
-    { id: "Waveform", name: "Waveform Comparison" },
-    { id: "Duration", name: "Duration" },
-    { id: "Compare", name: "Database Compare" },
+  let manualFilters = [
+    { id: "All", name: "All Records", enabled: true },
+    { id: "Relevant", name: "Relevant Records", enabled: true },
+    { id: "Keep", name: "Records to Keep", enabled: true },
+    { id: "Remove", name: "Records to Remove", enabled: true },
+    { id: "spacer", name: "──────────", enabled: true },
   ];
+
+  $: filters = [...manualFilters, ...pref.algorithms];
 
   async function confirmDialog() {
     let dbDialog = "Create Safety Copy";
@@ -382,8 +379,15 @@
     else if (pref.erase_files === "Delete")
       filesDialog = "❌ Permanently Delete";
 
+    let dualMonoDialog = "Leave Unchanged";
+    if (pref.strip_dual_mono) dualMonoDialog = "❌ Convert to Mono";
+
     let warningDialog = "";
-    if (pref.erase_files === "Delete" || !pref.safety_db) {
+    if (
+      pref.erase_files === "Delete" ||
+      !pref.safety_db ||
+      pref.strip_dual_mono
+    ) {
       warningDialog = "\n\n⚠️ Are you sure? This is NOT undoable!";
     }
 
@@ -392,7 +396,7 @@
       titleDialog = "Confirm Remove";
     }
 
-    let dialog = `Files on Disk: ${filesDialog}\nDatabase: ${dbDialog} ${warningDialog}`;
+    let dialog = `Files on Disk: ${filesDialog}\nDatabase: ${dbDialog}\nDualMono Files: ${dualMonoDialog} ${warningDialog}`;
 
     const confirmed = await ask(dialog, {
       title: titleDialog,
@@ -405,7 +409,6 @@
   }
 
   async function removeRecords() {
-    if (!(await confirmDialog())) return;
     idsToRemove = filteredItems
       .filter((item) => !item.algorithm.includes("Keep")) // Only keep items without "Keep"
       .map((item) => item.id); // Extract the ids
@@ -413,7 +416,12 @@
       .filter((item) => !item.algorithm.includes("Keep")) // Only keep items without "Keep"
       .map((item) => item.path + "/" + item.filename); // Extract the ids
 
-    if (idsToRemove.length > 0) {
+    dualMono = filteredItems
+      .filter((item) => item.algorithm.includes("DualMono")) // Only keep items with "Dual Mono"
+      .map((item) => ({ id: item.id, path: item.path + "/" + item.filename })); // Extract the ids
+
+    if (idsToRemove.length > 0 || dualMono.length > 0) {
+      if (!(await confirmDialog())) return;
       processing = true;
       await invoke<string>("remove_records", {
         records: idsToRemove,
@@ -421,8 +429,15 @@
         cloneTag: pref.safety_db_tag,
         delete: pref.erase_files,
         files: filesToRemove,
+        dualMono: dualMono,
+        stripDualMono: pref.strip_dual_mono,
       })
         .then((updatedDb) => {
+          if (dualMono.length > 0 && pref.strip_dual_mono) {
+            message(
+              "Dual Mono files converted to Mono!\n\nRecords marked as dirty in Soundminer. For safety, open Soundminer and run the following:\n'Database -> Show Dirty'\nPress: 'CMD + A' to select all\n'Database -> Embed Selected'\n'Database -> Rebuild Waveforms for Selected'",
+            );
+          }
           console.log("Successfully removed records with IDs:", idsToRemove);
           selectedDb = updatedDb;
         })
@@ -430,6 +445,9 @@
           console.error("Error removing records:", error);
           processing = false;
         });
+    } else {
+      console.log("No records to remove");
+      await message("No records to remove!");
     }
   }
 
@@ -464,6 +482,13 @@
       });
   }
 
+  function toggleStripMono(event: Event) {
+    const select = event.target as HTMLSelectElement;
+    preferencesStore.update((p) => {
+      p.strip_dual_mono = select.value === "true";
+      return p;
+    });
+  }
   function handleFileEraseChange(event: Event) {
     const select = event.target as HTMLSelectElement;
     preferencesStore.update((p) => {
@@ -621,6 +646,11 @@
   $: {
     console.log("Grid Template Columns:", gridTemplateColumns);
   }
+
+  function algoEnabled(algo: string): boolean {
+    const algorithm = pref.algorithms.find((option) => option.id === algo);
+    return algorithm?.enabled || false;
+  }
 </script>
 
 <div class="block">
@@ -678,7 +708,13 @@
           on:change={handleFilterChange}
         >
           {#each filters as option}
-            <option value={option.id}>{option.name}</option>
+            {#if option.enabled}
+              {#if option.id === "spacer"}
+                <option disabled>{option.name}</option>
+              {:else}
+                <option value={option.id}>{option.name}</option>
+              {/if}
+            {/if}
           {/each}
         </select>
       {:else}
@@ -902,13 +938,13 @@
   </div>
   <div class="header" style="margin-bottom: 0px; margin-top: 0px;">
     <span>
-      Remove Records From:
+      Remove Records from:
       <select
         class="select-field"
         bind:value={pref.safety_db}
         on:change={() => preferencesStore.set(pref)}
       >
-        {#each [{ bool: true, text: "Database Copy" }, { bool: false, text: "Current Database" }] as option}
+        {#each [{ bool: true, text: "Safety Database Copy" }, { bool: false, text: "Current Database" }] as option}
           <option value={option.bool}>{option.text}</option>
         {/each}
       </select>
@@ -924,26 +960,47 @@
         />
       {:else}
         <TriangleAlert
-          size="20"
+          size="30"
           class="blinking"
-          style="color: var(--warning-hover)"
+          style="color: var(--warning-hover); margin-bottom: -10px"
         />
       {/if}
     </span>
+    {#if algoEnabled("dual_mono")}
+      <span>
+        Dual Mono Files:
+        <select
+          class="select-field"
+          bind:value={pref.strip_dual_mono}
+          on:change={() => preferencesStore.set(pref)}
+        >
+          {#each [{ id: false, text: "Keep" }, { id: true, text: "Strip" }] as option}
+            <option value={option.id}>{option.text}</option>
+          {/each}
+        </select>
+        {#if pref.strip_dual_mono}
+          <TriangleAlert
+            size="30"
+            class="blinking"
+            style="color: var(--warning-hover); margin-bottom: -10px"
+          />
+        {/if}
+      </span>
+    {/if}
     <span>
-      {#if pref.erase_files !== "Keep"}
-        <TriangleAlert
-          size="20"
-          class={pref.erase_files == "Delete" ? "blinking" : ""}
-          style="color: var(--warning-hover)"
-        />
-      {/if}
-      Duplicate Files On Disk:
+      Checked Files:
       <select class="select-field" on:change={handleFileEraseChange}>
-        {#each [{ id: "Keep", text: "Keep" }, { id: "Trash", text: "Move To Trash" }, { id: "Delete", text: "Permanently Delete" }] as option}
+        {#each [{ id: "Keep", text: "Keep on Disk" }, { id: "Trash", text: "Move To Trash" }, { id: "Delete", text: "Permanently Delete" }] as option}
           <option value={option.id}>{option.text}</option>
         {/each}
       </select>
+      {#if pref.erase_files !== "Keep"}
+        <TriangleAlert
+          size="30"
+          class={pref.erase_files == "Delete" ? "blinking" : ""}
+          style="color: var(--warning-hover); margin-bottom: -10px"
+        />
+      {/if}
     </span>
   </div>
 </div>
