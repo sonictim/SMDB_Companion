@@ -404,20 +404,27 @@ pub fn decode_separated(path: &Path) -> DecodedAudioSeparated {
 }
 
 pub fn are_channels_identical(path: &Path) -> bool {
-    let file = Box::new(File::open(path).unwrap());
+    let file = match File::open(path) {
+        Ok(f) => Box::new(f),
+        Err(_) => return false, // Handle errors gracefully
+    };
     let mss = MediaSourceStream::new(file, Default::default());
     let hint = Hint::new();
     let format_opts: FormatOptions = Default::default();
     let metadata_opts: MetadataOptions = Default::default();
     let decoder_opts: DecoderOptions = Default::default();
-    let probed = symphonia::default::get_probe()
-        .format(&hint, mss, &format_opts, &metadata_opts)
-        .unwrap();
+    let probed =
+        match symphonia::default::get_probe().format(&hint, mss, &format_opts, &metadata_opts) {
+            Ok(p) => p,
+            Err(_) => return false,
+        };
     let mut format = probed.format;
     let track = format.default_track().unwrap();
-    let mut decoder = symphonia::default::get_codecs()
-        .make(&track.codec_params, &decoder_opts)
-        .unwrap();
+    let mut decoder =
+        match symphonia::default::get_codecs().make(&track.codec_params, &decoder_opts) {
+            Ok(d) => d,
+            Err(_) => return false,
+        };
     let track_id = track.id;
     let channels = track
         .codec_params

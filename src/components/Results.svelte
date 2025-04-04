@@ -130,34 +130,84 @@
     window.addEventListener("mouseup", onMouseUp);
   }
 
-  function toggleChecksSelected() {
-    filteredItems.forEach((item) => {
-      if (selectedItems.has(item.id)) {
-        if (item.algorithm.includes("Keep")) {
-          removeCheck(item);
-        } else {
-          addCheck(item);
-        }
+  function checkSelected() {
+    // Start with current results
+    const updatedResults = [...results];
+    const selectedSet = selectedItems;
+
+    // Create lookup map for faster access
+    const resultMap = new Map(updatedResults.map((item) => [item.id, item]));
+
+    // Process all selected items in one batch
+    selectedSet.forEach((id) => {
+      const item = resultMap.get(id);
+      if (item && item.algorithm.includes("Keep")) {
+        resultMap.set(id, {
+          ...item,
+          algorithm: item.algorithm.filter((algo) => algo !== "Keep"),
+        });
       }
     });
+
+    // Update the results array once
+    results = updatedResults.map((item) => resultMap.get(item.id) || item);
+
+    // Update UI once
     updateUI();
   }
 
   function uncheckSelected() {
-    filteredItems.forEach((item) => {
-      if (selectedItems.has(item.id)) {
-        if (!item.algorithm.includes("Keep")) {
-          addCheck(item);
-        }
+    // Start with current results
+    const updatedResults = [...results];
+    const selectedSet = selectedItems;
+
+    // Create lookup map for faster access
+    const resultMap = new Map(updatedResults.map((item) => [item.id, item]));
+
+    // Process all selected items in one batch
+    selectedSet.forEach((id) => {
+      const item = resultMap.get(id);
+      if (item && !item.algorithm.includes("Keep")) {
+        resultMap.set(id, {
+          ...item,
+          algorithm: [...item.algorithm, "Keep"],
+        });
       }
     });
+
+    // Update the results array once
+    results = updatedResults.map((item) => resultMap.get(item.id) || item);
+
+    // Update UI once
     updateUI();
   }
 
-  function checkSelected() {
-    filteredItems.forEach((item) => {
-      if (selectedItems.has(item.id)) removeCheck(item);
+  function toggleChecksSelected() {
+    // Start with current results
+    const updatedResults = [...results];
+    const selectedSet = selectedItems;
+
+    // Create lookup map for faster access
+    const resultMap = new Map(updatedResults.map((item) => [item.id, item]));
+
+    // Process all selected items in one batch
+    selectedSet.forEach((id) => {
+      const item = resultMap.get(id);
+      if (item) {
+        const hasKeep = item.algorithm.includes("Keep");
+        resultMap.set(id, {
+          ...item,
+          algorithm: hasKeep
+            ? item.algorithm.filter((algo) => algo !== "Keep")
+            : [...item.algorithm, "Keep"],
+        });
+      }
     });
+
+    // Update the results array once
+    results = updatedResults.map((item) => resultMap.get(item.id) || item);
+
+    // Update UI once
     updateUI();
   }
 
@@ -450,6 +500,57 @@
       await message("No records to remove!");
     }
   }
+  async function removeSelectedRecords() {
+    idsToRemove = filteredItems
+      .filter(
+        (item) =>
+          !item.algorithm.includes("Keep") && selectedItems.has(item.id),
+      ) // Only keep items without "Keep"
+      .map((item) => item.id); // Extract the ids
+    filesToRemove = filteredItems
+      .filter(
+        (item) =>
+          !item.algorithm.includes("Keep") && selectedItems.has(item.id),
+      ) // Only keep items without "Keep"
+      .map((item) => item.path + "/" + item.filename); // Extract the ids
+
+    dualMono = filteredItems
+      .filter(
+        (item) =>
+          item.algorithm.includes("DualMono") && selectedItems.has(item.id),
+      ) // Only keep items with "Dual Mono"
+      .map((item) => ({ id: item.id, path: item.path + "/" + item.filename })); // Extract the ids
+
+    if (idsToRemove.length > 0 || dualMono.length > 0) {
+      if (!(await confirmDialog())) return;
+      processing = true;
+      await invoke<string>("remove_records", {
+        records: idsToRemove,
+        clone: pref.safety_db,
+        cloneTag: pref.safety_db_tag,
+        delete: pref.erase_files,
+        files: filesToRemove,
+        dualMono: dualMono,
+        stripDualMono: pref.strip_dual_mono,
+      })
+        .then((updatedDb) => {
+          if (dualMono.length > 0 && pref.strip_dual_mono) {
+            message(
+              "Dual Mono files converted to Mono!\n\nRecords marked as dirty in Soundminer. For safety, open Soundminer and run the following:\n'Database -> Show Dirty'\nPress: 'CMD + A' to select all\n'Database -> Embed Selected'\n'Database -> Rebuild Waveforms for Selected'",
+            );
+          }
+          console.log("Successfully removed records with IDs:", idsToRemove);
+          selectedDb = updatedDb;
+        })
+        .catch((error) => {
+          console.error("Error removing records:", error);
+          processing = false;
+        });
+    } else {
+      console.log("No records to remove");
+      await message("No records to remove!");
+    }
+  }
 
   async function playAudioFile(record: FileRecord) {
     console.log("last played: ", lastPlayed);
@@ -651,6 +752,20 @@
     const algorithm = pref.algorithms.find((option) => option.id === algo);
     return algorithm?.enabled || false;
   }
+
+  let processingBatch = false;
+
+  async function checkSelectedWithIndicator() {
+    processingBatch = true;
+    // Use setTimeout to allow UI to update before heavy processing
+    setTimeout(() => {
+      try {
+        checkSelected();
+      } finally {
+        processingBatch = false;
+      }
+    }, 10);
+  }
 </script>
 
 <div class="block">
@@ -666,10 +781,21 @@
 
     <div style="margin-left: auto; display: flex; gap: 20px;">
       {#if isRemove}
-        <button class="cta-button cancel" on:click={removeRecords}>
-          <OctagonX size="18" />
-          Remove Checked Records
-        </button>
+        {#if selectedItems.size > 0}
+          <button class="cta-button cancel" on:click={removeSelectedRecords}>
+            <OctagonX size="18" />
+            Remove Selected Checked Records
+          </button>
+          <button class="cta-button cancel" on:click={removeRecords}>
+            <OctagonX size="18" />
+            Remove ALL Checked Records
+          </button>
+        {:else}
+          <button class="cta-button cancel" on:click={removeRecords}>
+            <OctagonX size="18" />
+            Remove Checked Records
+          </button>
+        {/if}
       {:else}
         <button class="cta-button cancel" on:click={replaceMetadata}>
           <NotebookPenIcon size="18" />
@@ -697,6 +823,15 @@
       <button class="small-button" on:click={clearSelected}
         >Clear Selections</button
       >
+      {#if selectedItems.size > 0}
+        <p style="margin-left: 10px">({selectedItems.size} selected)</p>
+      {/if}
+      {#if processingBatch}
+        <div class="batch-processing">
+          <Loader size={24} class="spinner" />
+          <span>Processing {selectedItems.size} items...</span>
+        </div>
+      {/if}
     {/if}
 
     <div class="filter-container">
