@@ -24,7 +24,7 @@ debug = false      # No debug info for proc macros to speed things up
 incremental = true
 
 # Clear these settings if they exist in your .cargo directory
-[source]
-crates-io.replace-with = "vendored-sources"
-[source.vendored-sources]
-directory = "vendor"
+# [source]
+# crates-io.replace-with = "vendored-sources"
+# [source.vendored-sources]
+# directory = "vendor"
