@@ -9,6 +9,9 @@ target
 target_ra
 target_wasm
 
+pnpm-lock.yaml
+Cargo.lock
+
 # https://github.com/lycheeverse/lychee
 .lycheecache
 .DS_Store
@@ -17,8 +20,12 @@ target_wasm
 waveform_log.txt
 
 .syncthing.*
-/sox
 
+/static
+
+/ORIGINAL*
+
+/build
 /.svelte-kit/output
 /build/_app/immutable
 src-tauri/resources/chromaprint
