@@ -96,13 +96,15 @@
         if (presetObj) {
             // Create deep copies to avoid reference issues
             const prefCopy = structuredClone(presetObj.pref);
+            const defaultPrefs = structuredClone(defaultPreferences);
+            const pref = { ...defaultPrefs, ...prefCopy }; // Merge with default preferences
 
             // Ensure algorithms are set correctly
-            if (prefCopy && prefCopy.algorithms) {
+            if (pref && pref.algorithms) {
                 console.log("Loading algorithms:", prefCopy.algorithms);
 
                 // Set the preferences store, which will include algorithms
-                preferencesStore.set(prefCopy);
+                preferencesStore.set(pref);
 
                 // Log to verify store was updated
                 console.log(
@@ -112,12 +114,12 @@
             } else {
                 console.error("Invalid algorithms in preset:", selectedPreset);
                 // Fallback to default algorithms if not present
-                prefCopy.algorithms = defaultAlgorithms;
-                preferencesStore.set(prefCopy);
+                pref.algorithms = defaultAlgorithms;
+                preferencesStore.set(pref);
             }
 
             // Update CSS variables
-            Object.entries(prefCopy.colors || {}).forEach(([key, value]) => {
+            Object.entries(pref.colors || {}).forEach(([key, value]) => {
                 const cssVariable = `--${key.replace(/([A-Z])/g, "-$1").toLowerCase()}`;
                 document.documentElement.style.setProperty(cssVariable, value);
             });

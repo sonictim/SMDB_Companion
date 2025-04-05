@@ -405,8 +405,12 @@ try {
     // Ensure algorithms are always present, even if not in stored preferences
     initialPreferences = parsedPreferences && Object.keys(parsedPreferences).length > 0
         ? {
+            ...defaultPreferences, // ensures all keys are present
             ...parsedPreferences,
-            algorithms: parsedPreferences.algorithms || defaultAlgorithms
+            algorithms: {
+                ...defaultAlgorithms,
+                ...(parsedPreferences.algorithms || {})
+            }
         }
         : defaultPreferences;
 } catch (e) {
@@ -419,14 +423,16 @@ export const preferencesStore = writable<Preferences>(initialPreferences);
 // Update the subscription to prevent saving empty preferences
 preferencesStore.subscribe(value => {
     if (value && Object.keys(value).length > 0) {
-        // Ensure algorithms are always saved
         const prefsToSave = {
+            ...defaultPreferences,
             ...value,
-            algorithms: value.algorithms || defaultAlgorithms
+            algorithms: {
+                ...defaultAlgorithms,
+                ...(value.algorithms || {})
+            }
         };
         localStorage.setItem('preferencesInfo', JSON.stringify(prefsToSave));
     } else {
-        // If preferences become empty, reset to defaults
         preferencesStore.set(defaultPreferences);
     }
 });
@@ -441,11 +447,7 @@ resultsStore.subscribe(value => {
     sessionStorage.setItem('results', JSON.stringify(value));
 });
 
-
 const storedPresets = localStorage.getItem('presets');
-
-
-
 
 // Define types for the store data
 export type Algorithm = { id: string; name: string; enabled: boolean; min_dur?: number, db?: string | null };
@@ -468,26 +470,6 @@ export type Colors = {
     inactiveColor: string // Default inactive color
 }
 
-// Load algorithms from localStorage or use defaults
-// const storedAlgorithms = localStorage.getItem('selectedAlgorithms');
-// const defaultAlgorithms: Algorithm[] = [
-//     { id: 'basic', name: 'Duplicate Search', enabled: true },
-//     { id: 'invalidpath', name: 'Invalid Files', enabled: false },
-//     { id: 'filename', name: 'Similar Filename', enabled: false },
-//     { id: 'duration', name: 'Minimum Duration:', enabled: false, min_dur: 0.5 },
-//     { id: 'audiosuite', name: 'Audiosuite Tags', enabled: false },
-//     { id: 'filetags', name: 'Filename Contains Tag', enabled: false },
-//     { id: 'waveform', name: 'Audio Content Comparison', enabled: false, db: null },
-//     { id: 'dbcompare', name: 'Database Compare:', enabled: false },
-// ];
-
-// export const algorithmsStore = writable<Algorithm[]>(storedAlgorithms ? JSON.parse(storedAlgorithms) : defaultAlgorithms);
-
-// // Save to localStorage whenever updated
-// algorithmsStore.subscribe(value => {
-//     localStorage.setItem('selectedAlgorithms', JSON.stringify(value));
-// });
-
 // Load registration info from localStorage or use defaults
 const storedRegistration = localStorage.getItem('registrationInfo');
 const defaultReg: Registration = { name: '', email: '', license: '' };
@@ -504,9 +486,6 @@ export function resetPreferences() {
 }
 
 
-
-
-
 // Listen for storage events to sync across tabs/windows
 if (typeof window !== 'undefined') {
     window.addEventListener('storage', (event) => {
@@ -516,10 +495,6 @@ if (typeof window !== 'undefined') {
         }
     });
 }
-
-
-
-
 
 // Store was already defined above, just subscribe to save to localStorage
 preferencesStore.subscribe(value => {
