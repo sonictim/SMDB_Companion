@@ -1,3 +1,4 @@
+use crate::prelude::*;
 use crate::*;
 use ::chromaprint::Chromaprint;
 use anyhow::Result;
@@ -193,6 +194,155 @@ impl Database {
     }
 
     async fn subset_match(&mut self, pref: &Preferences, app: &AppHandle) -> Result<(), String> {
+        app.emit(
+            "search-sub-status",
+            StatusUpdate {
+                stage: "subset".into(),
+                progress: 0,
+                message: "Starting audio subset detection...".into(),
+            },
+        )
+        .ok();
+
+        self.records.sort_by(|a, b| {
+            let a_duration = a.get_duration().unwrap_or(0.0);
+            let b_duration = b.get_duration().unwrap_or(0.0);
+
+            // First compare by duration (descending order)
+            match b_duration.partial_cmp(&a_duration) {
+                Some(std::cmp::Ordering::Equal) => {
+                    // When durations are equal, sort by channel count (descending order)
+                    b.channels.cmp(&a.channels)
+                }
+                Some(order) => order,
+                None => std::cmp::Ordering::Equal,
+            }
+        });
+
+        app.emit(
+            "search-sub-status",
+            StatusUpdate {
+                stage: "subset".into(),
+                progress: 5,
+                message: "Preparing files for subset analysis...".into(),
+            },
+        )
+        .ok();
+
+        let decoded_fingerprints: HashMap<usize, Vec<u32>> = self
+            .records
+            .par_iter()
+            .filter_map(|record| {
+                if let Some(fp) = &record.fingerprint {
+                    if let Ok(decoded) = decode_chromaprint(fp) {
+                        return Some((record.id, decoded));
+                    }
+                }
+                None
+            })
+            .collect();
+
+        let mut parent_children_map: HashMap<usize, Vec<usize>> = HashMap::new();
+        let subset_threshold = (pref.similarity_threshold / 100.0) * 0.9;
+
+        // Collect record IDs first to avoid repeated lookups
+        let record_ids: Vec<usize> = self.records.iter().map(|r| r.id).collect();
+
+        let len = self.records.len();
+        for i in 0..len {
+            if self.abort.load(Ordering::SeqCst) {
+                println!("Aborting fingerprint scan - early exit");
+                return Err("Aborted".to_string());
+            }
+            app.emit(
+                "search-sub-status",
+                StatusUpdate {
+                    stage: "subset".into(),
+                    progress: 10 + (i * 90 / len) as u64,
+                    message: format!("Finding subset relationships... {}/{}", i, len),
+                },
+            )
+            .ok();
+            let record_id = record_ids[i];
+
+            let result = parent_children_map
+                .par_iter() // Use parallel iterator
+                .find_map_any(|(k, _)| {
+                    // find_map_any will short-circuit on first Some result
+                    let parent_id = record_ids[*k];
+                    let parent_fp = match decoded_fingerprints.get(&parent_id) {
+                        Some(fp) => fp,
+                        None => return None,
+                    };
+
+                    let child_fp = match decoded_fingerprints.get(&record_id) {
+                        Some(fp) => fp,
+                        None => return None,
+                    };
+
+                    if is_fingerprint_subset(child_fp, parent_fp, subset_threshold) {
+                        Some(*k) // Return the key if we find a match
+                    } else {
+                        None // No match
+                    }
+                });
+            match result {
+                Some(key) => {
+                    self.records[key].algorithm.insert(Algorithm::Waveforms);
+                    self.records[key].algorithm.insert(Algorithm::Keep);
+                    // This is a child file
+                    self.records[i].algorithm.insert(Algorithm::Waveforms);
+                    self.records[i].algorithm.remove(&Algorithm::Keep);
+                    parent_children_map.entry(key).or_default().push(i);
+                }
+                None => {
+                    parent_children_map.insert(i, vec![]);
+                }
+            }
+        }
+        // After creating parent_children_map
+        let mut sorted_records = Vec::with_capacity(self.records.len());
+        let mut processed_ids = BitSet::with_capacity(self.records.len());
+
+        // First pass: Process all parents and their children in order
+        for (parent_idx, child_indices) in &parent_children_map {
+            // Skip if this record was already processed
+            if processed_ids.contains(*parent_idx) {
+                continue;
+            }
+
+            // Add the parent record
+            sorted_records.push(self.records[*parent_idx].clone());
+            processed_ids.insert(*parent_idx);
+
+            // Add all children (if any)
+            if !child_indices.is_empty() {
+                // Add each child in the order they were found
+                for &child_idx in child_indices {
+                    sorted_records.push(self.records[child_idx].clone());
+                    processed_ids.insert(child_idx);
+                }
+            }
+        }
+
+        // Second pass: Add any records not yet processed (not part of any parent-child relationship)
+        for (i, record) in self.records.iter().enumerate() {
+            if !processed_ids.contains(i) {
+                sorted_records.push(record.clone());
+            }
+        }
+
+        // Replace original records with sorted records
+        self.records = sorted_records;
+
+        Ok(())
+    }
+
+    async fn subset_match_old(
+        &mut self,
+        pref: &Preferences,
+        app: &AppHandle,
+    ) -> Result<(), String> {
         app.emit(
             "search-sub-status",
             StatusUpdate {

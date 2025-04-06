@@ -263,16 +263,12 @@ const TJFPreferences: Preferences = {
     colors: terminalColors,
     match_criteria: ['Filename'],
     autoselects: [".new.", ".wav.", ".mp3.", ".aif.",],
-    algorithms: [
-        { id: 'basic', name: 'Duplicate Search', enabled: true },
-        { id: 'invalidpath', name: 'Invalid Files', enabled: false },
-        { id: 'filename', name: 'Similar Filename', enabled: true },
-        { id: 'duration', name: 'Minimum Duration:', enabled: false, min_dur: 0.5 },
-        { id: 'audiosuite', name: 'Audiosuite Tags', enabled: true },
-        { id: 'filetags', name: 'Filename Contains Tag', enabled: true },
-        { id: 'waveform', name: 'Audio Content Comparison', enabled: false },
-        { id: 'dbcompare', name: 'Database Compare:', enabled: false, db: null },
-    ],
+    algorithms: defaultAlgorithms.map(algo => {
+        if (algo.id === 'filename') return { ...algo, enabled: true };
+        if (algo.id === 'audiosuite') return { ...algo, enabled: true };
+        if (algo.id === 'filetags') return { ...algo, enabled: true };
+        return algo;
+    }),
     tags: [...defaultPreferences.tags, "-Reverse_", "-RING_", ".M.", ".1.", ".1.", ".3.", ".4.", ".5.", ".6.", ".7.", ".8.", ".9.", ".0."],
     preservation_order: [
         {
@@ -407,10 +403,9 @@ try {
         ? {
             ...defaultPreferences, // ensures all keys are present
             ...parsedPreferences,
-            algorithms: {
-                ...defaultAlgorithms,
-                ...(parsedPreferences.algorithms || {})
-            }
+            algorithms: Array.isArray(parsedPreferences.algorithms)
+                ? parsedPreferences.algorithms
+                : defaultAlgorithms
         }
         : defaultPreferences;
 } catch (e) {
@@ -421,22 +416,21 @@ try {
 export const preferencesStore = writable<Preferences>(initialPreferences);
 
 // Update the subscription to prevent saving empty preferences
+// Update the subscription to prevent saving empty preferences
 preferencesStore.subscribe(value => {
     if (value && Object.keys(value).length > 0) {
         const prefsToSave = {
             ...defaultPreferences,
             ...value,
-            algorithms: {
-                ...defaultAlgorithms,
-                ...(value.algorithms || {})
-            }
+            algorithms: Array.isArray(value.algorithms)
+                ? value.algorithms
+                : defaultAlgorithms
         };
         localStorage.setItem('preferencesInfo', JSON.stringify(prefsToSave));
     } else {
         preferencesStore.set(defaultPreferences);
     }
 });
-
 // Load previous session results or default to an empty array
 export const resultsStore = writable<FileRecord[]>(
     JSON.parse(sessionStorage.getItem('results') || '[]')

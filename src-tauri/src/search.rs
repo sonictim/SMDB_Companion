@@ -247,6 +247,67 @@ impl Database {
     }
 
     pub async fn dual_mono_search(&mut self, app: &AppHandle) {
+        let pool = self.get_pool().await.unwrap();
+        println!("Starting Dual Mono Search");
+        let total = self.records.len();
+        let completed = AtomicUsize::new(0);
+        let batch_size = 100;
+
+        for chunk in self.records.chunks_mut(batch_size) {
+            if self.abort.load(Ordering::SeqCst) {
+                println!("Aborting dual mono search - early exit");
+                break;
+            }
+
+            // First collect results from parallel processing
+            let records_to_update = {
+                chunk
+                    .par_iter_mut()
+                    .filter_map(|record: &mut FileRecord| {
+                        let new_completed = completed.fetch_add(1, Ordering::SeqCst) + 1;
+                        app.emit(
+                            "search-sub-status",
+                            StatusUpdate {
+                                stage: "dupes".into(),
+                                progress: (new_completed * 100 / total) as u64,
+                                message: format!("Dual Mono Search: {}/{}", new_completed, total),
+                            },
+                        )
+                        .ok();
+                        if let Some(b) = record.dual_mono {
+                            if b {
+                                record.algorithm.insert(A::DualMono);
+                            }
+                            // Already checked and is dual mono
+                            return None;
+                        }
+
+                        if !record.check_path() {
+                            return None;
+                        }
+
+                        let is_identical = audio::decode::are_channels_identical(&record.path);
+                        record.dual_mono = Some(is_identical);
+                        if is_identical {
+                            record.algorithm.insert(A::DualMono);
+                        } else {
+                            record.algorithm.remove(&A::DualMono);
+                        }
+                        Some((record.id, is_identical))
+                    })
+                    .collect::<Vec<(usize, bool)>>()
+            }; // Mutable borrow of self.records (through chunk) ends here
+
+            // Then transform the results into the format needed for batch_store_data_optimized
+            let to_db: Vec<(usize, &str)> = records_to_update
+                .iter()
+                .map(|(id, is_identical)| (*id, if *is_identical { "1" } else { "0" }))
+                .collect();
+
+            crate::batch_store_data_optimized(&pool, &to_db, "_DualMono", app).await;
+        }
+    }
+    pub async fn dual_mono_search_seq(&mut self, app: &AppHandle) {
         println!("Starting Dual Mono Search");
         let total = self.records.len();
         let mut completed = 0;
@@ -255,7 +316,7 @@ impl Database {
         let mut dual_mono_paths = std::collections::HashSet::new();
 
         // Process in smaller batches to allow other functions to run
-        let batch_size = 10; // Adjust based on your system
+        let batch_size = 100; // Adjust based on your system
 
         {
             // Use immutable reference to avoid multiple mutable borrows

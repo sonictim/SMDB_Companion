@@ -10,6 +10,7 @@ pub use commands::*;
 pub use regex::Regex;
 pub use sqlx::Row;
 pub use sqlx::sqlite::{SqlitePool, SqliteRow};
+use std::hash::Hash;
 
 pub const TABLE: &str = "justinmetadata";
 pub const RECORD_DIVISOR: usize = 1231;
@@ -109,7 +110,7 @@ pub struct AppState {
 }
 
 #[derive(Clone, serde::Serialize)]
-struct StatusUpdate {
+pub struct StatusUpdate {
     stage: String,
     progress: u64,
     message: String,
@@ -135,7 +136,7 @@ pub struct DualMono {
     pub path: String,
 }
 
-#[derive(Default, Debug, Serialize, Clone, PartialEq)]
+#[derive(Default, Debug, Serialize, Clone)]
 pub struct FileRecord {
     pub id: usize,
     pub path: std::path::PathBuf,
@@ -147,8 +148,25 @@ pub struct FileRecord {
     pub description: Arc<str>,
     pub data: HashMap<Arc<str>, Arc<str>>,
     pub fingerprint: Option<Arc<str>>,
+    pub dual_mono: Option<bool>,
     pub algorithm: HashSet<Algorithm>,
 }
+impl Hash for FileRecord {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        // Only hash the fields you want to consider for identity
+        self.id.hash(state);
+        // Add any other fields you want to include in the hash calculation
+        // For example: self.path.hash(state);
+    }
+}
+
+impl PartialEq for FileRecord {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl Eq for FileRecord {}
 
 impl FileRecord {
     pub fn new(row: &SqliteRow, enabled: &Enabled, pref: &Preferences, is_compare: bool) -> Self {
@@ -206,6 +224,13 @@ impl FileRecord {
             Some(Arc::from(f))
         };
 
+        let dm = row.try_get::<&str, _>("_DualMono").ok();
+        let dual_mono = match dm {
+            Some("1") => Some(true),
+            Some("0") => Some(false),
+            _ => None,
+        };
+
         let mut record = Self {
             id,
             path,
@@ -218,6 +243,7 @@ impl FileRecord {
             bitdepth,
             samplerate,
             description: Arc::from(description),
+            dual_mono,
         };
 
         record.set_root(enabled, pref);
@@ -669,7 +695,7 @@ impl Database {
         println!("Gathering all records from database");
         self.fetch_filerecords(
             &format!(
-                "SELECT rowid, filepath, duration, _fingerprint, description, channels, bitdepth, samplerate, {} FROM {}",
+                "SELECT rowid, filepath, duration, _fingerprint, description, channels, bitdepth, samplerate, _DualMono, {} FROM {}",
                 pref.get_data_requirements(),
                 TABLE
             ),
@@ -864,6 +890,142 @@ fn get_column_as_string(row: &SqliteRow, column: &str) -> Option<Arc<str>> {
 
     // Handle null or other types
     None
+}
+
+async fn batch_store_data_optimized(
+    pool: &SqlitePool,
+    data: &[(usize, &str)],
+    column: &str,
+    app: &AppHandle,
+) {
+    let name: &str = column.strip_prefix('_').unwrap_or(column);
+
+    if data.is_empty() {
+        println!("No {} to store", name);
+        return;
+    }
+
+    println!("Storing {} {} in database", data.len(), name);
+
+    app.emit(
+        "search-sub-status",
+        StatusUpdate {
+            stage: "db-storage".into(),
+            progress: 0,
+            message: format!("Storing {} {} in database...", name, data.len()),
+        },
+    )
+    .ok();
+
+    match pool.begin().await {
+        Ok(mut tx) => {
+            let _ = sqlx::query("PRAGMA journal_mode = WAL")
+                .execute(&mut *tx)
+                .await;
+            let _ = sqlx::query("PRAGMA synchronous = NORMAL")
+                .execute(&mut *tx)
+                .await;
+
+            let total = data.len();
+            let mut success_count = 0;
+            let mut error_count = 0;
+
+            for (i, (id, d)) in data.iter().enumerate() {
+                if i % 25 == 0 || i == total - 1 {
+                    app.emit(
+                        "search-sub-status",
+                        StatusUpdate {
+                            stage: "db-storage".into(),
+                            progress: ((i + 1) * 100 / total) as u64,
+                            message: format!("Storing {}: {}/{}", name, i + 1, total),
+                        },
+                    )
+                    .ok();
+                }
+
+                let result = sqlx::query(&format!(
+                    "UPDATE {} SET {} = ? WHERE rowid = ?",
+                    TABLE, column
+                ))
+                .bind(d)
+                .bind(*id as i64)
+                .execute(&mut *tx)
+                .await;
+
+                match result {
+                    Ok(result) => {
+                        if result.rows_affected() == 0 {
+                            println!(
+                                "WARNING: No rows affected when updating {} for ID {}",
+                                name, id
+                            );
+                        } else {
+                            success_count += 1;
+                        }
+                    }
+                    Err(e) => {
+                        println!("ERROR updating {} for ID {}: {}", name, id, e);
+                        error_count += 1;
+                    }
+                }
+            }
+
+            app.emit(
+                "search-sub-status",
+                StatusUpdate {
+                    stage: "db-storage".into(),
+                    progress: 99,
+                    message: "Committing all changes to database...".to_string(),
+                },
+            )
+            .ok();
+
+            match tx.commit().await {
+                Ok(_) => {
+                    println!(
+                        "Transaction committed successfully: {} {}s updated, {} errors",
+                        success_count, name, error_count
+                    );
+
+                    let checkpoint_result = sqlx::query("PRAGMA wal_checkpoint(FULL)")
+                        .execute(pool)
+                        .await;
+
+                    if let Err(e) = checkpoint_result {
+                        println!("WARNING: Checkpoint failed: {}", e);
+                    } else {
+                        println!("Database checkpoint successful");
+                    }
+                }
+                Err(e) => println!("ERROR: Transaction failed to commit: {}", e),
+            }
+
+            app.emit(
+                "search-sub-status",
+                StatusUpdate {
+                    stage: "db-storage".into(),
+                    progress: 100,
+                    message: format!(
+                        "Database update complete: {} {} stored",
+                        success_count, name
+                    ),
+                },
+            )
+            .ok();
+        }
+        Err(e) => {
+            println!("ERROR: Failed to start transaction: {}", e);
+            app.emit(
+                "search-sub-status",
+                StatusUpdate {
+                    stage: "db-storage".into(),
+                    progress: 100,
+                    message: format!("ERROR: Database update failed: {}", e),
+                },
+            )
+            .ok();
+        }
+    }
 }
 
 // async fn update_column(

@@ -242,7 +242,7 @@
                     <span>Fetch stored audio fingerprints from database</span>
                 </button>
             </span>
-            {#if pref.waveform_search_type === "Similar"}
+            {#if pref.waveform_search_type != "Exact"}
                 <span style="margin-left: 70px">
                     Threshold:
                     <input

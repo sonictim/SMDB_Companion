@@ -132,6 +132,7 @@ async fn run_search(
     println!("Starting Search");
 
     let _ = db.add_column("_fingerprint").await;
+    let _ = db.add_column("_DualMono").await;
 
     let mut counter = 0;
     let mut total = 1;
