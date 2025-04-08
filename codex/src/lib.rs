@@ -1,5 +1,7 @@
-pub use resample;
-pub use wav;
+pub mod resample;
+pub mod wav;
+
+use anyhow::Result;
 
 #[derive(Debug, Clone, Copy)]
 pub enum SampleFormat {
@@ -19,14 +21,18 @@ pub struct AudioBuffer {
 }
 
 pub trait Codec {
-    /// Attempts to decode the input bytes.
-    fn decode(input: &[u8]) -> Result<AudioBuffer, String>;
-
-    /// Encode the audio buffer to the format.
-    fn encode(buffer: &AudioBuffer) -> Result<Vec<u8>, String>;
-
     /// Returns true if this decoder supports the given file signature or extension
-    fn supports_format(data: &[u8]) -> bool;
+    fn valid_file_format(data: &[u8]) -> bool;
     /// Return the file extension this encoder writes (e.g., "wav")
     fn file_extension() -> &'static str;
+}
+
+pub trait Encoder {
+    /// Encode the audio buffer to the format.
+    fn encode(buffer: &AudioBuffer) -> Result<Vec<u8>>;
+}
+
+pub trait Decoder {
+    /// Attempts to decode the input bytes.
+    fn decode(input: &[u8]) -> Result<AudioBuffer>;
 }

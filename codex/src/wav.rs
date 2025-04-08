@@ -1,9 +1,8 @@
 // codecs/wav.rs
-
-use super::types::*;
-use crate::codecs::Codec;
-use byteorder::{LittleEndian, ReadBytesExt};
-use std::io::{Cursor, Read};
+use crate::*;
+use anyhow::Result;
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use std::io::{Cursor, Read, Write};
 
 pub struct WavCodec;
 
@@ -11,12 +10,14 @@ impl Codec for WavCodec {
     fn file_extension() -> &'static str {
         "wav"
     }
-    fn supports_format(data: &[u8]) -> bool {
+    fn valid_file_format(data: &[u8]) -> bool {
         // Check for 'RIFF....WAVE' header
         data.len() >= 12 && &data[0..4] == b"RIFF" && &data[8..12] == b"WAVE"
     }
+}
 
-    fn decode(input: &[u8]) -> Result<AudioBuffer, String> {
+impl Decoder for WavCodec {
+    fn decode(input: &[u8]) -> Result<AudioBuffer> {
         let mut cursor = Cursor::new(input);
 
         // Step 1: Read RIFF header
@@ -101,11 +102,7 @@ impl Codec for WavCodec {
     }
 }
 
-fn decode_samples(
-    input: &[u8],
-    channels: u16,
-    bits_per_sample: u16,
-) -> Result<Vec<Vec<f32>>, String> {
+fn decode_samples(input: &[u8], channels: u16, bits_per_sample: u16) -> Result<Vec<Vec<f32>>> {
     let mut reader = Cursor::new(input);
     let mut output: Vec<Vec<f32>> = vec![vec![]; channels as usize];
 
@@ -136,8 +133,8 @@ fn decode_samples(
     Ok(output)
 }
 
-impl Codec for WavCodec {
-    fn encode(buffer: &AudioBuffer) -> Result<Vec<u8>, String> {
+impl Encoder for WavCodec {
+    fn encode(buffer: &AudioBuffer) -> Result<Vec<u8>> {
         let mut output = Cursor::new(Vec::new());
 
         // Placeholder for header
@@ -192,11 +189,7 @@ impl Codec for WavCodec {
     }
 }
 
-fn write_samples<W: Write>(
-    out: &mut W,
-    buffer: &AudioBuffer,
-    bits_per_sample: u16,
-) -> Result<(), String> {
+fn write_samples<W: Write>(out: &mut W, buffer: &AudioBuffer, bits_per_sample: u16) -> Result<()> {
     let channels = buffer.channels as usize;
     let frames = buffer.data[0].len();
 
