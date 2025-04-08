@@ -8,7 +8,7 @@ pub mod playback;
 // pub mod encode;
 // pub mod decode_old;
 // pub mod fft;
-// pub mod shazam_search;
+pub mod shazam_style;
 // pub mod shazam_search_claude;
 // pub mod symphonia_play;
 
@@ -21,6 +21,6 @@ pub use playback::*;
 // pub use claude::*;
 // pub use encode::*;
 // pub use fft::*;
-// pub use shazam_search::*;
+pub use shazam_style::*;
 // pub use shazam_search_claude::*;
 // pub use symphonia_play::*;

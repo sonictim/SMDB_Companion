@@ -691,7 +691,7 @@
       },
       Tags: { component: Tag, tooltip: "Duplicate contains Tag" },
       FileTags: { component: Tag, tooltip: "Filename contains tag" },
-      Waveform: { component: AudioWaveform, tooltip: "Waveform Match" },
+      Waveforms: { component: AudioWaveform, tooltip: "Waveform Match" },
       Duration: { component: Clock, tooltip: "Duration Match" },
       Compare: { component: GitCompareArrowsIcon, tooltip: "Database Compare" },
       SimilarAudio: { component: Activity, tooltip: "Similar Audio" },

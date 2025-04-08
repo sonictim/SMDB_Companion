@@ -193,6 +193,213 @@ impl Database {
         Ok(())
     }
 
+    async fn subset_match_ai(&mut self, pref: &Preferences, app: &AppHandle) -> Result<(), String> {
+        app.emit(
+            "search-sub-status",
+            StatusUpdate {
+                stage: "subset".into(),
+                progress: 0,
+                message: "Starting audio subset detection...".into(),
+            },
+        )
+        .ok();
+
+        // OPTIMIZATION 1: Cache durations to avoid repeated calculation
+        let duration_cache: HashMap<usize, f64> = self
+            .records
+            .iter()
+            .map(|record| (record.id, record.get_duration().unwrap_or(0.0)))
+            .collect();
+
+        // Sort by duration (descending) and then by channel count (descending)
+        self.records.sort_by(|a, b| {
+            let a_duration = duration_cache.get(&a.id).unwrap_or(&0.0);
+            let b_duration = duration_cache.get(&b.id).unwrap_or(&0.0);
+
+            match b_duration.partial_cmp(a_duration) {
+                Some(std::cmp::Ordering::Equal) => b.channels.cmp(&a.channels),
+                Some(order) => order,
+                None => std::cmp::Ordering::Equal,
+            }
+        });
+
+        app.emit(
+            "search-sub-status",
+            StatusUpdate {
+                stage: "subset".into(),
+                progress: 5,
+                message: "Decoding fingerprints...".into(),
+            },
+        )
+        .ok();
+
+        // Decode fingerprints once to avoid repeated work
+        let decoded_fingerprints: HashMap<usize, Vec<u32>> = self
+            .records
+            .par_iter()
+            .filter_map(|record| {
+                if let Some(fp) = &record.fingerprint {
+                    if let Ok(decoded) = decode_chromaprint(fp) {
+                        return Some((record.id, decoded));
+                    }
+                }
+                None
+            })
+            .collect();
+
+        let mut parent_children_map: HashMap<usize, Vec<usize>> = HashMap::new();
+        let subset_threshold = (pref.similarity_threshold / 100.0) * 0.9;
+
+        // OPTIMIZATION: Track which records are already identified as children
+        let mut identified_children = BitSet::with_capacity(self.records.len());
+
+        // Collect record IDs for direct indexing
+        let record_ids: Vec<usize> = self.records.iter().map(|r| r.id).collect();
+
+        let len = self.records.len();
+
+        // Process each record - this is the core of the subset_match_tf algorithm
+        for i in 0..len {
+            if self.abort.load(Ordering::SeqCst) {
+                return Err("Aborted".to_string());
+            }
+
+            // Update progress every 10 records or at milestones
+            // if i % 10 == 0 || i == len - 1 {
+            app.emit(
+                "search-sub-status",
+                StatusUpdate {
+                    stage: "subset".into(),
+                    progress: 10 + (i * 80 / len) as u64,
+                    message: format!("Finding subset relationships ({}/{})", i + 1, len),
+                },
+            )
+            .ok();
+            // }
+
+            let record_id = record_ids[i];
+
+            // Skip if already identified as a child
+            if identified_children.contains(i) {
+                continue;
+            }
+
+            // Get current record's duration for filtering
+            let current_duration = *duration_cache.get(&record_id).unwrap_or(&0.0);
+
+            // OPTIMIZATION: Find if this record is a child of any previous record
+            // Filter parents first by duration to reduce comparisons
+            let result = parent_children_map
+                .par_iter()
+                .filter(|(k, _)| {
+                    let parent_id = record_ids[**k];
+                    let parent_duration = *duration_cache.get(&parent_id).unwrap_or(&0.0);
+                    // Only consider records with significantly longer duration as parents
+                    parent_duration > current_duration * 1.05
+                })
+                .find_map_any(|(k, _)| {
+                    let parent_id = record_ids[*k];
+
+                    // Get fingerprints
+                    let parent_fp = match decoded_fingerprints.get(&parent_id) {
+                        Some(fp) => fp,
+                        None => return None,
+                    };
+
+                    let child_fp = match decoded_fingerprints.get(&record_id) {
+                        Some(fp) => fp,
+                        None => return None,
+                    };
+
+                    // Skip comparison if lengths don't make sense
+                    if child_fp.len() > parent_fp.len() {
+                        return None;
+                    }
+
+                    // Do the actual subset comparison
+                    if is_fingerprint_subset(child_fp, parent_fp, subset_threshold) {
+                        Some(*k)
+                    } else {
+                        None
+                    }
+                });
+
+            // Update parent-child relationships based on result
+            match result {
+                Some(key) => {
+                    // Mark parent record
+                    self.records[key].algorithm.insert(Algorithm::Waveforms);
+                    self.records[key].algorithm.insert(Algorithm::Keep);
+
+                    // Mark child record
+                    self.records[i].algorithm.insert(Algorithm::Waveforms);
+                    self.records[i].algorithm.remove(&Algorithm::Keep);
+
+                    identified_children.insert(i);
+                    parent_children_map.entry(key).or_default().push(i);
+                }
+                None => {
+                    parent_children_map.insert(i, vec![]);
+                }
+            }
+
+            // Allow other tasks to execute periodically
+            if i % 100 == 99 {
+                tokio::task::yield_now().await;
+            }
+        }
+
+        app.emit(
+            "search-sub-status",
+            StatusUpdate {
+                stage: "subset".into(),
+                progress: 90,
+                message: "Organizing records by parent-child relationships...".into(),
+            },
+        )
+        .ok();
+
+        // Sort records to group parents with children
+        let mut sorted_records = Vec::with_capacity(self.records.len());
+        let mut processed_ids = BitSet::with_capacity(self.records.len());
+
+        // First pass: Process parents and their children
+        for (parent_idx, child_indices) in &parent_children_map {
+            if processed_ids.contains(*parent_idx) {
+                continue;
+            }
+
+            sorted_records.push(self.records[*parent_idx].clone());
+            processed_ids.insert(*parent_idx);
+
+            for &child_idx in child_indices {
+                sorted_records.push(self.records[child_idx].clone());
+                processed_ids.insert(child_idx);
+            }
+        }
+
+        // Second pass: Add remaining records
+        for (i, record) in self.records.iter().enumerate() {
+            if !processed_ids.contains(i) {
+                sorted_records.push(record.clone());
+            }
+        }
+
+        self.records = sorted_records;
+
+        app.emit(
+            "search-sub-status",
+            StatusUpdate {
+                stage: "subset".into(),
+                progress: 100,
+                message: "Subset detection complete!".into(),
+            },
+        )
+        .ok();
+
+        Ok(())
+    }
+
     async fn subset_match(&mut self, pref: &Preferences, app: &AppHandle) -> Result<(), String> {
         app.emit(
             "search-sub-status",

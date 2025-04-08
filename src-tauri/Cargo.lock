@@ -29,6 +29,7 @@ dependencies = [
  "rfd",
  "rodio",
  "rubato",
+ "rustfft",
  "serde",
  "serde_json",
  "sha2",
