@@ -7,6 +7,7 @@ pub use dirs::home_dir;
 pub use preferences::*;
 pub mod prelude;
 pub use commands::*;
+pub use ffcodex::*;
 pub use regex::Regex;
 pub use sqlx::Row;
 pub use sqlx::sqlite::{SqlitePool, SqliteRow};

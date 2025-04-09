@@ -4,6 +4,7 @@ use anyhow::{Result, anyhow};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use rayon::prelude::*;
 use std::io::{Cursor, Read, Write}; // Add Rayon for parallelism
+use wide::f32x8; // Only import what we need
 
 // Format tags
 const FORMAT_PCM: u16 = 1;
@@ -25,36 +26,38 @@ const I24_SIGN_BIT: i32 = 0x800000;
 const I24_SIGN_EXTENSION_MASK: i32 = !0xFFFFFF;
 const BYTE_MASK: i32 = 0xFF; // Mask for extracting a single byte
 
-use memmap2::MmapOptions;
+// fn decode_mapped(file_path: &str) -> Result<AudioBuffer> {
+//     let file = std::fs::File::open(file_path)?;
+//     let mapped_file = unsafe { MmapOptions::new().map(&file)? };
 
-fn decode_mapped(file_path: &str) -> Result<AudioBuffer> {
-    let file = std::fs::File::open(file_path)?;
-    let mapped_file = unsafe { MmapOptions::new().map(&file)? };
-
-    // Use mapped_file as &[u8] without loading into memory
-    WavCodec::decode(&mapped_file)
-}
+//     // Use mapped_file as &[u8] without loading into memory
+//     WavCodec::decode(&mapped_file)
+// }
 
 pub struct WavCodec;
 
 impl Codec for WavCodec {
-    fn file_extension() -> &'static str {
+    fn file_extension(&self) -> &'static str {
         "wav"
     }
-    fn valid_file_format(data: &[u8]) -> bool {
+    fn validate_file_format(&self, data: &[u8]) -> Result<()> {
         // Check for 'RIFF....WAVE' header
-        data.len() >= MIN_VALID_FILE_SIZE
+        if data.len() >= MIN_VALID_FILE_SIZE
             && &data[0..4] == RIFF_CHUNK_ID
             && &data[8..12] == WAVE_FORMAT_ID
-    }
-}
+        {
+            return Err(anyhow!("Invalid WAV File"));
+        }
 
-impl Decoder for WavCodec {
-    fn decode(input: &[u8]) -> Result<AudioBuffer> {
-        // Ensure we have at least the complete header
-        if input.len() < HEADER_SIZE {
+        if data.len() < HEADER_SIZE {
             return Err(anyhow!("File too small to be a valid WAV"));
         }
+
+        Ok(())
+    }
+
+    fn decode(&self, input: &[u8]) -> Result<AudioBuffer> {
+        self.validate_file_format(input)?;
 
         let mut cursor = Cursor::new(input);
 
@@ -165,17 +168,78 @@ impl Decoder for WavCodec {
             data: audio_data,
         })
     }
+
+    fn encode(&self, buffer: &AudioBuffer) -> Result<Vec<u8>> {
+        let mut output = Cursor::new(Vec::new());
+
+        // Placeholder for header
+        output.write_all(RIFF_CHUNK_ID)?;
+        output.write_u32::<LittleEndian>(0)?; // placeholder file size
+        output.write_all(WAVE_FORMAT_ID)?;
+
+        // ---- fmt chunk ----
+        output.write_all(FMT_CHUNK_ID)?;
+        output.write_u32::<LittleEndian>(STANDARD_FMT_CHUNK_SIZE)?; // PCM = 16 bytes
+        let (format_tag, bits_per_sample) = match buffer.format {
+            SampleFormat::F32 => (FORMAT_IEEE_FLOAT, BIT_DEPTH_32),
+            SampleFormat::I16 => (FORMAT_PCM, BIT_DEPTH_16),
+            SampleFormat::I24 => (FORMAT_PCM, BIT_DEPTH_24),
+            SampleFormat::I32 => (FORMAT_PCM, BIT_DEPTH_32),
+            SampleFormat::U8 => (FORMAT_PCM, BIT_DEPTH_8),
+        };
+        let channels = buffer.channels;
+        let sample_rate = buffer.sample_rate;
+        let byte_rate = sample_rate * channels as u32 * (bits_per_sample as u32 / 8);
+        let block_align = channels * bits_per_sample / 8;
+
+        output.write_u16::<LittleEndian>(format_tag)?;
+        output.write_u16::<LittleEndian>(channels)?;
+        output.write_u32::<LittleEndian>(sample_rate)?;
+        output.write_u32::<LittleEndian>(byte_rate)?;
+        output.write_u16::<LittleEndian>(block_align)?;
+        output.write_u16::<LittleEndian>(bits_per_sample)?;
+
+        // ---- data chunk ----
+        output.write_all(DATA_CHUNK_ID)?;
+        let data_pos = output.position();
+        output.write_u32::<LittleEndian>(0)?; // placeholder
+
+        let start_data = output.position();
+
+        let interleaved_bytes = match detect_simd_support() {
+            true => encode_samples_simd(buffer, bits_per_sample)?,
+            false => {
+                let mut interleaved_bytes = Vec::new();
+                encode_samples(&mut interleaved_bytes, buffer, bits_per_sample)?;
+                interleaved_bytes
+            }
+        };
+
+        output.write_all(&interleaved_bytes)?;
+
+        let end_data = output.position();
+        let data_size = (end_data - start_data) as u32;
+
+        // Fill in data chunk size
+        let mut out = output.into_inner();
+        (&mut out[(data_pos as usize)..(data_pos as usize + 4)])
+            .write_u32::<LittleEndian>(data_size)?;
+
+        // Fill in RIFF file size
+        let riff_size = out.len() as u32 - 8;
+        (&mut out[4..8]).write_u32::<LittleEndian>(riff_size)?;
+
+        Ok(out)
+    }
 }
 
 // Refactor error handling and normalization factor calculation
-fn decode_samples_parallel(
+pub fn decode_samples_parallel(
     input: &[u8],
     channels: u16,
     bits_per_sample: u16,
     is_float_format: Option<bool>,
 ) -> Result<Vec<Vec<f32>>> {
-    use packed_simd::{f32x8, i16x8, u8x8};
-
     let bytes_per_sample = match bits_per_sample {
         BIT_DEPTH_8 => 1,
         BIT_DEPTH_16 => 2,
@@ -187,20 +251,6 @@ fn decode_samples_parallel(
     let samples_per_channel = input.len() / (channels as usize * bytes_per_sample);
     let simd_chunks = samples_per_channel / 8;
 
-    let norm_factor = match bits_per_sample {
-        BIT_DEPTH_8 => f32x8::splat(1.0 / U8_SCALE),
-        BIT_DEPTH_16 => f32x8::splat(1.0 / I16_DIVISOR),
-        BIT_DEPTH_24 => f32x8::splat(1.0 / I24_DIVISOR),
-        BIT_DEPTH_32 => {
-            if is_float_format.unwrap_or(false) {
-                f32x8::splat(1.0)
-            } else {
-                f32x8::splat(1.0 / I32_DIVISOR)
-            }
-        }
-        _ => return Err(anyhow!("Unsupported bit depth")),
-    };
-
     let output: Vec<Vec<f32>> = (0..channels as usize)
         .into_par_iter() // Parallelize over channels
         .map(|ch| {
@@ -209,12 +259,12 @@ fn decode_samples_parallel(
             for i in 0..simd_chunks {
                 let mut samples = [0f32; 8];
 
-                for j in 0..8 {
+                for (idx, j) in (0..8).enumerate() {
                     let pos = (i * 8 + j) * channels as usize + ch;
                     let sample_idx = pos * bytes_per_sample;
 
                     if sample_idx + bytes_per_sample - 1 < input.len() {
-                        samples[j] = decode_sample(
+                        samples[idx] = decode_sample(
                             &input[sample_idx..sample_idx + bytes_per_sample],
                             bits_per_sample,
                             is_float_format,
@@ -222,18 +272,25 @@ fn decode_samples_parallel(
                     }
                 }
 
-                let simd_samples = f32x8::from_slice_unaligned(&samples);
+                // Create SIMD vector properly
+                let samples_array = [
+                    samples[0], samples[1], samples[2], samples[3], samples[4], samples[5],
+                    samples[6], samples[7],
+                ];
+                let simd_samples = f32x8::from(samples_array);
                 let start_idx = i * 8;
-                simd_samples.store_unaligned(&mut channel_data[start_idx..start_idx + 8]);
+                // Store the results back into the channel data
+                let array = simd_samples.to_array();
+                channel_data[start_idx..start_idx + 8].copy_from_slice(&array);
             }
 
             let remaining_start = simd_chunks * 8;
-            for i in remaining_start..samples_per_channel {
+            for (i, value) in channel_data.iter_mut().enumerate().skip(remaining_start) {
                 let pos = i * channels as usize + ch;
                 let sample_idx = pos * bytes_per_sample;
 
                 if sample_idx + bytes_per_sample - 1 < input.len() {
-                    channel_data[i] = decode_sample(
+                    *value = decode_sample(
                         &input[sample_idx..sample_idx + bytes_per_sample],
                         bits_per_sample,
                         is_float_format,
@@ -314,6 +371,7 @@ fn decode_samples_parallel_non_simd(
         .map(|ch| {
             let mut channel_data = vec![0.0; samples_per_channel];
 
+            #[allow(clippy::needless_range_loop)]
             for i in 0..samples_per_channel {
                 let pos = i * channels as usize + ch;
                 let sample_idx = pos * bytes_per_sample;
@@ -393,75 +451,8 @@ fn decode_samples_parallel_non_simd(
 //     Ok(output)
 // }
 
-impl Encoder for WavCodec {
-    fn encode(buffer: &AudioBuffer) -> Result<Vec<u8>> {
-        let mut output = Cursor::new(Vec::new());
-
-        // Placeholder for header
-        output.write_all(RIFF_CHUNK_ID)?;
-        output.write_u32::<LittleEndian>(0)?; // placeholder file size
-        output.write_all(WAVE_FORMAT_ID)?;
-
-        // ---- fmt chunk ----
-        output.write_all(FMT_CHUNK_ID)?;
-        output.write_u32::<LittleEndian>(STANDARD_FMT_CHUNK_SIZE)?; // PCM = 16 bytes
-        let (format_tag, bits_per_sample) = match buffer.format {
-            SampleFormat::F32 => (FORMAT_IEEE_FLOAT, BIT_DEPTH_32),
-            SampleFormat::I16 => (FORMAT_PCM, BIT_DEPTH_16),
-            SampleFormat::I24 => (FORMAT_PCM, BIT_DEPTH_24),
-            SampleFormat::I32 => (FORMAT_PCM, BIT_DEPTH_32),
-            SampleFormat::U8 => (FORMAT_PCM, BIT_DEPTH_8),
-        };
-        let channels = buffer.channels;
-        let sample_rate = buffer.sample_rate;
-        let byte_rate = sample_rate * channels as u32 * (bits_per_sample as u32 / 8);
-        let block_align = channels * bits_per_sample / 8;
-
-        output.write_u16::<LittleEndian>(format_tag)?;
-        output.write_u16::<LittleEndian>(channels)?;
-        output.write_u32::<LittleEndian>(sample_rate)?;
-        output.write_u32::<LittleEndian>(byte_rate)?;
-        output.write_u16::<LittleEndian>(block_align)?;
-        output.write_u16::<LittleEndian>(bits_per_sample)?;
-
-        // ---- data chunk ----
-        output.write_all(DATA_CHUNK_ID)?;
-        let data_pos = output.position();
-        output.write_u32::<LittleEndian>(0)?; // placeholder
-
-        let start_data = output.position();
-
-        let interleaved_bytes = match detect_simd_support() {
-            true => encode_samples_simd(buffer, bits_per_sample)?,
-            false => {
-                let mut interleaved_bytes = Vec::new();
-                encode_samples(&mut interleaved_bytes, buffer, bits_per_sample)?;
-                interleaved_bytes
-            }
-        };
-
-        output.write_all(&interleaved_bytes)?;
-
-        let end_data = output.position();
-        let data_size = (end_data - start_data) as u32;
-
-        // Fill in data chunk size
-        let mut out = output.into_inner();
-        (&mut out[(data_pos as usize)..(data_pos as usize + 4)])
-            .write_u32::<LittleEndian>(data_size)?;
-
-        // Fill in RIFF file size
-        let riff_size = out.len() as u32 - 8;
-        (&mut out[4..8]).write_u32::<LittleEndian>(riff_size)?;
-
-        Ok(out)
-    }
-}
-
 // Refactor encoding logic for better error handling and memory allocation
-fn encode_samples_simd(buffer: &AudioBuffer, bits_per_sample: u16) -> Result<Vec<u8>> {
-    use packed_simd::{f32x8, i16x8};
-
+pub fn encode_samples_simd(buffer: &AudioBuffer, bits_per_sample: u16) -> Result<Vec<u8>> {
     let channels = buffer.channels as usize;
     let frames = buffer.data[0].len();
     let mut interleaved_bytes =
@@ -469,11 +460,20 @@ fn encode_samples_simd(buffer: &AudioBuffer, bits_per_sample: u16) -> Result<Vec
 
     let simd_chunks = frames / 8;
 
-    for i in 0..simd_chunks {
-        for ch in 0..channels {
+    for ch in 0..channels {
+        for i in 0..simd_chunks {
             let start_idx = i * 8;
-            let samples_f32 =
-                f32x8::from_slice_unaligned(&buffer.data[ch][start_idx..start_idx + 8]);
+            let samples_array = [
+                buffer.data[ch][start_idx],
+                buffer.data[ch][start_idx + 1],
+                buffer.data[ch][start_idx + 2],
+                buffer.data[ch][start_idx + 3],
+                buffer.data[ch][start_idx + 4],
+                buffer.data[ch][start_idx + 5],
+                buffer.data[ch][start_idx + 6],
+                buffer.data[ch][start_idx + 7],
+            ];
+            let samples_f32 = f32x8::from(samples_array);
 
             encode_sample_chunk(
                 &mut interleaved_bytes,
@@ -542,37 +542,24 @@ fn encode_sample_chunk(
     bits_per_sample: u16,
     format: SampleFormat,
 ) -> Result<()> {
+    let samples_array = samples_f32.to_array();
+
     match bits_per_sample {
         BIT_DEPTH_8 => {
-            let scale = f32x8::splat(U8_SCALE);
-            let offset = f32x8::splat(U8_OFFSET);
-            let zero = f32x8::splat(0.0);
-            let max_val = f32x8::splat(255.0);
-            let converted = (samples_f32 * scale + offset).max(zero).min(max_val);
-            let u8_samples = converted.to_u8();
-            for j in 0..8 {
-                out.push(u8_samples.extract(j));
+            for &sample in samples_array.iter() {
+                let val = ((sample * U8_SCALE + U8_OFFSET).clamp(0.0, 255.0)) as u8;
+                out.push(val);
             }
         }
         BIT_DEPTH_16 => {
-            let simd_factor = f32x8::splat(I16_MAX_F);
-            let minus_one = f32x8::splat(-1.0);
-            let one = f32x8::splat(1.0);
-            let clamped = samples_f32.max(minus_one).min(one);
-            let samples_i16 = (clamped * simd_factor).to_i16();
-            for j in 0..8 {
-                let val = samples_i16.extract(j);
+            for &sample in samples_array.iter() {
+                let val = (sample.clamp(-1.0, 1.0) * I16_MAX_F) as i16;
                 out.extend_from_slice(&val.to_le_bytes());
             }
         }
         BIT_DEPTH_24 => {
-            let simd_factor = f32x8::splat(I24_MAX_F);
-            let minus_one = f32x8::splat(-1.0);
-            let one = f32x8::splat(1.0);
-            let clamped = samples_f32.max(minus_one).min(one);
-            let i32_samples = (clamped * simd_factor).to_i32();
-            for j in 0..8 {
-                let val = i32_samples.extract(j);
+            for &sample in samples_array.iter() {
+                let val = (sample.clamp(-1.0, 1.0) * I24_MAX_F) as i32;
                 out.push((val & BYTE_MASK) as u8);
                 out.push(((val >> 8) & BYTE_MASK) as u8);
                 out.push(((val >> 16) & BYTE_MASK) as u8);
@@ -580,18 +567,12 @@ fn encode_sample_chunk(
         }
         BIT_DEPTH_32 => {
             if format == SampleFormat::F32 {
-                for j in 0..8 {
-                    let val = samples_f32.extract(j);
-                    out.extend_from_slice(&val.to_le_bytes());
+                for &sample in samples_array.iter() {
+                    out.extend_from_slice(&sample.to_le_bytes());
                 }
             } else {
-                let simd_factor = f32x8::splat(I32_MAX_F);
-                let minus_one = f32x8::splat(-1.0);
-                let one = f32x8::splat(1.0);
-                let clamped = samples_f32.max(minus_one).min(one);
-                let i32_samples = (clamped * simd_factor).to_i32();
-                for j in 0..8 {
-                    let val = i32_samples.extract(j);
+                for &sample in samples_array.iter() {
+                    let val = (sample.clamp(-1.0, 1.0) * I32_MAX_F) as i32;
                     out.extend_from_slice(&val.to_le_bytes());
                 }
             }
@@ -640,4 +621,11 @@ fn encode_samples<W: Write>(out: &mut W, buffer: &AudioBuffer, bits_per_sample: 
     }
 
     Ok(())
+}
+
+// Helper function to detect SIMD support for runtime branching
+fn detect_simd_support() -> bool {
+    // The wide crate automatically uses the best available SIMD instructions
+    // This is just for explicit control flow
+    true
 }
