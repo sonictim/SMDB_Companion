@@ -63,7 +63,7 @@
       case "Relevant":
         return items.filter(
           (item) =>
-            !item.algorithm.includes("Keep") || item.algorithm.length > 1,
+            !item.algorithm.includes("Keep") || item.algorithm.length > 1
         );
       case "Keep":
         return items.filter((item) => item.algorithm.includes("Keep"));
@@ -112,7 +112,7 @@
       const diff = e.clientX - startX;
       const newWidth = Math.max(
         columnConfigs[index].minWidth,
-        startWidth + diff,
+        startWidth + diff
       );
 
       // Just update this single column's width
@@ -269,7 +269,7 @@
     const scrollTop = scrollElement?.scrollTop;
 
     const currentIndex = filteredItems.findIndex(
-      (record) => record.id === item.id,
+      (record) => record.id === item.id
     );
 
     if (event.altKey) {
@@ -485,7 +485,7 @@
         .then((updatedDb) => {
           if (dualMono.length > 0 && pref.strip_dual_mono) {
             message(
-              "Dual Mono files converted to Mono!\n\nRecords marked as dirty in Soundminer. For safety, open Soundminer and run the following:\n'Database -> Show Dirty'\nPress: 'CMD + A' to select all\n'Database -> Embed Selected'\n'Database -> Rebuild Waveforms for Selected'",
+              "Dual Mono files converted to Mono!\n\nRecords marked as dirty in Soundminer. For safety, open Soundminer and run the following:\n'Database -> Show Dirty'\nPress: 'CMD + A' to select all\n'Database -> Embed Selected'\n'Database -> Rebuild Waveforms for Selected'"
             );
           }
           console.log("Successfully removed records with IDs:", idsToRemove);
@@ -503,21 +503,19 @@
   async function removeSelectedRecords() {
     idsToRemove = filteredItems
       .filter(
-        (item) =>
-          !item.algorithm.includes("Keep") && selectedItems.has(item.id),
+        (item) => !item.algorithm.includes("Keep") && selectedItems.has(item.id)
       ) // Only keep items without "Keep"
       .map((item) => item.id); // Extract the ids
     filesToRemove = filteredItems
       .filter(
-        (item) =>
-          !item.algorithm.includes("Keep") && selectedItems.has(item.id),
+        (item) => !item.algorithm.includes("Keep") && selectedItems.has(item.id)
       ) // Only keep items without "Keep"
       .map((item) => item.path + "/" + item.filename); // Extract the ids
 
     dualMono = filteredItems
       .filter(
         (item) =>
-          item.algorithm.includes("DualMono") && selectedItems.has(item.id),
+          item.algorithm.includes("DualMono") && selectedItems.has(item.id)
       ) // Only keep items with "Dual Mono"
       .map((item) => ({ id: item.id, path: item.path + "/" + item.filename })); // Extract the ids
 
@@ -536,7 +534,7 @@
         .then((updatedDb) => {
           if (dualMono.length > 0 && pref.strip_dual_mono) {
             message(
-              "Dual Mono files converted to Mono!\n\nRecords marked as dirty in Soundminer. For safety, open Soundminer and run the following:\n'Database -> Show Dirty'\nPress: 'CMD + A' to select all\n'Database -> Embed Selected'\n'Database -> Rebuild Waveforms for Selected'",
+              "Dual Mono files converted to Mono!\n\nRecords marked as dirty in Soundminer. For safety, open Soundminer and run the following:\n'Database -> Show Dirty'\nPress: 'CMD + A' to select all\n'Database -> Embed Selected'\n'Database -> Rebuild Waveforms for Selected'"
             );
           }
           console.log("Successfully removed records with IDs:", idsToRemove);
@@ -621,7 +619,7 @@
       removeMessage = status.message;
       removeStage = status.stage;
       console.log(
-        `Remove status: ${status.stage} - ${status.progress}% - ${status.message}`,
+        `Remove status: ${status.stage} - ${status.progress}% - ${status.message}`
       );
       if (status.stage === "complete") {
         processing = false;
@@ -966,7 +964,7 @@
                   <div
                     class="grid-container"
                     style="{selectedItems.has(
-                      filteredItems[virtualRow.index].id,
+                      filteredItems[virtualRow.index].id
                     ) && enableSelections
                       ? 'background-color: var(--accent-color)'
                       : ''};
@@ -982,7 +980,7 @@
                               ? 'sticky-column-right'
                               : ''}
                               {selectedItems.has(
-                            filteredItems[virtualRow.index].id,
+                            filteredItems[virtualRow.index].id
                           ) && enableSelections
                             ? 'selected'
                             : ''}"
@@ -1000,7 +998,7 @@
                               ? 'sticky-column-right'
                               : ''}
                               {selectedItems.has(
-                            filteredItems[virtualRow.index].id,
+                            filteredItems[virtualRow.index].id
                           ) && enableSelections
                             ? 'selected'
                             : ''}"
@@ -1021,7 +1019,7 @@
                             enableSelections
                               ? toggleSelect(
                                   filteredItems[virtualRow.index],
-                                  event,
+                                  event
                                 )
                               : toggleChecked(filteredItems[virtualRow.index])}
                         >
@@ -1052,7 +1050,7 @@
                             enableSelections
                               ? toggleSelect(
                                   filteredItems[virtualRow.index],
-                                  event,
+                                  event
                                 )
                               : toggleChecked(filteredItems[virtualRow.index])}
                         >
@@ -1191,7 +1189,7 @@
     height: 60px;
     background-color: var(--inactive-color);
     position: absolute;
-    right: -14px; /* Change from -20px to 0 */
+    right: -18px; /* Change from -20px to 0 */
     transform: translateX(50%); /* Center on the boundary */
     top: -60px;
     cursor: col-resize;
@@ -1223,12 +1221,17 @@
   }
 
   .rheader {
+    /* text-align: center;
+    align-content: center;
+    align-items: center;
+    justify-content: center; */
+    /* display: flex; */
     font-weight: bold;
     font-size: 16px;
     color: var(--accent-color);
     background-color: var(--primary-bg);
     border-bottom: 1px solid var(--inactive-color);
-    margin-left: 6px;
+    margin-left: 0px;
   }
 
   .ellipsis {

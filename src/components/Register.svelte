@@ -55,6 +55,14 @@
 
   onMount(fetchData);
   onMount(getreg);
+
+  import { openUrl } from "@tauri-apps/plugin-opener";
+
+  // ... existing code
+
+  async function openPurchaseLink() {
+    await openUrl("https://buy.stripe.com/9AQcPw4D0dFycSYaEE");
+  }
 </script>
 
 <div class="block">
@@ -68,7 +76,14 @@
     <button class="cta-button cancel" on:click={setReg}> Register </button>
   </div>
   <div class="input-group2">
-    <label for="case-sensitive"> Registration Required to View Results </label>
+    <label for="case-sensitive">
+      <span>
+        Registration Required to View Results. License can be purchased:
+        <button class="cta-button small" on:click={openPurchaseLink}
+          >HERE</button
+        ></span
+      >
+    </label>
   </div>
   <div class="input-group">
     <label for="name">Name:</label>
@@ -101,6 +116,7 @@
       class="input-field"
     />
   </div>
+
   {#if DEBUG_MODE}
     <div class="debug-info">
       Debug: {r2}

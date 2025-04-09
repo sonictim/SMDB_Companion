@@ -226,7 +226,7 @@ async fn run_search(
         )
         .unwrap();
         counter += 1;
-        db.dual_mono_search(&app).await;
+        db.dual_mono_search(&pref, &app).await;
     }
     if db.abort.load(Ordering::SeqCst) {
         println!("Aborting fingerprint scan - early exit");

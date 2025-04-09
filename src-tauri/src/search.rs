@@ -246,7 +246,7 @@ impl Database {
         results
     }
 
-    pub async fn dual_mono_search(&mut self, app: &AppHandle) {
+    pub async fn dual_mono_search(&mut self, pref: &Preferences, app: &AppHandle) {
         let pool = self.get_pool().await.unwrap();
         println!("Starting Dual Mono Search");
         let total = self.records.len();
@@ -298,13 +298,15 @@ impl Database {
                     .collect::<Vec<(usize, bool)>>()
             }; // Mutable borrow of self.records (through chunk) ends here
 
-            // Then transform the results into the format needed for batch_store_data_optimized
-            let to_db: Vec<(usize, &str)> = records_to_update
-                .iter()
-                .map(|(id, is_identical)| (*id, if *is_identical { "1" } else { "0" }))
-                .collect();
+            if pref.store_waveforms {
+                let to_db: Vec<(usize, &str)> = records_to_update
+                    .iter()
+                    .map(|(id, is_identical)| (*id, if *is_identical { "1" } else { "0" }))
+                    .collect();
 
-            crate::batch_store_data_optimized(&pool, &to_db, "_DualMono", app).await;
+                crate::batch_store_data_optimized(&pool, &to_db, "_DualMono", app).await;
+            }
+            // Then transform the results into the format needed for batch_store_data_optimized
         }
     }
     pub async fn dual_mono_search_seq(&mut self, app: &AppHandle) {

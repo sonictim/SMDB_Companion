@@ -10,7 +10,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { Window } from "@tauri-apps/api/window";
   import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-  import { Menu } from "@tauri-apps/api/menu";
+  import { Menu, PredefinedMenuItem } from "@tauri-apps/api/menu";
   import { onMount } from "svelte";
   import { listen } from "@tauri-apps/api/event";
   import { confirm } from "@tauri-apps/plugin-dialog";
@@ -29,6 +29,7 @@
   export let selectedDb: string | null = null;
   import { preferencesStore } from "../store";
   import type { Preferences } from "../store";
+  import { ask, message } from "@tauri-apps/plugin-dialog";
 
   let appInitialized = false;
   let initError: unknown = null;
@@ -75,39 +76,39 @@
       const { colors } = value;
       document.documentElement.style.setProperty(
         "--primary-bg",
-        colors.primaryBg ?? "#1a1a1a",
+        colors.primaryBg ?? "#1a1a1a"
       );
       document.documentElement.style.setProperty(
         "--secondary-bg",
-        colors.secondaryBg ?? "#2a2a2a",
+        colors.secondaryBg ?? "#2a2a2a"
       );
       document.documentElement.style.setProperty(
         "--text-color",
-        colors.textColor ?? "#ffffff",
+        colors.textColor ?? "#ffffff"
       );
       document.documentElement.style.setProperty(
         "--topbar-color",
-        colors.topbarColor ?? "#333333",
+        colors.topbarColor ?? "#333333"
       );
       document.documentElement.style.setProperty(
         "--accent-color",
-        colors.accentColor ?? "#007acc",
+        colors.accentColor ?? "#007acc"
       );
       document.documentElement.style.setProperty(
         "--hover-color",
-        colors.hoverColor ?? "#2b2b2b",
+        colors.hoverColor ?? "#2b2b2b"
       );
       document.documentElement.style.setProperty(
         "--warning-color",
-        colors.warningColor ?? "#ff4444",
+        colors.warningColor ?? "#ff4444"
       );
       document.documentElement.style.setProperty(
         "--warning-hover",
-        colors.warningHover ?? "#cc0000",
+        colors.warningHover ?? "#cc0000"
       );
       document.documentElement.style.setProperty(
         "--inactive-color",
-        colors.inactiveColor ?? "#666666",
+        colors.inactiveColor ?? "#666666"
       );
     }
   });
@@ -118,7 +119,7 @@
   }> {
     try {
       const response = await fetch(
-        "https://smdbc.com/latest.php?token=how-cool-am-i",
+        "https://smdbc.com/latest.php?token=how-cool-am-i"
       );
       if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
 
@@ -286,6 +287,7 @@
   }
 
   onMount(checkRegistered);
+  onMount(firstOpen);
   onMount(() => {
     checkForUpdates()
       .then(async ({ latest, needsUpdate }) => {
@@ -297,7 +299,7 @@
             {
               title: "Update Available",
               kind: "info",
-            },
+            }
           );
           if (confirmed) {
             console.log("User confirmed download.");
@@ -312,6 +314,77 @@
         console.error("Update check failed:", err);
       });
   });
+  async function firstOpen() {
+    // const menu = await Menu.new({
+    //   items: [
+    //     {
+    //       id: "quit",
+    //       text: "Quit",
+    //       action: () => {
+    //         console.log("quit pressed");
+    //       },
+    //     },
+    //   ],
+    // });
+
+    // // If a window was not created with an explicit menu or had one set explicitly,
+    // // this menu will be assigned to it.
+    // menu.setAsAppMenu().then((res) => {
+    //   console.log("menu set success", res);
+    // });
+
+    const copy = await PredefinedMenuItem.new({
+      text: "copy-text",
+      item: "Copy",
+    });
+
+    const separator = await PredefinedMenuItem.new({
+      text: "separator-text",
+      item: "Separator",
+    });
+
+    const undo = await PredefinedMenuItem.new({
+      text: "undo-text",
+      item: "Undo",
+    });
+
+    const redo = await PredefinedMenuItem.new({
+      text: "redo-text",
+      item: "Redo",
+    });
+
+    const cut = await PredefinedMenuItem.new({
+      text: "cut-text",
+      item: "Cut",
+    });
+
+    const paste = await PredefinedMenuItem.new({
+      text: "paste-text",
+      item: "Paste",
+    });
+
+    const select_all = await PredefinedMenuItem.new({
+      text: "select_all-text",
+      item: "SelectAll",
+    });
+
+    const menu = await Menu.new({
+      items: [copy, separator, undo, redo, cut, paste, select_all],
+    });
+
+    await menu.setAsAppMenu();
+
+    if (get(preferencesStore).firstOpen) {
+      await message(
+        "Please be sure to back up your Databases and Audio Files before using this application."
+      );
+    }
+
+    preferencesStore.update((prefs) => ({
+      ...prefs,
+      firstOpen: false,
+    }));
+  }
 </script>
 
 <svelte:head>

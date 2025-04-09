@@ -12,7 +12,6 @@
   } from "lucide-svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { onMount, onDestroy } from "svelte";
-  import { ask, message } from "@tauri-apps/plugin-dialog";
 
   import { listen } from "@tauri-apps/api/event";
 
@@ -243,18 +242,9 @@
   function checkAnyAlgorithmEnabled() {
     return $preferencesStore.algorithms.some((algo) => algo.enabled);
   }
-
-  async function firstOpen() {
-    await message("No records to remove!");
-    preferencesStore.update((prefs) => ({
-      ...prefs,
-      firstOpen: false,
-    }));
-  }
 </script>
 
 <div class="page-columns">
-  <!-- Rest of your template remains the same -->
   <div class="block" style="height: 40vh">
     <div class="header">
       <h2>Search Algorithms</h2>

@@ -6,8 +6,8 @@ pub mod audio;
 pub use dirs::home_dir;
 pub use preferences::*;
 pub mod prelude;
+// pub use FFcodex::*;
 pub use commands::*;
-pub use ffcodex::*;
 pub use regex::Regex;
 pub use sqlx::Row;
 pub use sqlx::sqlite::{SqlitePool, SqliteRow};
@@ -225,12 +225,16 @@ impl FileRecord {
             Some(Arc::from(f))
         };
 
-        let dm = row.try_get::<&str, _>("_DualMono").ok();
-        let dual_mono = match dm {
-            Some("1") => Some(true),
-            Some("0") => Some(false),
-            _ => None,
-        };
+        let mut dual_mono = None;
+
+        if pref.fetch_waveforms {
+            let dm = row.try_get::<&str, _>("_DualMono").ok();
+            dual_mono = match dm {
+                Some("1") => Some(true),
+                Some("0") => Some(false),
+                _ => None,
+            };
+        }
 
         let mut record = Self {
             id,
