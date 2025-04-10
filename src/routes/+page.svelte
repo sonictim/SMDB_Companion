@@ -10,7 +10,12 @@
   import { invoke } from "@tauri-apps/api/core";
   import { Window } from "@tauri-apps/api/window";
   import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-  import { Menu, PredefinedMenuItem } from "@tauri-apps/api/menu";
+  import {
+    Menu,
+    PredefinedMenuItem,
+    Submenu,
+    MenuItem,
+  } from "@tauri-apps/api/menu";
   import { onMount } from "svelte";
   import { listen } from "@tauri-apps/api/event";
   import { confirm } from "@tauri-apps/plugin-dialog";
@@ -27,12 +32,57 @@
   export let isRemove = true;
   export let isRegistered = false;
   export let selectedDb: string | null = null;
-  import { preferencesStore } from "../store";
   import type { Preferences } from "../store";
-  import { ask, message } from "@tauri-apps/plugin-dialog";
+  import { ask, message, save } from "@tauri-apps/plugin-dialog";
+  import {
+    preferencesStore,
+    PresetsStore,
+    defaultPreferences,
+    defaultAlgorithms,
+    // algorithmsStore,
+  } from "../store";
+
+  $: presets = $PresetsStore;
 
   let appInitialized = false;
   let initError: unknown = null;
+
+  function loadPreset(preset: string) {
+    // Your existing code
+    if (preset === "Default") {
+      const defaultPrefs = structuredClone(defaultPreferences);
+      preferencesStore.set(defaultPrefs);
+
+      // Apply colors to current window
+      applyColors(defaultPrefs.colors);
+
+      console.log("Default preferences restored");
+      return;
+    }
+
+    // Existing preset loading logic
+    const presetObj = presets.find((p) => p.name === preset);
+    if (presetObj) {
+      // Your existing code
+      const prefCopy = structuredClone(presetObj.pref);
+      const defaultPrefs = structuredClone(defaultPreferences);
+      const pref = { ...defaultPrefs, ...prefCopy };
+
+      // Set store
+      preferencesStore.set(pref);
+
+      // Apply colors to current window
+      applyColors(pref.colors || {});
+    }
+  }
+
+  // Helper function to apply colors to the current document
+  function applyColors(colors: Record<string, string>) {
+    Object.entries(colors).forEach(([key, value]) => {
+      const cssVariable = `--${key.replace(/([A-Z])/g, "-$1").toLowerCase()}`;
+      document.documentElement.style.setProperty(cssVariable, value);
+    });
+  }
 
   // Wrap your onMount in proper error handling
   onMount(async () => {
@@ -83,7 +133,7 @@
         colors.secondaryBg ?? "#2a2a2a"
       );
       document.documentElement.style.setProperty(
-        "--text-color",
+        "--color",
         colors.textColor ?? "#ffffff"
       );
       document.documentElement.style.setProperty(
@@ -169,29 +219,6 @@
     }
   }
 
-  async function menus() {
-    const menu = await Menu.new({
-      items: [
-        {
-          id: "Open",
-          text: "open",
-          action: () => {
-            console.log("open pressed");
-          },
-        },
-        {
-          id: "Close",
-          text: "close",
-          action: () => {
-            console.log("close pressed");
-          },
-        },
-      ],
-    });
-
-    await menu.setAsAppMenu();
-  }
-
   // Call the Tauri command to show the hidden window
   async function togglePreferencesWindow() {
     const preferencesWindow = await Window.getByLabel("preferences");
@@ -245,6 +272,38 @@
     }
   }
 
+  async function openSaveDialog() {
+    const url = `${window.location.origin}/save`;
+    console.log("Creating Save Window!");
+    const appWindow = new WebviewWindow("save", {
+      title: "Save Preset",
+      width: 300,
+      height: 200,
+      visible: true,
+      decorations: true,
+      resizable: false,
+      alwaysOnTop: false,
+      closable: true,
+      url: url,
+      dragDropEnabled: false,
+      devtools: true,
+      focus: true, // Ensure it gets focus when created
+    });
+
+    // Listen for console logs from preferences window
+    await listen("preferences-log", (event: any) => {
+      console.log("Save Window:", event.payload);
+    });
+
+    appWindow.once("tauri://created", function () {
+      console.log("Save window created!");
+    });
+
+    appWindow.once("tauri://error", function (e) {
+      console.error("Error creating Save window:", e);
+    });
+  }
+
   async function checkRegistered() {
     console.log("Checking Registration");
     let reg = get(registrationStore);
@@ -281,10 +340,227 @@
     await fetchColumns();
     // await menus();
   }
+  async function closeDatabase() {
+    await invoke<string>("close_db")
+      .then((dbPath) => {
+        selectedDb = dbPath;
+        console.log("db path: ", dbPath);
+        if (!(activeTab == "search" || activeTab == "metadata"))
+          activeTab = "search";
+      })
+      .catch((error) => console.error(error));
+    // if (dbPath != "") activeTab = 'search';
+    await getSize();
+    await fetchColumns();
+    // await menus();
+  }
 
   function removeResults() {
     console.log("Remove selected results");
   }
+
+  async function openPurchaseLink() {
+    await openUrl("https://buy.stripe.com/9AQcPw4D0dFycSYaEE");
+  }
+  async function openManual() {
+    await openUrl("https://smdbc.com/manual.php");
+  }
+  async function openLicenseRecovery() {
+    await openUrl("https://smdbc.com/recover-key.php");
+  }
+
+  async function menu() {
+    const copy = await PredefinedMenuItem.new({
+      text: "Copy",
+      item: "Copy",
+    });
+
+    const separator = await PredefinedMenuItem.new({
+      text: "separator",
+      item: "Separator",
+    });
+
+    const undo = await PredefinedMenuItem.new({
+      text: "Undo",
+      item: "Undo",
+    });
+
+    const redo = await PredefinedMenuItem.new({
+      text: "Redo",
+      item: "Redo",
+    });
+
+    const cut = await PredefinedMenuItem.new({
+      text: "Cut",
+      item: "Cut",
+    });
+
+    const paste = await PredefinedMenuItem.new({
+      text: "Paste",
+      item: "Paste",
+    });
+
+    const select_all = await PredefinedMenuItem.new({
+      text: "Select All",
+      item: "SelectAll",
+    });
+    const minimize = await PredefinedMenuItem.new({
+      text: "Minimize",
+      item: "Minimize",
+    });
+    const maximize = await PredefinedMenuItem.new({
+      text: "Maximize",
+      item: "Maximize",
+    });
+    const fullscreen = await PredefinedMenuItem.new({
+      text: "Fullscreen",
+      item: "Fullscreen",
+    });
+    const hide = await PredefinedMenuItem.new({
+      text: "Hide",
+      item: "Hide",
+    });
+    const hideOthers = await PredefinedMenuItem.new({
+      text: "Hide Others",
+      item: "HideOthers",
+    });
+    const showAll = await PredefinedMenuItem.new({
+      text: "Show All",
+      item: "ShowAll",
+    });
+    const closeWindow = await PredefinedMenuItem.new({
+      text: "Close Window",
+      item: "CloseWindow",
+    });
+    const quit = await PredefinedMenuItem.new({
+      text: "Quit",
+      item: "Quit",
+    });
+    const services = await PredefinedMenuItem.new({
+      text: "Services",
+      item: "Services",
+    });
+    const about = await PredefinedMenuItem.new({
+      text: "About SMDB Companion",
+      item: {
+        About: {
+          name: "SMDB Companion",
+          version: "",
+          authors: ["Tim Farrell"],
+          copyright: "© 2025 Feral Frequencies",
+          website: "https://smdbc.com",
+          websiteLabel: "SMDB Companion",
+          // icon: "icon.png",
+        },
+      },
+    });
+
+    // Rebuild a minimal app menu structure (macOS-style)
+    const appMenu = await Submenu.new({
+      text: "App",
+      items: [
+        about,
+        separator,
+        {
+          id: "settings",
+          text: "Settings...",
+          action: togglePreferencesWindow,
+        },
+        separator,
+        services,
+        separator,
+        hide,
+        hideOthers,
+        showAll,
+        separator,
+        quit,
+      ],
+    });
+
+    const loadPresetMenu = await Submenu.new({
+      text: "Load Preset",
+      items: presets.map((preset) => {
+        return {
+          id: preset.name,
+          text: preset.name,
+          action: () => loadPreset(preset.name),
+        };
+      }),
+    });
+
+    const fileMenu = await Submenu.new({
+      text: "File",
+      items: [
+        {
+          id: "open",
+          text: "Open Database",
+          action: () => openDatabase(false),
+        },
+        { id: "close", text: "Close Database", action: () => closeDatabase() },
+        separator,
+        // {
+        //   id: "save",
+        //   text: "Save Preset",
+        //   action: () => {
+        //     openSaveDialog();
+        //   },
+        // },
+        loadPresetMenu,
+        separator,
+        closeWindow,
+      ],
+    });
+
+    const editMenu = await Submenu.new({
+      text: "Edit",
+      id: "edit",
+      items: [undo, redo, separator, cut, copy, paste, separator, select_all],
+    });
+
+    const viewMenu = await Submenu.new({
+      text: "View",
+      id: "view",
+      items: [minimize, maximize, separator, fullscreen],
+    });
+
+    const licenseMenu = await Submenu.new({
+      text: "License",
+      id: "license",
+      items: [
+        {
+          id: "buy",
+          text: "Purchase License",
+          action: () => openPurchaseLink(),
+        },
+        {
+          id: "recovery",
+          text: "License Recovery",
+          action: () => openLicenseRecovery(),
+        },
+      ],
+    });
+
+    const helpMenu = await Submenu.new({
+      text: "Help",
+      id: "help",
+      items: [
+        {
+          id: "manual",
+          text: "User Manual",
+          action: () => openManual(),
+        },
+        licenseMenu,
+      ],
+    });
+
+    const menu = await Menu.new({
+      items: [appMenu, fileMenu, editMenu, viewMenu, helpMenu],
+    });
+
+    await menu.setAsAppMenu();
+  }
+
+  onMount(menu);
 
   onMount(checkRegistered);
   onMount(firstOpen);
@@ -315,65 +591,6 @@
       });
   });
   async function firstOpen() {
-    // const menu = await Menu.new({
-    //   items: [
-    //     {
-    //       id: "quit",
-    //       text: "Quit",
-    //       action: () => {
-    //         console.log("quit pressed");
-    //       },
-    //     },
-    //   ],
-    // });
-
-    // // If a window was not created with an explicit menu or had one set explicitly,
-    // // this menu will be assigned to it.
-    // menu.setAsAppMenu().then((res) => {
-    //   console.log("menu set success", res);
-    // });
-
-    const copy = await PredefinedMenuItem.new({
-      text: "copy-text",
-      item: "Copy",
-    });
-
-    const separator = await PredefinedMenuItem.new({
-      text: "separator-text",
-      item: "Separator",
-    });
-
-    const undo = await PredefinedMenuItem.new({
-      text: "undo-text",
-      item: "Undo",
-    });
-
-    const redo = await PredefinedMenuItem.new({
-      text: "redo-text",
-      item: "Redo",
-    });
-
-    const cut = await PredefinedMenuItem.new({
-      text: "cut-text",
-      item: "Cut",
-    });
-
-    const paste = await PredefinedMenuItem.new({
-      text: "paste-text",
-      item: "Paste",
-    });
-
-    const select_all = await PredefinedMenuItem.new({
-      text: "select_all-text",
-      item: "SelectAll",
-    });
-
-    const menu = await Menu.new({
-      items: [copy, separator, undo, redo, cut, paste, select_all],
-    });
-
-    await menu.setAsAppMenu();
-
     if (get(preferencesStore).firstOpen) {
       await message(
         "Please be sure to back up your Databases and Audio Files before using this application."
@@ -488,7 +705,7 @@
     height: 100vh;
     width: 100vw;
     background-color: var(--primary-bg, #1a1a1a);
-    color: var(--text-color, #ffffff);
+    color: var(--color, #ffffff);
   }
 
   .spinner {

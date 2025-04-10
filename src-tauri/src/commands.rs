@@ -43,6 +43,12 @@ pub async fn open_db(
     }
     Ok(Arc::from("Select Database"))
 }
+#[tauri::command]
+pub async fn close_db(state: State<'_, Mutex<AppState>>) -> Result<Arc<str>, String> {
+    let mut state = state.lock().await;
+    state.db = Database::default();
+    Ok(Arc::from("Select Database"))
+}
 
 #[tauri::command]
 pub async fn get_db_name(state: State<'_, Mutex<AppState>>) -> Result<Arc<str>, String> {

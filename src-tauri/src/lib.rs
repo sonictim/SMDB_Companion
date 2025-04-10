@@ -12,15 +12,16 @@ pub use regex::Regex;
 pub use sqlx::Row;
 pub use sqlx::sqlite::{SqlitePool, SqliteRow};
 use std::hash::Hash;
+use tauri::App;
+use tauri::menu::{Menu, MenuBuilder, MenuItem, Submenu};
 
 pub const TABLE: &str = "justinmetadata";
 pub const RECORD_DIVISOR: usize = 1231;
 
-// use tauri_plugin_store::Builder;
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     set_library_path();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
@@ -31,7 +32,9 @@ pub fn run() {
                 .unwrap()
                 .set_title(&format!("SMDB Companion :: v{}", version));
             audio::playback::init_audio_system();
-            app.manage(Mutex::new(AppState::default())); // Use Mutex to allow async access
+            app.manage(Mutex::new(AppState::default()));
+
+            // menu(app)?;
             Ok(())
         })
         // .plugin(tauri_plugin_window::init())
@@ -41,6 +44,7 @@ pub fn run() {
             greet,
             get_current_version,
             open_db,
+            close_db,
             get_db_name,
             get_db_size,
             get_records_size,
@@ -62,6 +66,32 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+fn menu(app: &mut App) -> Result<()> {
+    let menu = MenuBuilder::new(app)
+        .text("open", "Open")
+        .text("close", "Close")
+        .build()?;
+
+    app.set_menu(menu)?;
+
+    app.on_menu_event(move |app_handle: &tauri::AppHandle, event| {
+        println!("menu event: {:?}", event.id());
+
+        match event.id().0.as_str() {
+            "open" => {
+                println!("open event");
+            }
+            "close" => {
+                println!("close event");
+            }
+            _ => {
+                println!("unexpected menu event");
+            }
+        }
+    }); // Use Mutex to allow async access
+    Ok(())
 }
 
 // In your main.rs or lib.rs

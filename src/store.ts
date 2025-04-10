@@ -517,3 +517,19 @@ PresetsStore.subscribe(value => {
     localStorage.setItem('presets', JSON.stringify(value));
 });
 
+export function initColorHandling() {
+  // Subscribe to preference changes
+  preferencesStore.subscribe((value) => {
+    if (value?.colors) {
+      applyColorsToDocument(value.colors);
+    }
+  });
+}
+
+// Utility function to apply colors to current document
+function applyColorsToDocument(colors: Record<string, string>) {
+  Object.entries(colors).forEach(([key, value]) => {
+    const cssVariable = `--${key.replace(/([A-Z])/g, "-$1").toLowerCase()}`;
+    document.documentElement.style.setProperty(cssVariable, value);
+  });
+}
