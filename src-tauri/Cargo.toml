@@ -59,6 +59,9 @@ ndarray-stats = "0.6.0"
 # ffmpeg-next = "7.1.0"
 tempfile = "3.19.1"
 rustfft = "6.2.0"
+byteorder = "1.5.0"
+flacenc = "0.4.0"
+memmap2 = "0.9.5"
 # ffmpeg-next = { version = "7.1.0", default-features = false, features = [
 #     "static",
 # ] }

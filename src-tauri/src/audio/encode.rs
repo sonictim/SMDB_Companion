@@ -1,22 +1,15 @@
 use crate::prelude::*;
+pub use byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
 use flacenc::component::BitRepr;
 use flacenc::error::Verify;
-
-// FLAC-specific constants
-const FLAC_MARKER: &[u8; 4] = b"fLaC";
-const STREAMINFO_BLOCK_TYPE: u8 = 0;
-// const SEEKTABLE_BLOCK_TYPE: u8 = 3;
-const VORBIS_COMMENT_BLOCK_TYPE: u8 = 4;
-const PICTURE_BLOCK_TYPE: u8 = 6;
-const LAST_METADATA_BLOCK_FLAG: u8 = 0x80;
+pub use memmap2::MmapOptions;
+pub use rayon::prelude::*;
+pub use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 
 // Sample normalization constants
 const I16_MAX_F: f32 = 32767.0;
-const I16_DIVISOR: f32 = 32768.0;
 const I24_MAX_F: f32 = 8388607.0;
-const I24_DIVISOR: f32 = 8388608.0;
 const I32_MAX_F: f32 = 2147483647.0;
-const I32_DIVISOR: f32 = 2147483648.0;
 
 // Standard bit depths
 const BIT_DEPTH_8: u16 = 8;
@@ -27,16 +20,8 @@ const BIT_DEPTH_32: u16 = 32;
 // Sample normalization constants
 const U8_OFFSET: f32 = 128.0;
 const U8_SCALE: f32 = 127.0;
-const I16_MAX_F: f32 = 32767.0;
-const I16_DIVISOR: f32 = 32768.0;
-const I24_MAX_F: f32 = 8388607.0;
-const I24_DIVISOR: f32 = 8388608.0;
-const I32_MAX_F: f32 = 2147483647.0;
-const I32_DIVISOR: f32 = 2147483648.0;
 
 //Bit Operations
-const I24_SIGN_BIT: i32 = 0x800000;
-const I24_SIGN_EXTENSION_MASK: i32 = !0xFFFFFF;
 const BYTE_MASK: i32 = 0xFF; // Mask for extracting a single byte
 
 // Format tags
@@ -51,9 +36,8 @@ const DATA_CHUNK_ID: &[u8; 4] = b"data";
 
 // Chunk Structures
 const STANDARD_FMT_CHUNK_SIZE: u32 = 16;
-const HEADER_SIZE: usize = 12; // RIFF + size + WAVE
 
-pub fn get_encoder(file_path: &str) -> R<Box<dyn Encoder>> {
+pub fn get_encoder(file_path: &str) -> Result<Box<dyn Encoder>> {
     let extension = std::path::Path::new(file_path)
         .extension()
         .and_then(|ext| ext.to_str())
@@ -72,18 +56,40 @@ pub fn get_encoder(file_path: &str) -> R<Box<dyn Encoder>> {
 }
 
 pub trait Encoder: Send + Sync {
-    fn encode(&self, buffer: &AudioBuffer) -> R<Vec<u8>>;
+    fn encode(&self, buffer: &AudioBuffer) -> Result<Vec<u8>>;
 
-    fn encode_file(&self, buffer: &AudioBuffer, file_path: &str) -> R<()> {
+    fn encode_file(&self, buffer: &AudioBuffer, file_path: &str) -> Result<()> {
         let encoded_data = self.encode(buffer)?;
         std::fs::write(file_path, encoded_data)?;
         Ok(())
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SampleFormat {
+    U8,
+    I16,
+    I24,
+    I32,
+    #[default]
+    F32,
+}
+
+impl SampleFormat {
+    pub fn bits_per_sample(&self) -> u16 {
+        match self {
+            SampleFormat::U8 => 8,
+            SampleFormat::I16 => 16,
+            SampleFormat::I24 => 24,
+            SampleFormat::I32 => 32,
+            SampleFormat::F32 => 32,
+        }
+    }
+}
+
 pub struct WavCodec;
 impl Encoder for WavCodec {
-    fn encode(&self, buffer: &AudioBuffer) -> R<Vec<u8>> {
+    fn encode(&self, buffer: &AudioBuffer) -> Result<Vec<u8>> {
         let mut output = Cursor::new(Vec::new());
 
         // Ensure channel count in buffer is consistent with data
@@ -102,7 +108,7 @@ impl Encoder for WavCodec {
         // ---- fmt chunk ----
         output.write_all(FMT_CHUNK_ID)?;
         output.write_u32::<LittleEndian>(STANDARD_FMT_CHUNK_SIZE)?; // PCM = 16 bytes
-        let (format_tag, bits_per_sample) = match buffer.format {
+        let (format_tag, bits_per_sample) = match buffer.sample_format {
             SampleFormat::F32 => (FORMAT_IEEE_FLOAT, BIT_DEPTH_32),
             SampleFormat::I16 => (FORMAT_PCM, BIT_DEPTH_16),
             SampleFormat::I24 => (FORMAT_PCM, BIT_DEPTH_24),
@@ -150,9 +156,9 @@ impl Encoder for WavCodec {
 
 pub struct FlacCodec;
 impl Encoder for FlacCodec {
-    fn encode(&self, buffer: &AudioBuffer) -> R<Vec<u8>> {
+    fn encode(&self, buffer: &AudioBuffer) -> Result<Vec<u8>> {
         // Get audio parameters
-        let bits_per_sample = get_bits_per_sample(buffer.format);
+        let bits_per_sample = get_bits_per_sample(buffer.sample_format);
         let channels = buffer.channels as usize;
         let sample_rate = buffer.sample_rate as usize;
 
@@ -250,5 +256,60 @@ impl Encoder for FlacCodec {
 
         // Return the encoded FLAC data
         Ok(sink.as_slice().to_vec())
+    }
+}
+
+fn encode_samples<W: Write>(out: &mut W, buffer: &AudioBuffer, bits_per_sample: u16) -> Result<()> {
+    // Ensure channel count doesn't exceed available data channels
+    let available_channels = buffer.data.len();
+    let channels = std::cmp::min(buffer.channels as usize, available_channels);
+
+    // Ensure consistent channel count between metadata and actual data
+    let frames = buffer.data[0].len();
+
+    for i in 0..frames {
+        for ch in 0..channels {
+            let sample = buffer.data[ch][i];
+            match bits_per_sample {
+                BIT_DEPTH_8 => {
+                    let val = ((sample * U8_SCALE + U8_OFFSET).clamp(0.0, 255.0)) as u8;
+                    out.write_u8(val)?;
+                }
+                BIT_DEPTH_16 => {
+                    let val = (sample.clamp(-1.0, 1.0) * I16_MAX_F) as i16;
+                    out.write_i16::<LittleEndian>(val)?;
+                }
+                BIT_DEPTH_24 => {
+                    let val = (sample.clamp(-1.0, 1.0) * I24_MAX_F) as i32;
+                    let bytes = [
+                        (val & BYTE_MASK) as u8,
+                        ((val >> 8) & BYTE_MASK) as u8,
+                        ((val >> 16) & BYTE_MASK) as u8,
+                    ];
+                    out.write_all(&bytes)?;
+                }
+                BIT_DEPTH_32 => {
+                    if buffer.sample_format == SampleFormat::F32 {
+                        out.write_f32::<LittleEndian>(sample)?;
+                    } else {
+                        let val = (sample.clamp(-1.0, 1.0) * I32_MAX_F) as i32;
+                        out.write_i32::<LittleEndian>(val)?;
+                    }
+                }
+                _ => return Err(anyhow!("Unsupported bit depth")),
+            }
+        }
+    }
+
+    Ok(())
+}
+
+// Helper function to get bits per sample from SampleFormat
+fn get_bits_per_sample(format: SampleFormat) -> u16 {
+    match format {
+        SampleFormat::U8 => 8,
+        SampleFormat::I16 => 16,
+        SampleFormat::I24 => 24,
+        SampleFormat::I32 | SampleFormat::F32 => 32,
     }
 }

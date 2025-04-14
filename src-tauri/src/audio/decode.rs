@@ -161,6 +161,22 @@ pub struct DecodedAudioSeparated {
     pub metadata: HashMap<String, String>,
 }
 
+impl DecodedAudioSeparated {
+    pub fn convert_dual_mono(&mut self) -> Result<()> {
+        if self.channels_samples.is_empty() || self.channels < 2 {
+            return Ok(());
+        }
+
+        let first_channel = std::mem::take(&mut self.channels_samples[0]);
+        self.channels_samples.clear();
+        self.channels_samples.push(first_channel);
+
+        self.channels = 1;
+
+        Ok(())
+    }
+}
+
 pub fn decode_separated(path: &Path) -> DecodedAudioSeparated {
     let file = Box::new(File::open(path).unwrap());
     let mss = MediaSourceStream::new(file, Default::default());
@@ -251,6 +267,107 @@ pub fn decode_separated(path: &Path) -> DecodedAudioSeparated {
         sample_rate,
         channels,
         metadata,
+    }
+}
+
+pub fn decode_to_buffer(path: &Path) -> AudioBuffer {
+    let file = Box::new(File::open(path).unwrap());
+    let mss = MediaSourceStream::new(file, Default::default());
+    let hint = Hint::new();
+    let format_opts: FormatOptions = Default::default();
+    let metadata_opts: MetadataOptions = Default::default();
+    let decoder_opts: DecoderOptions = Default::default();
+    let probed = symphonia::default::get_probe()
+        .format(&hint, mss, &format_opts, &metadata_opts)
+        .unwrap();
+    let mut format = probed.format;
+    let track = format.default_track().unwrap();
+    let mut decoder = symphonia::default::get_codecs()
+        .make(&track.codec_params, &decoder_opts)
+        .unwrap();
+    let track_id = track.id;
+    let sample_rate = track.codec_params.sample_rate.unwrap_or(48000);
+    let bit_depth = track.codec_params.bits_per_sample.unwrap_or(16);
+    let sample_format = match bit_depth {
+        8 => SampleFormat::U8,
+        16 => SampleFormat::I16,
+        24 => SampleFormat::I24,
+        32 => SampleFormat::I32,
+        _ => SampleFormat::F32,
+    };
+    let channels = track
+        .codec_params
+        .channels
+        .map(|c| c.count() as u16)
+        .unwrap_or(1);
+    let mut metadata = HashMap::new();
+
+    if let Some(data) = format.metadata().current() {
+        for tag in data.tags() {
+            let key = tag.key.to_string();
+            let value = tag.value.to_string();
+            metadata.insert(key, value);
+        }
+    }
+
+    // Initialize a vector of vectors, one for each channel
+    let mut data: Vec<Vec<f32>> = (0..channels).map(|_| Vec::new()).collect();
+
+    let mut sample_buf: Option<SampleBuffer<f32>> = None;
+
+    loop {
+        let packet = match format.next_packet() {
+            Ok(packet) => packet,
+            Err(err) => {
+                if ignore_end_of_stream_error(Err(err)).is_ok() {
+                    break;
+                } else {
+                    continue;
+                }
+            }
+        };
+
+        if packet.track_id() != track_id {
+            continue;
+        }
+
+        match decoder.decode(&packet) {
+            Ok(audio_buf) => {
+                if sample_buf.is_none() {
+                    let spec = *audio_buf.spec();
+                    let duration = audio_buf.capacity() as u64;
+                    sample_buf = Some(SampleBuffer::<f32>::new(duration, spec));
+                }
+
+                if let Some(buf) = &mut sample_buf {
+                    buf.copy_interleaved_ref(audio_buf);
+
+                    // De-interleave the samples into separate channel vectors
+                    let samples = buf.samples();
+                    let num_channels = channels as usize;
+
+                    for (i, &sample) in samples.iter().enumerate() {
+                        let channel_idx = i % num_channels;
+                        data[channel_idx].push(sample);
+                    }
+                }
+            }
+            Err(Error::DecodeError(_)) => continue,
+            Err(err) => {
+                if ignore_end_of_stream_error(Err(err)).is_ok() {
+                    break;
+                } else {
+                    continue;
+                }
+            }
+        }
+    }
+
+    AudioBuffer {
+        data,
+        sample_rate,
+        channels,
+        sample_format,
     }
 }
 

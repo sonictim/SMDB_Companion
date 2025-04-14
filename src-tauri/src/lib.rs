@@ -654,7 +654,12 @@ impl Database {
             )
             .ok();
 
-            let _ = audio::ffmpeg::cleanup_multi_mono(path);
+            let mut decoded = audio::decode::decode_to_buffer(path);
+            if decoded.strip_multi_mono().is_ok() {
+                let _ = decoded.export(&record.path);
+            };
+
+            // let _ = audio::ffmpeg::cleanup_multi_mono(path);
         });
         let record_ids = records.iter().map(|record| record.id).collect::<Vec<_>>();
         self.update_channel_count_to_mono(app, &record_ids).await?;
