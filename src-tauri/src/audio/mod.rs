@@ -1,7 +1,7 @@
 pub mod chromaprint;
 pub mod decode;
 pub mod encode;
-pub mod ffmpeg;
+// pub mod ffmpeg;
 pub mod playback;
 // pub mod shazam_fingerprint_processing;
 // pub mod landmarks;
@@ -16,7 +16,7 @@ pub mod playback;
 pub use chromaprint::*;
 pub use decode::*;
 pub use encode::*;
-pub use ffmpeg::*;
+// pub use ffmpeg::*;
 pub use playback::*;
 // pub use shazam_fingerprint_processing::*;
 // pub use landmarks::*;
