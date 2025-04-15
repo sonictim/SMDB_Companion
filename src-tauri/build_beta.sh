@@ -61,21 +61,21 @@ check_file "./resources/libchromaprint.a"
 echo "Checking library architecture:"
 lipo -info ./resources/libchromaprint.a
 
-# Sign FFmpeg binaries
-echo "Signing FFmpeg binaries..."
+# # Sign FFmpeg binaries
+# echo "Signing FFmpeg binaries..."
 
-# Make sure binaries are executable
-chmod +x ./resources/ffmpeg/arm64/ffmpeg
-chmod +x ./resources/ffmpeg/x86_64/ffmpeg
+# # Make sure binaries are executable
+# chmod +x ./resources/ffmpeg/arm64/ffmpeg
+# chmod +x ./resources/ffmpeg/x86_64/ffmpeg
 
-# Sign each binary with your developer certificate
-codesign --force --timestamp --options runtime --sign "Developer ID Application: Tim Farrell (${APPLE_TEAM_ID})" ./resources/ffmpeg/arm64/ffmpeg
-codesign --force --timestamp --options runtime --sign "Developer ID Application: Tim Farrell (${APPLE_TEAM_ID})" ./resources/ffmpeg/x86_64/ffmpeg
+# # Sign each binary with your developer certificate
+# codesign --force --timestamp --options runtime --sign "Developer ID Application: Tim Farrell (${APPLE_TEAM_ID})" ./resources/ffmpeg/arm64/ffmpeg
+# codesign --force --timestamp --options runtime --sign "Developer ID Application: Tim Farrell (${APPLE_TEAM_ID})" ./resources/ffmpeg/x86_64/ffmpeg
 
-# Verify signatures
-echo "Verifying signatures..."
-codesign -vvv --deep ./resources/ffmpeg/arm64/ffmpeg
-codesign -vvv --deep ./resources/ffmpeg/x86_64/ffmpeg
+# # Verify signatures
+# echo "Verifying signatures..."
+# codesign -vvv --deep ./resources/ffmpeg/arm64/ffmpeg
+# codesign -vvv --deep ./resources/ffmpeg/x86_64/ffmpeg
 
 # cargo clean
 
