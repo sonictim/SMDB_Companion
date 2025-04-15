@@ -1,0 +1,18 @@
+[
+  {
+    "version": "1.0.1",
+    "date": "2025-04-15",
+    "changes": [
+      "Removed FFMpeg dependency for smaller binary size",
+      "Fixed broken filters on results page",
+      "Fixed text-color bug in color preferences"
+    ]
+  },
+  {
+    "version": "1.0.0",
+    "date": "2025-03-20",
+    "changes": [
+      "Initial Release!  Out to the masses!" 
+    ]
+  }
+]

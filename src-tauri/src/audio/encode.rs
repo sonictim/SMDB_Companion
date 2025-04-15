@@ -30,11 +30,21 @@ const FORMAT_IEEE_FLOAT: u16 = 3;
 // Chunk Identifiers
 const RIFF_CHUNK_ID: &[u8; 4] = b"RIFF";
 const WAVE_FORMAT_ID: &[u8; 4] = b"WAVE";
-const FMT_CHUNK_ID: &[u8; 4] = b"fmt ";
-const DATA_CHUNK_ID: &[u8; 4] = b"data";
+const WAV_FMT_CHUNK_ID: &[u8; 4] = b"fmt ";
+const WAV_DATA_CHUNK_ID: &[u8; 4] = b"data";
 
 // Chunk Structures
 const STANDARD_FMT_CHUNK_SIZE: u32 = 16;
+
+// Chunk Identifiers
+const FORM_CHUNK_ID: &[u8; 4] = b"FORM";
+const AIFF_FORMAT_ID: &[u8; 4] = b"AIFF";
+const AIF_FMT_CHUNK_ID: &[u8; 4] = b"COMM";
+const AIF_DATA_CHUNK_ID: &[u8; 4] = b"SSND";
+
+// Chunk Structures
+// const HEADER_SIZE: usize = 12; // FORM + size + AIFF
+// const MIN_VALID_FILE_SIZE: usize = 12;
 
 pub fn get_encoder(file_path: &str) -> Result<Box<dyn Encoder>> {
     let extension = std::path::Path::new(file_path)
@@ -45,8 +55,8 @@ pub fn get_encoder(file_path: &str) -> Result<Box<dyn Encoder>> {
     match extension {
         "wav" => Ok(Box::new(WavCodec)),
         "flac" => Ok(Box::new(FlacCodec)),
-        // "aif" => Ok(Box::new(AifCodec)),
-        // "mp3" => Ok(Box::new(Mp3Codec)),
+        "aif" => Ok(Box::new(AifCodec)),
+        "mp3" => Ok(Box::new(Mp3Codec)),
         _ => Err(anyhow::anyhow!(
             "No Encoder found for extension: {}",
             extension
@@ -105,7 +115,7 @@ impl Encoder for WavCodec {
         output.write_all(WAVE_FORMAT_ID)?;
 
         // ---- fmt chunk ----
-        output.write_all(FMT_CHUNK_ID)?;
+        output.write_all(WAV_FMT_CHUNK_ID)?;
         output.write_u32::<LittleEndian>(STANDARD_FMT_CHUNK_SIZE)?; // PCM = 16 bytes
         let (format_tag, bits_per_sample) = match buffer.sample_format {
             SampleFormat::F32 => (FORMAT_IEEE_FLOAT, BIT_DEPTH_32),
@@ -126,7 +136,7 @@ impl Encoder for WavCodec {
         output.write_u16::<LittleEndian>(bits_per_sample)?;
 
         // ---- data chunk ----
-        output.write_all(DATA_CHUNK_ID)?;
+        output.write_all(WAV_DATA_CHUNK_ID)?;
         let data_pos = output.position();
         output.write_u32::<LittleEndian>(0)?; // placeholder
 
@@ -310,5 +320,250 @@ fn get_bits_per_sample(format: SampleFormat) -> u16 {
         SampleFormat::I16 => 16,
         SampleFormat::I24 => 24,
         SampleFormat::I32 | SampleFormat::F32 => 32,
+    }
+}
+
+pub struct AifCodec;
+impl Encoder for AifCodec {
+    fn encode(&self, buffer: &AudioBuffer) -> Result<Vec<u8>> {
+        let mut output = Cursor::new(Vec::new());
+
+        // Write FORM header
+        output.write_all(FORM_CHUNK_ID)?;
+        output.write_u32::<BigEndian>(0)?; // Placeholder for file size
+        output.write_all(AIFF_FORMAT_ID)?;
+
+        // Write COMM chunk
+        output.write_all(AIF_FMT_CHUNK_ID)?;
+        output.write_u32::<BigEndian>(18)?; // COMM chunk size
+        output.write_u16::<BigEndian>(buffer.channels)?;
+
+        // Write number of sample frames
+        let num_frames = if buffer.data.is_empty() {
+            0
+        } else {
+            buffer.data[0].len() as u32
+        };
+        output.write_u32::<BigEndian>(num_frames)?;
+
+        // Get bit depth from format
+        let bits_per_sample = match buffer.sample_format {
+            SampleFormat::F32 => 32,
+            SampleFormat::I16 => 16,
+            SampleFormat::I24 => 24,
+            SampleFormat::I32 => 32,
+            SampleFormat::U8 => 8,
+        };
+        output.write_u16::<BigEndian>(bits_per_sample)?;
+
+        // Write extended 80-bit IEEE 754 format for sample rate
+        // This is required by AIFF spec
+        write_ieee_extended_simple(&mut output, buffer.sample_rate as f64)?;
+
+        // Write SSND chunk header
+        output.write_all(AIF_DATA_CHUNK_ID)?;
+        let ssnd_chunk_size_pos = output.position();
+        output.write_u32::<BigEndian>(0)?; // Placeholder for chunk size
+        output.write_u32::<BigEndian>(0)?; // Offset
+        output.write_u32::<BigEndian>(0)?; // Block size
+
+        let start_data = output.position();
+
+        let mut interleaved_bytes = Vec::new();
+        encode_samples(&mut interleaved_bytes, buffer, bits_per_sample)?;
+        output.write_all(&interleaved_bytes)?;
+
+        let end_data = output.position();
+        let data_size = (end_data - start_data) as u32;
+        let ssnd_chunk_size = data_size + 8; // Add 8 bytes for offset and block size
+
+        // Fill in SSND chunk size
+        let mut out = output.into_inner();
+        (&mut out[ssnd_chunk_size_pos as usize..(ssnd_chunk_size_pos + 4) as usize])
+            .write_u32::<BigEndian>(ssnd_chunk_size)?;
+
+        // Fill in FORM file size
+        let form_size = out.len() as u32 - 8;
+        (&mut out[4..8]).write_u32::<BigEndian>(form_size)?;
+
+        Ok(out)
+    }
+}
+
+// Helper function to write IEEE 80-bit extended float (required for AIFF)
+fn write_ieee_extended<W: Write>(writer: &mut W, mut value: f64) -> Result<()> {
+    let mut buffer = [0u8; 10];
+
+    if value < 0.0 {
+        buffer[0] = 0x80;
+        value = -value;
+    } else {
+        buffer[0] = 0;
+    }
+
+    // Handle special cases
+    if value == 0.0 {
+        return writer.write_all(&buffer).map_err(|e| anyhow::anyhow!(e));
+    }
+
+    // Compute exponent and mantissa
+    let mut exponent: i16 = 16383; // Bias
+
+    // Get normalized fraction and exponent
+    let mut fraction = value;
+    while fraction >= 1.0 {
+        fraction /= 2.0;
+        exponent += 1;
+    }
+
+    while fraction < 0.5 {
+        fraction *= 2.0;
+        exponent -= 1;
+    }
+
+    // Convert to fixed point mantissa
+    fraction *= 2.0; // Shift left to get 1.fraction
+    let mantissa: u64 = ((fraction - 1.0) * 9007199254740992.0) as u64; // 2^53, corrected to subtract implicit 1
+
+    // Fill buffer
+    buffer[0] |= ((exponent >> 8) & 0x7F) as u8;
+    buffer[1] = (exponent & 0xFF) as u8;
+
+    // Fill the mantissa - ensure correct byte order (big endian)
+    buffer[2] = ((mantissa >> 56) & 0xFF) as u8;
+    buffer[3] = ((mantissa >> 48) & 0xFF) as u8;
+    buffer[4] = ((mantissa >> 40) & 0xFF) as u8;
+    buffer[5] = ((mantissa >> 32) & 0xFF) as u8;
+    buffer[6] = ((mantissa >> 24) & 0xFF) as u8;
+    buffer[7] = ((mantissa >> 16) & 0xFF) as u8;
+    buffer[8] = ((mantissa >> 8) & 0xFF) as u8;
+    buffer[9] = (mantissa & 0xFF) as u8;
+
+    writer.write_all(&buffer).map_err(|e| anyhow::anyhow!(e))
+}
+
+fn write_ieee_extended_simple<W: Write>(writer: &mut W, value: f64) -> Result<()> {
+    // For common audio sample rates, use precomputed values
+    let buffer: [u8; 10] = match value as u32 {
+        44100 => [0x40, 0x0E, 0xAC, 0x44, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+        48000 => [0x40, 0x0E, 0xBB, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+        88200 => [0x40, 0x0F, 0xAC, 0x44, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+        96000 => [0x40, 0x0F, 0xBB, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+        _ => {
+            // Fall back to general implementation for uncommon rates
+            let mut buf = [0u8; 10];
+            let mut cursor = Cursor::new(&mut buf[..]);
+            write_ieee_extended(&mut cursor, value)?;
+            buf
+        }
+    };
+
+    writer.write_all(&buffer).map_err(|e| anyhow::anyhow!(e))
+}
+
+pub struct Mp3Codec;
+impl Encoder for Mp3Codec {
+    fn encode(&self, buffer: &AudioBuffer) -> Result<Vec<u8>> {
+        // Validate input buffer
+        if buffer.data.is_empty() {
+            return Err(anyhow!("Empty audio buffer"));
+        }
+
+        let channels = buffer.channels as usize;
+        if channels == 0 || channels > 2 {
+            return Err(anyhow!(
+                "MP3 encoding only supports mono or stereo (got {} channels)",
+                channels
+            ));
+        }
+
+        if buffer.data.len() != channels {
+            return Err(anyhow!(
+                "Buffer channel count ({}) doesn't match channel data length ({})",
+                channels,
+                buffer.data.len()
+            ));
+        }
+
+        let mut output = Vec::new();
+        let mut lame =
+            lame::Lame::new().ok_or_else(|| anyhow!("Failed to initialize LAME encoder"))?;
+
+        // Configure encoder
+        lame.set_sample_rate(buffer.sample_rate)
+            .map_err(|e| anyhow!("Failed to set sample rate: {:?}", e))?;
+        lame.set_channels(buffer.channels as u8)
+            .map_err(|e| anyhow!("Failed to set channels: {:?}", e))?;
+        lame.set_quality(2)
+            .map_err(|e| anyhow!("Failed to set quality: {:?}", e))?; // High quality
+
+        // CRITICAL: Initialize encoder parameters
+        lame.init_params()
+            .map_err(|e| anyhow!("Failed to initialize encoder parameters: {:?}", e))?;
+
+        // Prepare samples based on channel count
+        match buffer.channels {
+            1 => {
+                // Mono case - convert to i16 samples
+                let samples: Vec<i16> = buffer.data[0]
+                    .iter()
+                    .map(|&sample| (sample.clamp(-1.0, 1.0) * i16::MAX as f32) as i16)
+                    .collect();
+
+                let mut mp3_buffer = vec![0; samples.len() * 5 / 4 + 7200]; // Buffer size recommendation from LAME docs
+
+                // For mono in lame 0.1.3, we need to pass PCM data as left channel and NULL as right channel
+                // The key is that when encoding mono, we should NOT pass an empty array for right channel
+                let bytes_written = lame
+                    .encode(&samples, &samples, &mut mp3_buffer)
+                    .map_err(|e| anyhow!("Lame encoding error: {:?}", e))?;
+
+                mp3_buffer.truncate(bytes_written);
+                output.extend_from_slice(&mp3_buffer);
+
+                // Flush any remaining frames
+                let mut flush_buffer = vec![0; 7200];
+                let empty_buffer: Vec<i16> = Vec::new();
+                let bytes_written = lame
+                    .encode(&empty_buffer, &empty_buffer, &mut flush_buffer)
+                    .map_err(|e| anyhow!("Lame flush error: {:?}", e))?;
+
+                flush_buffer.truncate(bytes_written);
+                output.extend_from_slice(&flush_buffer);
+            }
+            2 => {
+                // Stereo case
+                let left: Vec<i16> = buffer.data[0]
+                    .iter()
+                    .map(|&sample| (sample.clamp(-1.0, 1.0) * i16::MAX as f32) as i16)
+                    .collect();
+
+                let right: Vec<i16> = buffer.data[1]
+                    .iter()
+                    .map(|&sample| (sample.clamp(-1.0, 1.0) * i16::MAX as f32) as i16)
+                    .collect();
+
+                let mut mp3_buffer = vec![0; left.len() * 5 / 2 + 7200]; // Buffer size for stereo
+                let bytes_written = lame
+                    .encode(&left, &right, &mut mp3_buffer)
+                    .map_err(|e| anyhow!("Lame encoding error: {:?}", e))?;
+
+                mp3_buffer.truncate(bytes_written);
+                output.extend_from_slice(&mp3_buffer);
+
+                // Flush any remaining frames
+                let mut flush_buffer = vec![0; 7200];
+                let empty_buffer: Vec<i16> = Vec::new();
+                let bytes_written = lame
+                    .encode(&empty_buffer, &empty_buffer, &mut flush_buffer)
+                    .map_err(|e| anyhow!("Lame flush error: {:?}", e))?;
+
+                flush_buffer.truncate(bytes_written);
+                output.extend_from_slice(&flush_buffer);
+            }
+            _ => unreachable!(), // We've already validated the channel count
+        }
+
+        Ok(output)
     }
 }

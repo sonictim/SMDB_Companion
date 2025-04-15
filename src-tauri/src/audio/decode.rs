@@ -376,23 +376,37 @@ pub fn are_channels_identical(path: &Path) -> bool {
         Ok(f) => Box::new(f),
         Err(_) => return false, // Handle errors gracefully
     };
+
     let mss = MediaSourceStream::new(file, Default::default());
-    let hint = Hint::new();
+
+    // Create a hint with the file extension to help with format detection
+    let mut hint = Hint::new();
+    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        hint.with_extension(&ext.to_lowercase());
+    }
+
     let format_opts: FormatOptions = Default::default();
     let metadata_opts: MetadataOptions = Default::default();
     let decoder_opts: DecoderOptions = Default::default();
+
     let probed =
         match symphonia::default::get_probe().format(&hint, mss, &format_opts, &metadata_opts) {
             Ok(p) => p,
             Err(_) => return false,
         };
+
     let mut format = probed.format;
-    let track = format.default_track().unwrap();
+    let track = match format.default_track() {
+        Some(t) => t,
+        None => return false,
+    };
+
     let mut decoder =
         match symphonia::default::get_codecs().make(&track.codec_params, &decoder_opts) {
             Ok(d) => d,
             Err(_) => return false,
         };
+
     let track_id = track.id;
     let channels = track
         .codec_params
@@ -409,6 +423,15 @@ pub fn are_channels_identical(path: &Path) -> bool {
 
     // Used to track if we've found any differences between channels
     let mut all_channels_identical = true;
+
+    // Check if it's an AIFF file and adjust epsilon accordingly
+    let is_aiff = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase() == "aif" || e.to_lowercase() == "aiff")
+        .unwrap_or(false);
+
+    let epsilon = if is_aiff { 1e-4 } else { 1e-6 };
 
     loop {
         let packet = match format.next_packet() {
@@ -447,8 +470,6 @@ pub fn are_channels_identical(path: &Path) -> bool {
 
                         // Compare first channel with all other channels
                         for ch in 1..num_channels {
-                            // Use a small epsilon for floating point comparison
-                            let epsilon = 1e-6;
                             if (samples[frame * num_channels + ch] - base_sample).abs() > epsilon {
                                 all_channels_identical = false;
                                 break;
