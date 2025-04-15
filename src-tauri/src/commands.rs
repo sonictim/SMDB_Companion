@@ -152,24 +152,8 @@ async fn run_search(
         total += 1;
     }
 
-    app.emit(
-        "search-status",
-        StatusUpdate {
-            stage: "starting".into(),
-            progress: counter * 100 / total,
-            message: "Starting search...".into(),
-        },
-    )
-    .ok();
-    app.emit(
-        "search-sub-status",
-        StatusUpdate {
-            stage: "starting".into(),
-            progress: 0,
-            message: "Gathering records from database...".into(),
-        },
-    )
-    .ok();
+    app.status("starting", counter * 100 / total, "Starting search...");
+    app.substatus("starting", 0, "Gathering records from database...");
 
     counter += 1;
     let _ = db.fetch_all_filerecords(&enabled, &pref, &app).await;
@@ -179,15 +163,12 @@ async fn run_search(
     }
 
     if enabled.dbcompare {
-        app.emit(
-            "search-status",
-            StatusUpdate {
-                stage: "compare".into(),
-                progress: counter * 100 / total,
-                message: format!("Comparing records against {}", enabled.compare_db),
-            },
-        )
-        .unwrap();
+        app.status(
+            "compare",
+            counter * 100 / total,
+            &format!("Comparing records against {}", enabled.compare_db),
+        );
+
         counter += 1;
         db.compare_search(&enabled, &pref, &app).await;
     }
@@ -197,40 +178,26 @@ async fn run_search(
     }
 
     if enabled.basic {
-        app.emit(
-            "search-status",
-            StatusUpdate {
-                stage: "dupes".into(),
-                progress: counter * 100 / total,
-                message: "Performing Duplicate Search".into(),
-            },
-        )
-        .unwrap();
+        app.status(
+            "dupes",
+            counter * 100 / total,
+            "Performing Duplicate Search",
+        );
+
         counter += 1;
         db.dupe_search(&pref, &enabled, &app);
 
-        app.emit(
-            "search-sub-status",
-            StatusUpdate {
-                stage: "starting".into(),
-                progress: 10,
-                message: "Sorting Records".into(),
-            },
-        )
-        .unwrap();
+        app.substatus("starting", 10, "Sorting Records");
 
         db.records.sort_by(|a, b| a.root.cmp(&b.root));
     }
     if enabled.dual_mono {
-        app.emit(
-            "search-status",
-            StatusUpdate {
-                stage: "dualm".into(),
-                progress: counter * 100 / total,
-                message: "Performing Dual Mono Search".into(),
-            },
-        )
-        .unwrap();
+        app.status(
+            "dualm",
+            counter * 100 / total,
+            "Performing Dual Mono Search",
+        );
+
         counter += 1;
         db.dual_mono_search(&pref, &app).await;
     }
@@ -239,30 +206,19 @@ async fn run_search(
         return Err("Aborted".to_string());
     }
     if enabled.waveform {
-        app.emit(
-            "search-status",
-            StatusUpdate {
-                stage: "basic".into(),
-                progress: counter * 100 / total,
-                message: "Analyzing audio content for waveform analysis".into(),
-            },
-        )
-        .unwrap();
+        app.status(
+            "waveform",
+            counter * 100 / total,
+            "Analyzing audio content for waveform analysis",
+        );
+
         counter += 1;
 
         let _ = db.wave_search_chromaprint(&pref, &app).await;
     }
     {}
+    app.status("complete", 100, "Search completed! Gathering Results");
 
-    app.emit(
-        "search-status",
-        StatusUpdate {
-            stage: "complete".into(),
-            progress: counter * 100 / total,
-            message: "Search completed!  Gathering Results".into(),
-        },
-    )
-    .unwrap();
     println!("Search Ended");
     Ok(db.records_2_frontend().await)
 }
@@ -293,65 +249,32 @@ pub async fn remove_records(
     let mut state = state.lock().await;
 
     if clone {
-        app.emit(
-            "remove-status",
-            StatusUpdate {
-                stage: "starting".into(),
-                progress: 20,
-                message: "Creating Safety Copy of Current Database...".into(),
-            },
-        )
-        .ok();
+        app.rstatus("starting", 0, "Creating Safety Copy of Current Database...");
+
         state.db = state.db.create_clone(&clone_tag).await;
     }
-    app.emit(
-        "remove-status",
-        StatusUpdate {
-            stage: "starting".into(),
-            progress: 40,
-            message: "Removing Records from {}...".into(),
-        },
-    )
-    .ok();
+    app.rstatus("starting", 40, "Removing Records from Database...");
+
     let _ = state.db.remove(&records, &app).await;
-    app.emit(
-        "remove-status",
-        StatusUpdate {
-            stage: "starting".into(),
-            progress: 70,
-            message: match delete {
-                Delete::Trash => "Moving files to Trash",
-                Delete::Delete => "Deleting Files",
-                Delete::Keep => "Cleaning up....",
-            }
-            .into(),
+    app.rstatus(
+        "starting",
+        70,
+        match delete {
+            Delete::Trash => "Moving files to Trash",
+            Delete::Delete => "Deleting Files",
+            Delete::Keep => "Cleaning up....",
         },
-    )
-    .ok();
+    );
+
     let _ = delete.delete_files(files, &app);
 
     if strip_dual_mono {
-        app.emit(
-            "remove-status",
-            StatusUpdate {
-                stage: "starting".into(),
-                progress: 85,
-                message: "Stripping Dual Mono Records...".into(),
-            },
-        )
-        .ok();
+        app.rstatus("starting", 85, "Stripping Dual Mono Records...");
+
         let _ = state.db.clean_multi_mono(&app, &dual_mono).await;
     }
     println!("Remove Ended");
-    app.emit(
-        "remove-status",
-        StatusUpdate {
-            stage: "complete".into(),
-            progress: 100,
-            message: "Success! Removal is complete".into(),
-        },
-    )
-    .ok();
+    app.rstatus("complete", 100, "Success! Removal is complete");
 
     Ok(state.db.get_name().unwrap_or(Arc::from("Select Database")))
 }
@@ -382,28 +305,17 @@ pub async fn find(
             .await
             .unwrap();
         println!("{} Rows Found", rows.len());
-        app.emit(
-            "search-status",
-            StatusUpdate {
-                stage: "starting".into(),
-                progress: 50,
-                message: format!("{} Records Found", rows.len()),
-            },
-        )
-        .ok();
+        app.status("starting", 50, &format!("{} Records Found", rows.len()));
+
         let new_records: Vec<FileRecord> = rows
             .par_iter()
             .enumerate()
             .map(|(i, row)| {
-                app.emit(
-                    "search-sub-status",
-                    StatusUpdate {
-                        stage: "processing".into(),
-                        progress: (i * 100 / rows.len()) as u64,
-                        message: format!("Processing: {}/{} Records", i, rows.len()),
-                    },
-                )
-                .ok();
+                app.substatus(
+                    "processing",
+                    i * 100 / rows.len(),
+                    &format!("Processing: {}/{} Records", i, rows.len()),
+                );
 
                 FileRecord::new(row, &Enabled::default(), &pref, true)
             })

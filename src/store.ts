@@ -121,6 +121,18 @@ const gruvboxColors = {
     inactiveColor: "#928374"  // Gruvbox gray
 };
 
+const lcarsColors = {
+    primaryBg: "#000000",
+    secondaryBg: "#1b1b1b",
+    textColor: "#FFCC33",
+    topbarColor: "#FF9966",
+    accentColor: "#CC6699",
+    hoverColor: "#6699CC",
+    warningColor: "#FF6666",
+    warningHover: "#CC3333",
+    inactiveColor: "#666666",
+};
+
 export const defaultAlgorithms: Algorithm[] = [
     { id: 'basic', name: 'Duplicate Search', enabled: true },
     { id: 'waveform', name: 'Audio Content Comparison', enabled: false, db: null },
@@ -507,7 +519,8 @@ const defaultPresets: Preset[] = [
     // { name: "One Dark", pref: { ...defaultPreferences, colors: oneDarkColors } },
     { name: "Tokyo Night", pref: { ...defaultPreferences, colors: tokyoNightColors } },
     { name: "Monokai Pro", pref: { ...defaultPreferences, colors: monokaiProColors } },
-    { name: "Gruvbox", pref: { ...defaultPreferences, colors: gruvboxColors } }
+    { name: "Gruvbox", pref: { ...defaultPreferences, colors: gruvboxColors } },
+    { name: "LCARS", pref: { ...defaultPreferences, colors: lcarsColors } },
 ];
 
 export const PresetsStore = writable<Preset[]>(storedPresets ? JSON.parse(storedPresets) : defaultPresets);

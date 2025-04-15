@@ -141,27 +141,19 @@ impl Database {
                     {
                         return None;
                     }
-                    app.emit(
-                        "search-status",
-                        StatusUpdate {
-                            stage: "fingerprinting".into(),
-                            progress: (new_completed * 100 / total_records) as u64,
-                            message: format!(
-                                "Generating Audio Fingerprints: ({}/{}) ",
-                                new_completed, total_records
-                            ),
-                        },
-                    )
-                    .ok();
-                    app.emit(
-                        "search-sub-status",
-                        StatusUpdate {
-                            stage: "fingerprinting".into(),
-                            progress: ((new_completed % batch_size) * 100 / batch_size) as u64,
-                            message: format!("{} ", record.get_filename()),
-                        },
-                    )
-                    .ok();
+                    app.status(
+                        "fingerprinting",
+                        new_completed * 100 / total_records,
+                        &format!(
+                            "Generating Auio Fingerprints: ({}/{})",
+                            new_completed, total_records
+                        ),
+                    );
+                    app.substatus(
+                        "fingerprinting",
+                        (new_completed % batch_size) * 100 / batch_size,
+                        record.get_filename(),
+                    );
 
                     let fingerprint_result = record.get_chromaprint_fingerprint();
 
@@ -193,223 +185,187 @@ impl Database {
         Ok(())
     }
 
-    async fn subset_match_ai(&mut self, pref: &Preferences, app: &AppHandle) -> Result<(), String> {
-        app.emit(
-            "search-sub-status",
-            StatusUpdate {
-                stage: "subset".into(),
-                progress: 0,
-                message: "Starting audio subset detection...".into(),
-            },
-        )
-        .ok();
+    // async fn subset_match_ai(&mut self, pref: &Preferences, app: &AppHandle) -> Result<(), String> {
+    //     app.substatus("subset", 0, "Starting audio subset detection...");
 
-        // OPTIMIZATION 1: Cache durations to avoid repeated calculation
-        let duration_cache: HashMap<usize, f64> = self
-            .records
-            .iter()
-            .map(|record| (record.id, record.get_duration().unwrap_or(0.0)))
-            .collect();
+    //     // OPTIMIZATION 1: Cache durations to avoid repeated calculation
+    //     let duration_cache: HashMap<usize, f64> = self
+    //         .records
+    //         .iter()
+    //         .map(|record| (record.id, record.get_duration().unwrap_or(0.0)))
+    //         .collect();
 
-        // Sort by duration (descending) and then by channel count (descending)
-        self.records.sort_by(|a, b| {
-            let a_duration = duration_cache.get(&a.id).unwrap_or(&0.0);
-            let b_duration = duration_cache.get(&b.id).unwrap_or(&0.0);
+    //     // Sort by duration (descending) and then by channel count (descending)
+    //     self.records.sort_by(|a, b| {
+    //         let a_duration = duration_cache.get(&a.id).unwrap_or(&0.0);
+    //         let b_duration = duration_cache.get(&b.id).unwrap_or(&0.0);
 
-            match b_duration.partial_cmp(a_duration) {
-                Some(std::cmp::Ordering::Equal) => b.channels.cmp(&a.channels),
-                Some(order) => order,
-                None => std::cmp::Ordering::Equal,
-            }
-        });
+    //         match b_duration.partial_cmp(a_duration) {
+    //             Some(std::cmp::Ordering::Equal) => b.channels.cmp(&a.channels),
+    //             Some(order) => order,
+    //             None => std::cmp::Ordering::Equal,
+    //         }
+    //     });
+    //     app.substatus("subset", 5, "Decoding fingerprints...");
 
-        app.emit(
-            "search-sub-status",
-            StatusUpdate {
-                stage: "subset".into(),
-                progress: 5,
-                message: "Decoding fingerprints...".into(),
-            },
-        )
-        .ok();
+    //     // Decode fingerprints once to avoid repeated work
+    //     let decoded_fingerprints: HashMap<usize, Vec<u32>> = self
+    //         .records
+    //         .par_iter()
+    //         .filter_map(|record| {
+    //             if let Some(fp) = &record.fingerprint {
+    //                 if let Ok(decoded) = decode_chromaprint(fp) {
+    //                     return Some((record.id, decoded));
+    //                 }
+    //             }
+    //             None
+    //         })
+    //         .collect();
 
-        // Decode fingerprints once to avoid repeated work
-        let decoded_fingerprints: HashMap<usize, Vec<u32>> = self
-            .records
-            .par_iter()
-            .filter_map(|record| {
-                if let Some(fp) = &record.fingerprint {
-                    if let Ok(decoded) = decode_chromaprint(fp) {
-                        return Some((record.id, decoded));
-                    }
-                }
-                None
-            })
-            .collect();
+    //     let mut parent_children_map: HashMap<usize, Vec<usize>> = HashMap::new();
+    //     let subset_threshold = (pref.similarity_threshold / 100.0) * 0.9;
 
-        let mut parent_children_map: HashMap<usize, Vec<usize>> = HashMap::new();
-        let subset_threshold = (pref.similarity_threshold / 100.0) * 0.9;
+    //     // OPTIMIZATION: Track which records are already identified as children
+    //     let mut identified_children = BitSet::with_capacity(self.records.len());
 
-        // OPTIMIZATION: Track which records are already identified as children
-        let mut identified_children = BitSet::with_capacity(self.records.len());
+    //     // Collect record IDs for direct indexing
+    //     let record_ids: Vec<usize> = self.records.iter().map(|r| r.id).collect();
 
-        // Collect record IDs for direct indexing
-        let record_ids: Vec<usize> = self.records.iter().map(|r| r.id).collect();
+    //     let len = self.records.len();
 
-        let len = self.records.len();
+    //     // Process each record - this is the core of the subset_match_tf algorithm
+    //     for i in 0..len {
+    //         if self.abort.load(Ordering::SeqCst) {
+    //             return Err("Aborted".to_string());
+    //         }
 
-        // Process each record - this is the core of the subset_match_tf algorithm
-        for i in 0..len {
-            if self.abort.load(Ordering::SeqCst) {
-                return Err("Aborted".to_string());
-            }
+    //         // Update progress every 10 records or at milestones
+    //         // if i % 10 == 0 || i == len - 1 {
+    //         app.substatus(
+    //             "subset",
+    //             10 + (i * 80 / len),
+    //             &format!("Finding subset relationships ({}/{})", i + 1, len),
+    //         );
 
-            // Update progress every 10 records or at milestones
-            // if i % 10 == 0 || i == len - 1 {
-            app.emit(
-                "search-sub-status",
-                StatusUpdate {
-                    stage: "subset".into(),
-                    progress: 10 + (i * 80 / len) as u64,
-                    message: format!("Finding subset relationships ({}/{})", i + 1, len),
-                },
-            )
-            .ok();
-            // }
+    //         let record_id = record_ids[i];
 
-            let record_id = record_ids[i];
+    //         // Skip if already identified as a child
+    //         if identified_children.contains(i) {
+    //             continue;
+    //         }
 
-            // Skip if already identified as a child
-            if identified_children.contains(i) {
-                continue;
-            }
+    //         // Get current record's duration for filtering
+    //         let current_duration = *duration_cache.get(&record_id).unwrap_or(&0.0);
 
-            // Get current record's duration for filtering
-            let current_duration = *duration_cache.get(&record_id).unwrap_or(&0.0);
+    //         // OPTIMIZATION: Find if this record is a child of any previous record
+    //         // Filter parents first by duration to reduce comparisons
+    //         let result = parent_children_map
+    //             .par_iter()
+    //             .filter(|(k, _)| {
+    //                 let parent_id = record_ids[**k];
+    //                 let parent_duration = *duration_cache.get(&parent_id).unwrap_or(&0.0);
+    //                 // Only consider records with significantly longer duration as parents
+    //                 parent_duration > current_duration * 1.05
+    //             })
+    //             .find_map_any(|(k, _)| {
+    //                 let parent_id = record_ids[*k];
 
-            // OPTIMIZATION: Find if this record is a child of any previous record
-            // Filter parents first by duration to reduce comparisons
-            let result = parent_children_map
-                .par_iter()
-                .filter(|(k, _)| {
-                    let parent_id = record_ids[**k];
-                    let parent_duration = *duration_cache.get(&parent_id).unwrap_or(&0.0);
-                    // Only consider records with significantly longer duration as parents
-                    parent_duration > current_duration * 1.05
-                })
-                .find_map_any(|(k, _)| {
-                    let parent_id = record_ids[*k];
+    //                 // Get fingerprints
+    //                 let parent_fp = match decoded_fingerprints.get(&parent_id) {
+    //                     Some(fp) => fp,
+    //                     None => return None,
+    //                 };
 
-                    // Get fingerprints
-                    let parent_fp = match decoded_fingerprints.get(&parent_id) {
-                        Some(fp) => fp,
-                        None => return None,
-                    };
+    //                 let child_fp = match decoded_fingerprints.get(&record_id) {
+    //                     Some(fp) => fp,
+    //                     None => return None,
+    //                 };
 
-                    let child_fp = match decoded_fingerprints.get(&record_id) {
-                        Some(fp) => fp,
-                        None => return None,
-                    };
+    //                 // Skip comparison if lengths don't make sense
+    //                 if child_fp.len() > parent_fp.len() {
+    //                     return None;
+    //                 }
 
-                    // Skip comparison if lengths don't make sense
-                    if child_fp.len() > parent_fp.len() {
-                        return None;
-                    }
+    //                 // Do the actual subset comparison
+    //                 if is_fingerprint_subset(child_fp, parent_fp, subset_threshold) {
+    //                     Some(*k)
+    //                 } else {
+    //                     None
+    //                 }
+    //             });
 
-                    // Do the actual subset comparison
-                    if is_fingerprint_subset(child_fp, parent_fp, subset_threshold) {
-                        Some(*k)
-                    } else {
-                        None
-                    }
-                });
+    //         // Update parent-child relationships based on result
+    //         match result {
+    //             Some(key) => {
+    //                 // Mark parent record
+    //                 self.records[key].algorithm.insert(Algorithm::Waveforms);
+    //                 self.records[key].algorithm.insert(Algorithm::Keep);
 
-            // Update parent-child relationships based on result
-            match result {
-                Some(key) => {
-                    // Mark parent record
-                    self.records[key].algorithm.insert(Algorithm::Waveforms);
-                    self.records[key].algorithm.insert(Algorithm::Keep);
+    //                 // Mark child record
+    //                 self.records[i].algorithm.insert(Algorithm::Waveforms);
+    //                 self.records[i].algorithm.remove(&Algorithm::Keep);
 
-                    // Mark child record
-                    self.records[i].algorithm.insert(Algorithm::Waveforms);
-                    self.records[i].algorithm.remove(&Algorithm::Keep);
+    //                 identified_children.insert(i);
+    //                 parent_children_map.entry(key).or_default().push(i);
+    //             }
+    //             None => {
+    //                 parent_children_map.insert(i, vec![]);
+    //             }
+    //         }
 
-                    identified_children.insert(i);
-                    parent_children_map.entry(key).or_default().push(i);
-                }
-                None => {
-                    parent_children_map.insert(i, vec![]);
-                }
-            }
+    //         // Allow other tasks to execute periodically
+    //         if i % 100 == 99 {
+    //             tokio::task::yield_now().await;
+    //         }
+    //     }
+    //     app.substatus(
+    //         "subset",
+    //         90,
+    //         "Organizing records by parent-child relationships...",
+    //     );
 
-            // Allow other tasks to execute periodically
-            if i % 100 == 99 {
-                tokio::task::yield_now().await;
-            }
-        }
+    //     // Sort records to group parents with children
+    //     let mut sorted_records = Vec::with_capacity(self.records.len());
+    //     let mut processed_ids = BitSet::with_capacity(self.records.len());
 
-        app.emit(
-            "search-sub-status",
-            StatusUpdate {
-                stage: "subset".into(),
-                progress: 90,
-                message: "Organizing records by parent-child relationships...".into(),
-            },
-        )
-        .ok();
+    //     // First pass: Process parents and their children
+    //     for (parent_idx, child_indices) in &parent_children_map {
+    //         if processed_ids.contains(*parent_idx) {
+    //             continue;
+    //         }
 
-        // Sort records to group parents with children
-        let mut sorted_records = Vec::with_capacity(self.records.len());
-        let mut processed_ids = BitSet::with_capacity(self.records.len());
+    //         sorted_records.push(self.records[*parent_idx].clone());
+    //         processed_ids.insert(*parent_idx);
 
-        // First pass: Process parents and their children
-        for (parent_idx, child_indices) in &parent_children_map {
-            if processed_ids.contains(*parent_idx) {
-                continue;
-            }
+    //         for &child_idx in child_indices {
+    //             sorted_records.push(self.records[child_idx].clone());
+    //             processed_ids.insert(child_idx);
+    //         }
+    //     }
 
-            sorted_records.push(self.records[*parent_idx].clone());
-            processed_ids.insert(*parent_idx);
+    //     // Second pass: Add remaining records
+    //     for (i, record) in self.records.iter().enumerate() {
+    //         if !processed_ids.contains(i) {
+    //             sorted_records.push(record.clone());
+    //         }
+    //     }
 
-            for &child_idx in child_indices {
-                sorted_records.push(self.records[child_idx].clone());
-                processed_ids.insert(child_idx);
-            }
-        }
+    //     self.records = sorted_records;
+    //     app.substatus(
+    //         "subset",
+    //         100,
+    //         &format!(
+    //             "Subset detection complete: {} parent files, {} subset files",
+    //             parent_children_map.len(),
+    //             identified_children.len()
+    //         ),
+    //     );
 
-        // Second pass: Add remaining records
-        for (i, record) in self.records.iter().enumerate() {
-            if !processed_ids.contains(i) {
-                sorted_records.push(record.clone());
-            }
-        }
-
-        self.records = sorted_records;
-
-        app.emit(
-            "search-sub-status",
-            StatusUpdate {
-                stage: "subset".into(),
-                progress: 100,
-                message: "Subset detection complete!".into(),
-            },
-        )
-        .ok();
-
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
     async fn subset_match(&mut self, pref: &Preferences, app: &AppHandle) -> Result<(), String> {
-        app.emit(
-            "search-sub-status",
-            StatusUpdate {
-                stage: "subset".into(),
-                progress: 0,
-                message: "Starting audio subset detection...".into(),
-            },
-        )
-        .ok();
+        app.substatus("subset", 0, "Starting audio subset detection...");
 
         self.records.sort_by(|a, b| {
             let a_duration = a.get_duration().unwrap_or(0.0);
@@ -425,16 +381,7 @@ impl Database {
                 None => std::cmp::Ordering::Equal,
             }
         });
-
-        app.emit(
-            "search-sub-status",
-            StatusUpdate {
-                stage: "subset".into(),
-                progress: 5,
-                message: "Preparing files for subset analysis...".into(),
-            },
-        )
-        .ok();
+        app.substatus("subset", 5, "Decoding fingerprints for subset analysis...");
 
         let decoded_fingerprints: HashMap<usize, Vec<u32>> = self
             .records
@@ -461,15 +408,12 @@ impl Database {
                 println!("Aborting fingerprint scan - early exit");
                 return Err("Aborted".to_string());
             }
-            app.emit(
-                "search-sub-status",
-                StatusUpdate {
-                    stage: "subset".into(),
-                    progress: 10 + (i * 90 / len) as u64,
-                    message: format!("Finding subset relationships... {}/{}", i, len),
-                },
-            )
-            .ok();
+            app.substatus(
+                "subset",
+                10 + (i * 80 / len),
+                &format!("Finding subset relationships ({}/{})", i + 1, len),
+            );
+
             let record_id = record_ids[i];
 
             let result = parent_children_map
@@ -545,267 +489,203 @@ impl Database {
         Ok(())
     }
 
-    async fn subset_match_old(
-        &mut self,
-        pref: &Preferences,
-        app: &AppHandle,
-    ) -> Result<(), String> {
-        app.emit(
-            "search-sub-status",
-            StatusUpdate {
-                stage: "subset".into(),
-                progress: 0,
-                message: "Starting audio subset detection...".into(),
-            },
-        )
-        .ok();
+    // async fn subset_match_old(
+    //     &mut self,
+    //     pref: &Preferences,
+    //     app: &AppHandle,
+    // ) -> Result<(), String> {
+    //     app.substatus("subset", 0, "Starting audio subset detection...");
 
-        // Filter records to only those with valid Chromaprint fingerprints
-        let valid_records: Vec<&FileRecord> = self
-            .records
-            .par_iter()
-            .filter(|record| {
-                record.fingerprint.as_ref().is_some_and(|fp| {
-                    !fp.is_empty() && &**fp != "FAILED" && !fp.starts_with("PCM:")
-                })
-            })
-            .collect();
+    //     // Filter records to only those with valid Chromaprint fingerprints
+    //     let valid_records: Vec<&FileRecord> = self
+    //         .records
+    //         .par_iter()
+    //         .filter(|record| {
+    //             record.fingerprint.as_ref().is_some_and(|fp| {
+    //                 !fp.is_empty() && &**fp != "FAILED" && !fp.starts_with("PCM:")
+    //             })
+    //         })
+    //         .collect();
 
-        let total_records = valid_records.len();
-        println!(
-            "Found {} records with valid fingerprints for subset analysis",
-            total_records
-        );
+    //     let total_records = valid_records.len();
+    //     println!(
+    //         "Found {} records with valid fingerprints for subset analysis",
+    //         total_records
+    //     );
 
-        if total_records == 0 {
-            return Ok(());
-        }
+    //     if total_records == 0 {
+    //         return Ok(());
+    //     }
 
-        // Step 1: Sort records by duration (longer files first)
-        app.emit(
-            "search-sub-status",
-            StatusUpdate {
-                stage: "subset".into(),
-                progress: 5,
-                message: "Preparing files for subset analysis...".into(),
-            },
-        )
-        .ok();
+    //     // Step 1: Sort records by duration (longer files first)
+    //     app.substatus("subset", 5, "Preparing files for subset analysis...");
 
-        // Create a sorted list of records by duration
-        let mut records_by_duration = valid_records.clone();
-        records_by_duration.sort_by(|a, b| {
-            let a_duration = a.duration.parse::<f64>().unwrap_or(0.0);
-            let b_duration = b.duration.parse::<f64>().unwrap_or(0.0);
-            b_duration
-                .partial_cmp(&a_duration)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+    //     // Create a sorted list of records by duration
+    //     let mut records_by_duration = valid_records.clone();
+    //     records_by_duration.sort_by(|a, b| {
+    //         let a_duration = a.duration.parse::<f64>().unwrap_or(0.0);
+    //         let b_duration = b.duration.parse::<f64>().unwrap_or(0.0);
+    //         b_duration
+    //             .partial_cmp(&a_duration)
+    //             .unwrap_or(std::cmp::Ordering::Equal)
+    //     });
 
-        // Step 2: Decode all fingerprints once to avoid repeated work
-        app.emit(
-            "search-sub-status",
-            StatusUpdate {
-                stage: "subset".into(),
-                progress: 10,
-                message: "Decoding audio fingerprints...".into(),
-            },
-        )
-        .ok();
+    //     // Step 2: Decode all fingerprints once to avoid repeated work
+    //     app.substatus("subset", 10, "Decoding fingerprints...");
 
-        // Map of record ID to decoded fingerprint
-        let decoded_fingerprints: HashMap<usize, Vec<u32>> = valid_records
-            .par_iter()
-            .filter_map(|record| {
-                if let Some(fp) = &record.fingerprint {
-                    if let Ok(decoded) = decode_chromaprint(fp) {
-                        return Some((record.id, decoded));
-                    }
-                }
-                None
-            })
-            .collect();
+    //     // Map of record ID to decoded fingerprint
+    //     let decoded_fingerprints: HashMap<usize, Vec<u32>> = valid_records
+    //         .par_iter()
+    //         .filter_map(|record| {
+    //             if let Some(fp) = &record.fingerprint {
+    //                 if let Ok(decoded) = decode_chromaprint(fp) {
+    //                     return Some((record.id, decoded));
+    //                 }
+    //             }
+    //             None
+    //         })
+    //         .collect();
 
-        println!(
-            "Successfully decoded {} fingerprints",
-            decoded_fingerprints.len()
-        );
+    //     println!(
+    //         "Successfully decoded {} fingerprints",
+    //         decoded_fingerprints.len()
+    //     );
 
-        // Step 3: Find subset relationships
-        app.emit(
-            "search-sub-status",
-            StatusUpdate {
-                stage: "subset".into(),
-                progress: 20,
-                message: "Finding audio subset relationships...".into(),
-            },
-        )
-        .ok();
+    //     // Step 3: Find subset relationships
+    //     app.substatus("subset", 20, "Finding subset relationships...");
 
-        // Track parent-child relationships
-        let mut parent_children_map: HashMap<usize, Vec<usize>> = HashMap::new();
-        let mut child_parent_map: HashMap<usize, usize> = HashMap::new();
+    //     // Track parent-child relationships
+    //     let mut parent_children_map: HashMap<usize, Vec<usize>> = HashMap::new();
+    //     let mut child_parent_map: HashMap<usize, usize> = HashMap::new();
 
-        // For large datasets, process in batches
-        let batch_size = 1000;
-        let total_batches = records_by_duration.len().div_ceil(batch_size);
+    //     // For large datasets, process in batches
+    //     let batch_size = 1000;
+    //     let total_batches = records_by_duration.len().div_ceil(batch_size);
 
-        // Use a threshold slightly lower than for similarity matching
-        let subset_threshold = (pref.similarity_threshold / 100.0) * 0.9;
+    //     // Use a threshold slightly lower than for similarity matching
+    //     let subset_threshold = (pref.similarity_threshold / 100.0) * 0.9;
 
-        for batch_idx in 0..total_batches {
-            let batch_start = batch_idx * batch_size;
-            let batch_end = ((batch_idx + 1) * batch_size).min(records_by_duration.len());
+    //     for batch_idx in 0..total_batches {
+    //         let batch_start = batch_idx * batch_size;
+    //         let batch_end = ((batch_idx + 1) * batch_size).min(records_by_duration.len());
+    //         app.substatus(
+    //             "subset",
+    //             20 + (batch_idx * 60 / total_batches),
+    //             &format!(
+    //                 "Processing batch {}/{} (files {}-{})",
+    //                 batch_idx + 1,
+    //                 total_batches,
+    //                 batch_start + 1,
+    //                 batch_end
+    //             ),
+    //         );
 
-            app.emit(
-                "search-sub-status",
-                StatusUpdate {
-                    stage: "subset".into(),
-                    progress: 20 + (batch_idx * 60 / total_batches) as u64,
-                    message: format!(
-                        "Processing batch {}/{} (files {}-{})",
-                        batch_idx + 1,
-                        total_batches,
-                        batch_start + 1,
-                        batch_end
-                    ),
-                },
-            )
-            .ok();
+    //         // Process this batch of potential parents
+    //         for i in batch_start..batch_end {
+    //             let parent_record = records_by_duration[i];
+    //             let parent_id = parent_record.id;
 
-            // Process this batch of potential parents
-            for i in batch_start..batch_end {
-                let parent_record = records_by_duration[i];
-                let parent_id = parent_record.id;
+    //             // Skip if already marked as a child of another file
+    //             if child_parent_map.contains_key(&parent_id) {
+    //                 continue;
+    //             }
 
-                // Skip if already marked as a child of another file
-                if child_parent_map.contains_key(&parent_id) {
-                    continue;
-                }
+    //             // Get parent fingerprint
+    //             let parent_fp = match decoded_fingerprints.get(&parent_id) {
+    //                 Some(fp) => fp,
+    //                 None => continue,
+    //             };
 
-                // Get parent fingerprint
-                let parent_fp = match decoded_fingerprints.get(&parent_id) {
-                    Some(fp) => fp,
-                    None => continue,
-                };
+    //             let parent_duration = parent_record.duration.parse::<f64>().unwrap_or(0.0);
 
-                let parent_duration = parent_record.duration.parse::<f64>().unwrap_or(0.0);
+    //             // Find potential children (shorter duration files)
+    //             for child_record in &records_by_duration[(i + 1)..] {
+    //                 let child_id = child_record.id;
 
-                // Find potential children (shorter duration files)
-                for child_record in &records_by_duration[(i + 1)..] {
-                    let child_id = child_record.id;
+    //                 // Skip if already identified as a child or if it's the same file
+    //                 if child_parent_map.contains_key(&child_id) || child_id == parent_id {
+    //                     continue;
+    //                 }
 
-                    // Skip if already identified as a child or if it's the same file
-                    if child_parent_map.contains_key(&child_id) || child_id == parent_id {
-                        continue;
-                    }
+    //                 let child_duration = child_record.duration.parse::<f64>().unwrap_or(0.0);
 
-                    let child_duration = child_record.duration.parse::<f64>().unwrap_or(0.0);
+    //                 if child_duration >= parent_duration {
+    //                     continue;
+    //                 }
 
-                    if child_duration >= parent_duration {
-                        continue;
-                    }
+    //                 // Get child fingerprint
+    //                 let child_fp = match decoded_fingerprints.get(&child_id) {
+    //                     Some(fp) => fp,
+    //                     None => continue,
+    //                 };
 
-                    // Get child fingerprint
-                    let child_fp = match decoded_fingerprints.get(&child_id) {
-                        Some(fp) => fp,
-                        None => continue,
-                    };
+    //                 // Check if child is a subset of parent using sliding window approach
+    //                 if is_fingerprint_subset(child_fp, parent_fp, subset_threshold) {
+    //                     // Add relationship
+    //                     parent_children_map
+    //                         .entry(parent_id)
+    //                         .or_default()
+    //                         .push(child_id);
+    //                     child_parent_map.insert(child_id, parent_id);
+    //                 }
+    //             }
 
-                    // Check if child is a subset of parent using sliding window approach
-                    if is_fingerprint_subset(child_fp, parent_fp, subset_threshold) {
-                        // Add relationship
-                        parent_children_map
-                            .entry(parent_id)
-                            .or_default()
-                            .push(child_id);
-                        child_parent_map.insert(child_id, parent_id);
-                    }
-                }
+    //             // Report progress periodically
+    //             if (i - batch_start) % 50 == 0 {
+    //                 let batch_progress = (i - batch_start) * 100 / (batch_end - batch_start);
+    //                 app.substatus(
+    //                     "subset",
+    //                     20 + ((batch_idx * 100 + batch_progress) * 60 / (total_batches * 100)),
+    //                     &format!(
+    //                         "Batch {}/{}: {} subset relationships found",
+    //                         batch_idx + 1,
+    //                         total_batches,
+    //                         parent_children_map.values().map(|v| v.len()).sum::<usize>()
+    //                     ),
+    //                 );
+    //             }
+    //         }
+    //     }
 
-                // Report progress periodically
-                if (i - batch_start) % 50 == 0 {
-                    let batch_progress = (i - batch_start) * 100 / (batch_end - batch_start);
-                    app.emit(
-                        "search-sub-status",
-                        StatusUpdate {
-                            stage: "subset".into(),
-                            progress: 20
-                                + ((batch_idx * 100 + batch_progress) * 60 / (total_batches * 100))
-                                    as u64,
-                            message: format!(
-                                "Batch {}/{}: {} subset relationships found",
-                                batch_idx + 1,
-                                total_batches,
-                                parent_children_map.values().map(|v| v.len()).sum::<usize>()
-                            ),
-                        },
-                    )
-                    .ok();
-                }
-            }
-        }
+    //     // Step 4: Apply algorithm markings
+    //     app.substatus("subset", 85, "Applying algorithm markings...");
 
-        // Step 4: Apply algorithm markings
-        app.emit(
-            "search-sub-status",
-            StatusUpdate {
-                stage: "subset".into(),
-                progress: 85,
-                message: "Applying algorithm markings to records...".into(),
-            },
-        )
-        .ok();
+    //     let total_parents = parent_children_map.len();
+    //     let total_children = child_parent_map.len();
 
-        let total_parents = parent_children_map.len();
-        let total_children = child_parent_map.len();
+    //     println!(
+    //         "Found {} parent files containing {} child subsets",
+    //         total_parents, total_children
+    //     );
 
-        println!(
-            "Found {} parent files containing {} child subsets",
-            total_parents, total_children
-        );
+    //     // Update records with subset relationships
+    //     self.records.par_iter_mut().for_each(|record| {
+    //         let id = record.id;
 
-        // Update records with subset relationships
-        self.records.par_iter_mut().for_each(|record| {
-            let id = record.id;
+    //         if parent_children_map.contains_key(&id) {
+    //             // This is a parent file with subsets
+    //             record.algorithm.insert(Algorithm::Waveforms);
+    //             // Parents keep the Keep algorithm
+    //         } else if let Some(_parent_id) = child_parent_map.get(&id) {
+    //             // This is a child/subset file
+    //             record.algorithm.insert(Algorithm::Waveforms);
+    //             record.algorithm.remove(&Algorithm::Keep);
+    //         }
+    //     });
+    //     app.substatus(
+    //         "subset",
+    //         100,
+    //         &format!(
+    //             "Subset detection complete: {} parent files, {} subset files",
+    //             total_parents, total_children
+    //         ),
+    //     );
 
-            if parent_children_map.contains_key(&id) {
-                // This is a parent file with subsets
-                record.algorithm.insert(Algorithm::Waveforms);
-                // Parents keep the Keep algorithm
-            } else if let Some(_parent_id) = child_parent_map.get(&id) {
-                // This is a child/subset file
-                record.algorithm.insert(Algorithm::Waveforms);
-                record.algorithm.remove(&Algorithm::Keep);
-            }
-        });
-
-        app.emit(
-            "search-sub-status",
-            StatusUpdate {
-                stage: "subset".into(),
-                progress: 100,
-                message: format!(
-                    "Subset detection complete: {} parent files, {} subset files",
-                    total_parents, total_children
-                ),
-            },
-        )
-        .ok();
-
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
     async fn exact_match(&mut self, pref: &Preferences, app: &AppHandle) -> Result<(), String> {
-        app.emit(
-            "search-sub-status",
-            StatusUpdate {
-                stage: "grouping".into(),
-                progress: 0,
-                message: "Grouping identical audio fingerprints...".into(),
-            },
-        )
-        .ok();
+        app.substatus("grouping", 0, "Grouping identical audio fingerprints...");
 
         let records_without_fingerprints: Vec<FileRecord> = self
             .records
@@ -826,19 +706,11 @@ impl Database {
         // Group records by waveform
         for (i, record) in self.records.iter().enumerate() {
             if i % RECORD_DIVISOR == 0 || i == 0 || i == self.records.len() - 1 {
-                app.emit(
-                    "search-sub-status",
-                    StatusUpdate {
-                        stage: "grouping".into(),
-                        progress: ((i + 1) * 100 / self.records.len()) as u64,
-                        message: format!(
-                            "Grouping by fingerprint: {}/{}",
-                            i + 1,
-                            self.records.len()
-                        ),
-                    },
-                )
-                .ok();
+                app.substatus(
+                    "grouping",
+                    (i + 1) * 100 / self.records.len(),
+                    &format!("Grouping by fingerprint: {}/{}", i + 1, self.records.len()),
+                );
             }
 
             if let Some(fingerprint) = &record.fingerprint {
@@ -850,15 +722,7 @@ impl Database {
         }
 
         println!("Marking duplicate audio files");
-        app.emit(
-            "search-sub-status",
-            StatusUpdate {
-                stage: "marking".into(),
-                progress: 0,
-                message: "Marking duplicate audio files...".into(),
-            },
-        )
-        .ok();
+        app.substatus("marking", 0, "Marking duplicate audio files...");
 
         // Process groups
         let group_count = file_groups.len();
@@ -867,15 +731,11 @@ impl Database {
             .enumerate()
             .flat_map(|(i, (_, mut records))| {
                 if i % RECORD_DIVISOR == 0 || i == 0 || i == group_count - 1 {
-                    app.emit(
-                        "search-sub-status",
-                        StatusUpdate {
-                            stage: "marking".into(),
-                            progress: ((i + 1) * 100 / group_count) as u64,
-                            message: format!("Processing group: {}/{}", i + 1, group_count),
-                        },
-                    )
-                    .ok();
+                    app.substatus(
+                        "marking",
+                        (i + 1) * 100 / group_count,
+                        &format!("Processing group: {}/{}", i + 1, group_count),
+                    );
                 }
 
                 if records.len() < 2 {
@@ -898,31 +758,14 @@ impl Database {
         final_records.extend(records_without_fingerprints);
         self.records = final_records;
 
-        app.emit(
-            "search-sub-status",
-            StatusUpdate {
-                stage: "complete".into(),
-                progress: 100,
-                message: "Exact Audio fingerprint analysis complete".into(),
-            },
-        )
-        .ok();
+        app.substatus("complete", 100, "Exact Audio fingerprint analysis complete");
 
         Ok(())
     }
 
     async fn similar_match(&mut self, pref: &Preferences, app: &AppHandle) -> Result<(), String> {
         let threshold = pref.similarity_threshold / 100.0;
-
-        app.emit(
-            "search-sub-status",
-            StatusUpdate {
-                stage: "similarity".into(),
-                progress: 0,
-                message: "Starting combined similarity/hash analysis...".into(),
-            },
-        )
-        .ok();
+        app.substatus("similarity", 0, "Starting similarity analysis...");
 
         // Keep track of all records, not just ones with fingerprints
         let all_records = self.records.clone();
@@ -955,34 +798,22 @@ impl Database {
 
         // STEP 2: Process PCM hashes with exact matching (similar to exact_match function)
         if !pcm_hash_records.is_empty() {
-            app.emit(
-                "search-sub-status",
-                StatusUpdate {
-                    stage: "pcm_hash".into(),
-                    progress: 0,
-                    message: format!("Processing {} PCM hash records...", pcm_hash_records.len()),
-                },
-            )
-            .ok();
+            app.substatus(
+                "pcm_hash",
+                0,
+                &format!("Processing {} PCM hash records...", pcm_hash_records.len()),
+            );
 
             // Group PCM hash records by hash value
             let mut hash_groups: HashMap<Arc<str>, Vec<FileRecord>> = HashMap::new();
 
             for (i, record) in pcm_hash_records.iter().enumerate() {
                 if i % RECORD_DIVISOR == 0 {
-                    app.emit(
-                        "search-sub-status",
-                        StatusUpdate {
-                            stage: "pcm_hash".into(),
-                            progress: ((i + 1) * 50 / pcm_hash_records.len()) as u64,
-                            message: format!(
-                                "Grouping PCM hashes: {}/{}",
-                                i + 1,
-                                pcm_hash_records.len()
-                            ),
-                        },
-                    )
-                    .ok();
+                    app.substatus(
+                        "pcm_hash",
+                        (i + 1) * 100 / pcm_hash_records.len(),
+                        &format!("Grouping PCM hashes: {}/{}", i + 1, pcm_hash_records.len()),
+                    );
                 }
 
                 if let Some(hash) = &record.fingerprint {
@@ -998,19 +829,11 @@ impl Database {
 
             for (i, (_, mut records)) in hash_groups.into_iter().enumerate() {
                 if i % RECORD_DIVISOR == 0 {
-                    app.emit(
-                        "search-sub-status",
-                        StatusUpdate {
-                            stage: "pcm_hash".into(),
-                            progress: 50 + ((i + 1) * 50 / hash_group_count) as u64,
-                            message: format!(
-                                "Processing hash groups: {}/{}",
-                                i + 1,
-                                hash_group_count
-                            ),
-                        },
-                    )
-                    .ok();
+                    app.substatus(
+                        "pcm_hash",
+                        50 + ((i + 1) * 50 / hash_group_count),
+                        &format!("Processing hash groups: {}/{}", i + 1, hash_group_count),
+                    );
                 }
 
                 if records.len() < 2 {
@@ -1044,18 +867,14 @@ impl Database {
         // STEP 3: Process Chromaprint fingerprints with similarity matching
         if !chromaprint_records.is_empty() {
             // Existing similarity match code...
-            app.emit(
-                "search-sub-status",
-                StatusUpdate {
-                    stage: "similarity".into(),
-                    progress: 10,
-                    message: format!(
-                        "Decoding {} Chromaprint fingerprints...",
-                        chromaprint_records.len()
-                    ),
-                },
-            )
-            .ok();
+            app.substatus(
+                "similarity",
+                10,
+                &format!(
+                    "Decoding {} Chromaprint fingerprints...",
+                    chromaprint_records.len()
+                ),
+            );
 
             // Your existing code for processing fingerprints
             let total_records = chromaprint_records.len();
@@ -1068,18 +887,11 @@ impl Database {
                         // Progress reporting code...
                         let update_interval = (total_records.max(20) / 100).max(1);
                         if i % update_interval == 0 {
-                            app.emit(
-                                "search-sub-status",
-                                StatusUpdate {
-                                    stage: "similarity".into(),
-                                    progress: 10 + ((i * 30) / total_records) as u64,
-                                    message: format!(
-                                        "Decoding fingerprints: {}/{}",
-                                        i, total_records
-                                    ),
-                                },
-                            )
-                            .ok();
+                            app.substatus(
+                                "similarity",
+                                10 + ((i * 30) / total_records),
+                                &format!("Decoding fingerprints: {}/{}", i, total_records),
+                            );
                         }
 
                         if let Some(raw_fp) = &record.fingerprint {
@@ -1102,15 +914,11 @@ impl Database {
                     .collect();
 
                 // PROGRESS: Update before starting comparisons
-                app.emit(
-                    "search-sub-status",
-                    StatusUpdate {
-                        stage: "similarity".into(),
-                        progress: 40,
-                        message: "Comparing fingerprints for similarities...".into(),
-                    },
-                )
-                .ok();
+                app.substatus(
+                    "similarity",
+                    40,
+                    "Comparing fingerprints for similarities...",
+                );
 
                 // Second pass - build groups with similarity with progress updates
                 let mut groups: HashMap<usize, Vec<(usize, Vec<u32>)>> = HashMap::new();
@@ -1118,15 +926,11 @@ impl Database {
 
                 // Process in smaller batches and report progress
                 for i in 0..total_records {
-                    app.emit(
-                        "search-sub-status",
-                        StatusUpdate {
-                            stage: "similarity".into(),
-                            progress: (i * 100 / total_records) as u64,
-                            message: format!("Finding similar audio: {}/{}", i, total_records),
-                        },
-                    )
-                    .ok();
+                    app.substatus(
+                        "similarity",
+                        i * 100 / total_records,
+                        &format!("Finding similar audio: {}/{}", i, total_records),
+                    );
 
                     let idx = chromaprint_records[i].id;
                     if let Some(ref fp_i) = decoded_fps[i] {
@@ -1157,19 +961,14 @@ impl Database {
 
                 groups
             };
-
-            app.emit(
-                "search-sub-status",
-                StatusUpdate {
-                    stage: "similarity".into(),
-                    progress: 70,
-                    message: format!(
-                        "Processing {} similarity groups...",
-                        similarity_groups.len()
-                    ),
-                },
-            )
-            .ok();
+            app.substatus(
+                "similarity",
+                70,
+                &format!(
+                    "Processing {} similarity groups...",
+                    similarity_groups.len()
+                ),
+            );
 
             // Process groups with progress updates - optimized for large databases
             let total_groups = similarity_groups.len();
@@ -1184,20 +983,16 @@ impl Database {
 
                     // Update progress more frequently
                     if groups_processed % 10 == 0 || groups_processed == total_groups {
-                        app.emit(
-                            "search-sub-status",
-                            StatusUpdate {
-                                stage: "similarity".into(),
-                                progress: 70 + ((groups_processed * 20) / total_groups) as u64,
-                                message: format!(
-                                    "Processing group {}/{} ({} items)",
-                                    groups_processed,
-                                    total_groups,
-                                    group.len()
-                                ),
-                            },
-                        )
-                        .ok();
+                        app.substatus(
+                            "similarity",
+                            70 + (groups_processed * 20 / total_groups),
+                            &format!(
+                                "Processing group {}/{} ({} items)",
+                                groups_processed,
+                                total_groups,
+                                group.len()
+                            ),
+                        );
                     }
 
                     if group.len() > 1 {
@@ -1263,15 +1058,11 @@ impl Database {
         self.records = processed_records;
 
         // PROGRESS: Final completion update
-        app.emit(
-            "search-sub-status",
-            StatusUpdate {
-                stage: "similarity".into(),
-                progress: 100,
-                message: "Analysis complete: combined fingerprint and hash processing".into(),
-            },
-        )
-        .ok();
+        app.substatus(
+            "similarity",
+            100,
+            "Analysis complete: combined fingerprint and hash processing",
+        );
 
         Ok(())
     }
@@ -1318,8 +1109,8 @@ fn calculate_similarity_simd(fp1: &[u32], fp2: &[u32]) -> f64 {
                 let b = _mm_loadu_si128(fp2[i..].as_ptr() as *const __m128i);
                 let xor = _mm_xor_si128(a, b);
 
-                let count = (_mm_extract_epi64(xor, 0) as u64).count_ones()
-                    + (_mm_extract_epi64(xor, 1) as u64).count_ones();
+                let count = (_mm_extract_epi64(xor, 0)).count_ones()
+                    + (_mm_extract_epi64(xor, 1)).count_ones();
 
                 matching_bits += 128 - count as usize;
                 chunks_processed += 1;
@@ -1608,16 +1399,11 @@ async fn store_fingerprints_batch_optimized(
     }
 
     println!("Storing {} fingerprints in database", fingerprints.len());
-
-    app.emit(
-        "search-sub-status",
-        StatusUpdate {
-            stage: "db-storage".into(),
-            progress: 0,
-            message: format!("Storing {} fingerprints in database...", fingerprints.len()),
-        },
-    )
-    .ok();
+    app.substatus(
+        "db-storage",
+        0,
+        &format!("Storing {} fingerprints in database...", fingerprints.len()),
+    );
 
     match pool.begin().await {
         Ok(mut tx) => {
@@ -1634,15 +1420,11 @@ async fn store_fingerprints_batch_optimized(
 
             for (i, (id, fingerprint)) in fingerprints.iter().enumerate() {
                 if i % 25 == 0 || i == total - 1 {
-                    app.emit(
-                        "search-sub-status",
-                        StatusUpdate {
-                            stage: "db-storage".into(),
-                            progress: ((i + 1) * 100 / total) as u64,
-                            message: format!("Storing fingerprints: {}/{}", i + 1, total),
-                        },
-                    )
-                    .ok();
+                    app.substatus(
+                        "db-storage",
+                        (i + 1) * 100 / total,
+                        &format!("Storing fingerprints: {}/{}", i + 1, total),
+                    );
                 }
 
                 let result = sqlx::query(&format!(
@@ -1671,16 +1453,7 @@ async fn store_fingerprints_batch_optimized(
                     }
                 }
             }
-
-            app.emit(
-                "search-sub-status",
-                StatusUpdate {
-                    stage: "db-storage".into(),
-                    progress: 99,
-                    message: "Committing all changes to database...".to_string(),
-                },
-            )
-            .ok();
+            app.substatus("db-storage", 90, "Committing changes to database...");
 
             match tx.commit().await {
                 Ok(_) => {
@@ -1701,31 +1474,22 @@ async fn store_fingerprints_batch_optimized(
                 }
                 Err(e) => println!("ERROR: Transaction failed to commit: {}", e),
             }
-
-            app.emit(
-                "search-sub-status",
-                StatusUpdate {
-                    stage: "db-storage".into(),
-                    progress: 100,
-                    message: format!(
-                        "Database update complete: {} fingerprints stored",
-                        success_count
-                    ),
-                },
-            )
-            .ok();
+            app.substatus(
+                "db-storage",
+                100,
+                &format!(
+                    "Database update complete: {} fingerprints stored",
+                    success_count
+                ),
+            );
         }
         Err(e) => {
             println!("ERROR: Failed to start transaction: {}", e);
-            app.emit(
-                "search-sub-status",
-                StatusUpdate {
-                    stage: "db-storage".into(),
-                    progress: 100,
-                    message: format!("ERROR: Database update failed: {}", e),
-                },
-            )
-            .ok();
+            app.substatus(
+                "db-storage",
+                100,
+                &format!("ERROR: Failed to start transaction: {}", e),
+            );
         }
     }
 }

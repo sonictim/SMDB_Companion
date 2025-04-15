@@ -5,16 +5,8 @@ impl Database {
         let mut cdb = Database::default();
         cdb.init(Some(PathBuf::from(&*enabled.compare_db)), true)
             .await;
+        app.substatus("compare", 0, "Loading Compare Database");
 
-        app.emit(
-            "search-sub-status",
-            StatusUpdate {
-                stage: "compare".into(),
-                progress: 0,
-                message: "Gathering Records".into(),
-            },
-        )
-        .ok();
         let _ = cdb.fetch_all_filerecords(enabled, pref, app).await;
         let mut total = cdb.get_size();
         if total == 0 {
@@ -28,29 +20,21 @@ impl Database {
             .enumerate()
             .map(|(count, record)| {
                 if count % RECORD_DIVISOR == 0 {
-                    app.emit(
-                        "search-sub-status",
-                        StatusUpdate {
-                            stage: "compare".into(),
-                            progress: (count * 100 / total) as u64,
-                            message: format!("Processing Records into Memory: {}/{}", count, total),
-                        },
-                    )
-                    .ok();
+                    app.substatus(
+                        "compare",
+                        count * 100 / total,
+                        &format!("Processing Records into Memory: {}/{}", count, total),
+                    );
                 }
 
                 record.get_filename()
             })
             .collect();
-        app.emit(
-            "search-sub-status",
-            StatusUpdate {
-                stage: "compare".into(),
-                progress: 100,
-                message: format!("Processing Records into Memory: {}/{}", total, total),
-            },
-        )
-        .ok();
+        app.substatus(
+            "compare",
+            100,
+            &format!("Processing Records into Memory: {}/{}", total, total),
+        );
 
         println!("filenames to check: {:?}", filenames_to_check);
 
@@ -61,15 +45,11 @@ impl Database {
             .enumerate()
             .for_each(|(count, record)| {
                 if count % RECORD_DIVISOR == 0 {
-                    app.emit(
-                        "search-sub-status",
-                        StatusUpdate {
-                            stage: "compare".into(),
-                            progress: (count * 100 / total) as u64,
-                            message: format!("Comparing against Database: {}/{}", count, total),
-                        },
-                    )
-                    .ok();
+                    app.substatus(
+                        "compare",
+                        count * 100 / total,
+                        &format!("Comparing against Database: {}/{}", count, total),
+                    );
                 }
 
                 if filenames_to_check.contains(record.get_filename()) {
@@ -77,15 +57,11 @@ impl Database {
                     record.algorithm.remove(&A::Keep);
                 }
             });
-        app.emit(
-            "search-sub-status",
-            StatusUpdate {
-                stage: "compare".into(),
-                progress: 100,
-                message: format!("Comparing against Database: {}/{}", total, total),
-            },
-        )
-        .ok();
+        app.substatus(
+            "compare",
+            100,
+            &format!("Comparing against Database: {}/{}", total, total),
+        );
     }
 
     pub fn dupe_search(&mut self, pref: &Preferences, enabled: &Enabled, app: &AppHandle) {
@@ -105,15 +81,11 @@ impl Database {
             }
             count += 1;
             if count % RECORD_DIVISOR == 0 {
-                app.emit(
-                    "search-sub-status",
-                    StatusUpdate {
-                        stage: "dupes".into(),
-                        progress: (count * 100 / total) as u64,
-                        message: format!("Oraginizing Records: {}/{}", count, total),
-                    },
-                )
-                .ok();
+                app.substatus(
+                    "dupes",
+                    count * 100 / total,
+                    &format!("Oraginizing Records: {}/{}", count, total),
+                );
             }
             let mut key = Vec::new();
             for m in &pref.match_criteria {
@@ -125,15 +97,11 @@ impl Database {
             }
             file_groups.entry(key).or_default().push(record.clone());
         }
-        app.emit(
-            "search-sub-status",
-            StatusUpdate {
-                stage: "dupes".into(),
-                progress: 100,
-                message: format!("Oraginizing Records: {}/{}", total, total),
-            },
-        )
-        .ok();
+        app.substatus(
+            "dupes",
+            100,
+            &format!("Oraginizing Records: {}/{}", total, total),
+        );
 
         println!("marking dupes");
 
@@ -147,15 +115,11 @@ impl Database {
                     return Vec::new();
                 }
                 if count % RECORD_DIVISOR == 0 {
-                    app.emit(
-                        "search-sub-status",
-                        StatusUpdate {
-                            stage: "dupes".into(),
-                            progress: (count * 100 / total) as u64,
-                            message: format!("Marking Duplicates: {}/{}", count, total),
-                        },
-                    )
-                    .ok();
+                    app.substatus(
+                        "dupes",
+                        count * 100 / total,
+                        &format!("Marking Duplicates: {}/{}", count, total),
+                    );
                 }
                 if records.len() < 2 {
                     return records;
@@ -200,16 +164,12 @@ impl Database {
                 records.into_iter().collect::<Vec<_>>()
             })
             .collect();
+        app.substatus(
+            "dupes",
+            100,
+            &format!("Marking Duplicates: {}/{}", total, total),
+        );
 
-        app.emit(
-            "search-sub-status",
-            StatusUpdate {
-                stage: "dupes".into(),
-                progress: 100,
-                message: format!("Marking Duplicates: {}/{}", total, total),
-            },
-        )
-        .ok();
         self.records = processed_records;
 
         println!("all done!");
@@ -218,7 +178,7 @@ impl Database {
     pub async fn records_2_frontend(&self) -> Vec<FileRecordFrontend> {
         let results: Vec<FileRecordFrontend> = self
             .records
-            .par_iter() // Parallel iterator from Rayon
+            .par_iter()
             .map(|record| {
                 let mut algorithm: Vec<_> = record.algorithm.iter().cloned().collect();
                 algorithm.sort_by(|a, b| {
@@ -265,15 +225,12 @@ impl Database {
                     .par_iter_mut()
                     .filter_map(|record: &mut FileRecord| {
                         let new_completed = completed.fetch_add(1, Ordering::SeqCst) + 1;
-                        app.emit(
-                            "search-sub-status",
-                            StatusUpdate {
-                                stage: "dupes".into(),
-                                progress: (new_completed * 100 / total) as u64,
-                                message: format!("Dual Mono Search: {}/{}", new_completed, total),
-                            },
-                        )
-                        .ok();
+                        app.substatus(
+                            "dupes",
+                            new_completed * 100 / total,
+                            &format!("Dual Mono Search: {}/{}", new_completed, total),
+                        );
+
                         if let Some(b) = record.dual_mono {
                             if b {
                                 record.algorithm.insert(A::DualMono);
@@ -354,16 +311,11 @@ impl Database {
                 for future in futures {
                     if let Ok((path, should_mark)) = future.await {
                         completed += 1;
-
-                        app.emit(
-                            "search-sub-status",
-                            StatusUpdate {
-                                stage: "dupes".into(),
-                                progress: (completed * 100 / total) as u64,
-                                message: format!("Dual Mono Search: {}/{}", completed, total),
-                            },
-                        )
-                        .ok();
+                        app.substatus(
+                            "dupes",
+                            completed * 100 / total,
+                            &format!("Dual Mono Search: {}/{}", completed, total),
+                        );
 
                         if should_mark {
                             dual_mono_paths.insert(path);

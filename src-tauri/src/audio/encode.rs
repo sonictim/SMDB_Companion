@@ -3,7 +3,6 @@ pub use byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
 use flacenc::component::BitRepr;
 use flacenc::error::Verify;
 pub use memmap2::MmapOptions;
-pub use rayon::prelude::*;
 pub use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 
 // Sample normalization constants

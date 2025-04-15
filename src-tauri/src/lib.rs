@@ -12,8 +12,8 @@ pub use regex::Regex;
 pub use sqlx::Row;
 pub use sqlx::sqlite::{SqlitePool, SqliteRow};
 use std::hash::Hash;
-use tauri::App;
-use tauri::menu::{Menu, MenuBuilder, MenuItem, Submenu};
+// use tauri::App;
+// use tauri::menu::{Menu, MenuBuilder, MenuItem, Submenu};
 
 pub const TABLE: &str = "justinmetadata";
 pub const RECORD_DIVISOR: usize = 1231;
@@ -68,31 +68,31 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
-fn menu(app: &mut App) -> Result<()> {
-    let menu = MenuBuilder::new(app)
-        .text("open", "Open")
-        .text("close", "Close")
-        .build()?;
+// fn menu(app: &mut App) -> Result<()> {
+//     let menu = MenuBuilder::new(app)
+//         .text("open", "Open")
+//         .text("close", "Close")
+//         .build()?;
 
-    app.set_menu(menu)?;
+//     app.set_menu(menu)?;
 
-    app.on_menu_event(move |app_handle: &tauri::AppHandle, event| {
-        println!("menu event: {:?}", event.id());
+//     app.on_menu_event(move |app_handle: &tauri::AppHandle, event| {
+//         println!("menu event: {:?}", event.id());
 
-        match event.id().0.as_str() {
-            "open" => {
-                println!("open event");
-            }
-            "close" => {
-                println!("close event");
-            }
-            _ => {
-                println!("unexpected menu event");
-            }
-        }
-    }); // Use Mutex to allow async access
-    Ok(())
-}
+//         match event.id().0.as_str() {
+//             "open" => {
+//                 println!("open event");
+//             }
+//             "close" => {
+//                 println!("close event");
+//             }
+//             _ => {
+//                 println!("unexpected menu event");
+//             }
+//         }
+//     }); // Use Mutex to allow async access
+//     Ok(())
+// }
 
 // In your main.rs or lib.rs
 fn set_library_path() {
@@ -143,8 +143,62 @@ pub struct AppState {
 #[derive(Clone, serde::Serialize)]
 pub struct StatusUpdate {
     stage: String,
-    progress: u64,
+    progress: usize,
     message: String,
+}
+
+pub trait StatusEmitter {
+    fn status(&self, stage: &str, progress: usize, message: &str);
+    fn substatus(&self, stage: &str, progress: usize, message: &str);
+    fn rstatus(&self, stage: &str, progress: usize, message: &str);
+    fn rsubstatus(&self, stage: &str, progress: usize, message: &str);
+}
+
+impl StatusEmitter for AppHandle {
+    fn status(&self, stage: &str, progress: usize, message: &str) {
+        self.emit(
+            "search-status",
+            StatusUpdate {
+                stage: stage.into(),
+                progress,
+                message: message.into(),
+            },
+        )
+        .ok();
+    }
+    fn substatus(&self, stage: &str, progress: usize, message: &str) {
+        self.emit(
+            "search-sub-status",
+            StatusUpdate {
+                stage: stage.into(),
+                progress,
+                message: message.into(),
+            },
+        )
+        .ok();
+    }
+    fn rstatus(&self, stage: &str, progress: usize, message: &str) {
+        self.emit(
+            "remove-status",
+            StatusUpdate {
+                stage: stage.into(),
+                progress,
+                message: message.into(),
+            },
+        )
+        .ok();
+    }
+    fn rsubstatus(&self, stage: &str, progress: usize, message: &str) {
+        self.emit(
+            "remove-sub-status",
+            StatusUpdate {
+                stage: stage.into(),
+                progress,
+                message: message.into(),
+            },
+        )
+        .ok();
+    }
 }
 
 #[derive(Serialize, Deserialize)] // Need Deserialize to receive it back
@@ -587,15 +641,12 @@ impl Database {
         if let Some(pool) = self.get_pool().await {
             // Iterate over chunks of IDs
             for chunk in ids.chunks(BATCH_SIZE) {
-                app.emit(
-                    "remove-status",
-                    StatusUpdate {
-                        stage: "removing".into(),
-                        progress: (counter * 100 / ids.len()) as u64,
-                        message: format!("removing records...  {}/{}", counter, ids.len()),
-                    },
-                )
-                .ok();
+                app.rstatus(
+                    "removing",
+                    counter * 100 / ids.len(),
+                    &format!("removing records... {}/{}", counter, ids.len()),
+                );
+
                 counter += BATCH_SIZE;
                 // Create placeholders for each ID in the chunk
                 let placeholders = std::iter::repeat("?")
@@ -615,15 +666,7 @@ impl Database {
                 // Execute the query
                 query_builder.execute(&pool).await?;
             }
-            app.emit(
-                "remove-status",
-                StatusUpdate {
-                    stage: "complete".into(),
-                    progress: 100,
-                    message: "Records successfully removed".into(),
-                },
-            )
-            .ok();
+            app.rstatus("complete", 100, "Records successfully removed");
         }
         Ok(())
     }
@@ -639,20 +682,11 @@ impl Database {
         records.par_iter().for_each(|record| {
             let new_completed = completed.fetch_add(1, Ordering::SeqCst) + 1;
             let path = Path::new(&record.path);
-            app.emit(
-                "remove-sub-status",
-                StatusUpdate {
-                    stage: "clean multi mono".into(),
-                    progress: (new_completed * 100 / records.len()) as u64,
-                    message: path
-                        .file_name()
-                        .unwrap_or_default()
-                        .to_str()
-                        .unwrap_or("")
-                        .to_string(),
-                },
-            )
-            .ok();
+            app.rsubstatus(
+                "clean multi mono",
+                new_completed * 100 / records.len(),
+                path.file_name().unwrap_or_default().to_str().unwrap_or(""),
+            );
 
             let mut decoded = audio::decode::decode_to_buffer(path);
             if decoded.strip_multi_mono().is_ok() {
@@ -695,32 +729,18 @@ impl Database {
             .map(|(count, row)| {
                 let new_completed = completed.fetch_add(1, Ordering::SeqCst) + 1;
                 if new_completed % RECORD_DIVISOR == 0 {
-                    app.emit(
-                        "search-sub-status",
-                        StatusUpdate {
-                            stage: "gather".into(),
-                            progress: (new_completed * 100 / rows.len()) as u64,
-                            message: format!(
-                                "Processing Records into Memory: {}/{}",
-                                count,
-                                rows.len()
-                            ),
-                        },
-                    )
-                    .ok();
+                    app.substatus(
+                        "gather",
+                        new_completed * 100 / rows.len(),
+                        format!("Processing Records into Memory: {}/{}", count, rows.len())
+                            .as_str(),
+                    );
                 }
                 FileRecord::new(row, enabled, pref, self.is_compare)
             })
             .collect();
-        app.emit(
-            "search-sub-status",
-            StatusUpdate {
-                stage: "gather".into(),
-                progress: 100,
-                message: "Complete".into(),
-            },
-        )
-        .ok();
+        app.substatus("gather", 100, "Complete");
+
         records.extend(new_records);
         self.records = records;
         Ok(())
@@ -809,34 +829,27 @@ impl Database {
 
                 // Update progress
                 counter += chunk.len();
-                app.emit(
-                    "remove-status",
-                    StatusUpdate {
-                        stage: "updating".into(),
-                        progress: (counter * 100 / record_ids.len()) as u64,
-                        message: format!(
-                            "Updating channel metadata: {}/{}",
-                            counter,
-                            record_ids.len()
-                        ),
-                    },
-                )
-                .ok();
+                app.rstatus(
+                    "updating",
+                    counter * 100 / record_ids.len(),
+                    format!(
+                        "Updating channel metadata: {}/{}",
+                        counter,
+                        record_ids.len()
+                    )
+                    .as_str(),
+                );
             }
 
             // Commit the transaction
             tx.commit().await?;
 
             // Final status update
-            app.emit(
-                "remove-status",
-                StatusUpdate {
-                    stage: "complete".into(),
-                    progress: 100,
-                    message: format!("Updated {} records to mono", record_ids.len()),
-                },
-            )
-            .ok();
+            app.rstatus(
+                "complete",
+                100,
+                format!("Updated {} records to mono", record_ids.len()).as_str(),
+            );
         }
 
         Ok(())
@@ -947,15 +960,11 @@ async fn batch_store_data_optimized(
 
     println!("Storing {} {} in database", data.len(), name);
 
-    app.emit(
-        "search-sub-status",
-        StatusUpdate {
-            stage: "db-storage".into(),
-            progress: 0,
-            message: format!("Storing {} {} in database...", name, data.len()),
-        },
-    )
-    .ok();
+    app.substatus(
+        "db-storage",
+        0,
+        format!("Storing {} {} in database...", name, data.len()).as_str(),
+    );
 
     match pool.begin().await {
         Ok(mut tx) => {
@@ -972,15 +981,11 @@ async fn batch_store_data_optimized(
 
             for (i, (id, d)) in data.iter().enumerate() {
                 if i % 25 == 0 || i == total - 1 {
-                    app.emit(
-                        "search-sub-status",
-                        StatusUpdate {
-                            stage: "db-storage".into(),
-                            progress: ((i + 1) * 100 / total) as u64,
-                            message: format!("Storing {}: {}/{}", name, i + 1, total),
-                        },
-                    )
-                    .ok();
+                    app.substatus(
+                        "db-storage",
+                        (i + 1) * 100 / total,
+                        format!("Storing {}: {}/{}", name, i + 1, total).as_str(),
+                    );
                 }
 
                 let result = sqlx::query(&format!(
@@ -1009,16 +1014,14 @@ async fn batch_store_data_optimized(
                     }
                 }
             }
-
-            app.emit(
-                "search-sub-status",
-                StatusUpdate {
-                    stage: "db-storage".into(),
-                    progress: 99,
-                    message: "Committing all changes to database...".to_string(),
-                },
-            )
-            .ok();
+            app.substatus(
+                "db-storage",
+                99,
+                &format!(
+                    "Committing all changes to database: {} {}s updated, {} errors",
+                    success_count, name, error_count
+                ),
+            );
 
             match tx.commit().await {
                 Ok(_) => {
@@ -1039,31 +1042,23 @@ async fn batch_store_data_optimized(
                 }
                 Err(e) => println!("ERROR: Transaction failed to commit: {}", e),
             }
-
-            app.emit(
-                "search-sub-status",
-                StatusUpdate {
-                    stage: "db-storage".into(),
-                    progress: 100,
-                    message: format!(
-                        "Database update complete: {} {} stored",
-                        success_count, name
-                    ),
-                },
-            )
-            .ok();
+            app.substatus(
+                "db-storage",
+                100,
+                format!(
+                    "Database update complete: {} {} stored",
+                    success_count, name
+                )
+                .as_str(),
+            );
         }
         Err(e) => {
             println!("ERROR: Failed to start transaction: {}", e);
-            app.emit(
-                "search-sub-status",
-                StatusUpdate {
-                    stage: "db-storage".into(),
-                    progress: 100,
-                    message: format!("ERROR: Database update failed: {}", e),
-                },
-            )
-            .ok();
+            app.substatus(
+                "db-storage",
+                100,
+                &format!("ERROR: Databaes update failed: {}", e),
+            );
         }
     }
 }
