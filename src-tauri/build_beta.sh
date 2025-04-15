@@ -11,6 +11,9 @@ export APPLE_ID
 export APPLE_PASSWORD
 export APPLE_TEAM_ID
 
+
+
+
 # 1. Extract version from tauri.conf.json
 if command -v jq &> /dev/null; then
   # Using jq if available
@@ -82,6 +85,7 @@ cargo tauri build --target universal-apple-darwin
 
 # Define destination directory
 DEST_DIR="/Users/tfarrell/Documents/Website/smdbc.com/private/beta"
+VERSION_FILE="$DEST_DIR/latest_ver"
 
 # Create destination directory if it doesn't exist
 mkdir -p "$DEST_DIR"
@@ -110,4 +114,7 @@ else
   exit 1
 fi
 
-cp -R  ./target/universal-apple-darwin/release/bundle/macos/SMDB\ Companion.app /Applications/
+echo "$VERSION" | tee  "$VERSION_FILE"
+
+
+# cp -R  ./target/universal-apple-darwin/release/bundle/macos/SMDB\ Companion.app /Applications/
