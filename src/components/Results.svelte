@@ -69,9 +69,30 @@
         return items.filter((item) => item.algorithm.includes("Keep"));
       case "Remove":
         return items.filter((item) => !item.algorithm.includes("Keep"));
+      case "audiosuite":
+        return items.filter((item) => item.algorithm.includes("Tags"));
+      case "dual_mono":
+        return items.filter((item) => item.algorithm.includes("DualMono"));
+      case "filename":
+        return items.filter((item) =>
+          item.algorithm.includes("SimilarFilename")
+        );
+      case "waveform":
+        return items.filter(
+          (item) =>
+            item.algorithm.includes("Waveforms") ||
+            item.algorithm.includes("SimilarAudio") ||
+            item.algorithm.includes("waveform")
+        );
       default:
-        // Match specific algorithm name
-        return items.filter((item) => item.algorithm.includes(filter));
+        // For algorithm filters, check if the filter name matches any algorithm in the item
+        // Try both exact match and lowercase match for better compatibility
+        return items.filter((item) =>
+          item.algorithm.some(
+            (algo) =>
+              algo === filter || algo.toLowerCase() === filter.toLowerCase()
+          )
+        );
     }
   }
 

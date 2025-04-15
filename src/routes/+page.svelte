@@ -133,7 +133,7 @@
         colors.secondaryBg ?? "#2a2a2a"
       );
       document.documentElement.style.setProperty(
-        "--color",
+        "--text-color",
         colors.textColor ?? "#ffffff"
       );
       document.documentElement.style.setProperty(
