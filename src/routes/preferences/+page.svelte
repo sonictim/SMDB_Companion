@@ -23,7 +23,12 @@
     defaultAlgorithms,
     // algorithmsStore,
   } from "../../store";
-  import type { Preferences } from "../../store";
+  import type {
+    Algorithm,
+    Colors,
+    Preferences,
+    PreservationLogic,
+  } from "../../store";
   import { get } from "svelte/store";
   import { listen } from "@tauri-apps/api/event";
   import { initColorHandling } from "../../store";
@@ -82,53 +87,151 @@
   }
 
   function loadPreset() {
+    // First create a fresh copy of default preferences as our base
+    const defaultPrefs = structuredClone(defaultPreferences);
+
     if (selectedPreset === "Default") {
-      // Get fresh default preferences from store's defaultPreferences
-      const defaultPrefs = structuredClone(defaultPreferences); // Create deep copy to avoid reference issues
+      // For Default, simply use defaultPreferences directly
       preferencesStore.set(defaultPrefs);
 
-      // Update CSS variables for colors
-      Object.entries(defaultPrefs.colors).forEach(([key, value]) => {
-        const cssVariable = `--${key.replace(/([A-Z])/g, "-$1").toLowerCase()}`;
-        document.documentElement.style.setProperty(cssVariable, value);
-      });
+      // Apply colors
+      applyColors(defaultPrefs.colors);
 
       console.log("Default preferences restored");
       return;
     }
 
-    // Existing preset loading logic
+    // For other presets, find the preset object
     const presetObj = presets.find((p) => p.name === selectedPreset);
+
     if (presetObj) {
-      // Create deep copies to avoid reference issues
+      // Create a deep copy of the preset's preferences
       const prefCopy = structuredClone(presetObj.pref);
-      const defaultPrefs = structuredClone(defaultPreferences);
-      const pref = { ...defaultPrefs, ...prefCopy }; // Merge with default preferences
 
-      // Ensure algorithms are set correctly
-      if (pref && pref.algorithms) {
-        console.log("Loading algorithms:", prefCopy.algorithms);
+      // Recursively merge with defaults to ensure all properties exist
+      const mergedPrefs = deepMerge(defaultPrefs, prefCopy);
 
-        // Set the preferences store, which will include algorithms
-        preferencesStore.set(pref);
-
-        // Log to verify store was updated
-        console.log("Preferences store updated:", get(preferencesStore));
-      } else {
-        console.error("Invalid algorithms in preset:", selectedPreset);
-        // Fallback to default algorithms if not present
-        pref.algorithms = defaultAlgorithms;
-        preferencesStore.set(pref);
+      // Special handling for arrays that should be replaced, not merged
+      if (Array.isArray(prefCopy.algorithms)) {
+        mergedPrefs.algorithms = prefCopy.algorithms;
       }
 
-      // Update CSS variables
-      Object.entries(pref.colors || {}).forEach(([key, value]) => {
-        const cssVariable = `--${key.replace(/([A-Z])/g, "-$1").toLowerCase()}`;
-        document.documentElement.style.setProperty(cssVariable, value);
-      });
+      if (Array.isArray(prefCopy.match_criteria)) {
+        mergedPrefs.match_criteria = prefCopy.match_criteria;
+      }
+
+      if (Array.isArray(prefCopy.tags)) {
+        mergedPrefs.tags = prefCopy.tags;
+      }
+
+      if (Array.isArray(prefCopy.autoselects)) {
+        mergedPrefs.autoselects = prefCopy.autoselects;
+      }
+
+      if (Array.isArray(prefCopy.preservation_order)) {
+        mergedPrefs.preservation_order = prefCopy.preservation_order;
+      }
+
+      // Ensure algorithms has the correct structure
+      if (!mergedPrefs.algorithms || !Array.isArray(mergedPrefs.algorithms)) {
+        console.warn("Invalid algorithms in preset, using defaults");
+        mergedPrefs.algorithms = defaultAlgorithms;
+      }
+
+      // Ensure all required properties have valid values
+      // firstOpen is required to be a boolean, not undefined
+      if (mergedPrefs.firstOpen === undefined) {
+        mergedPrefs.firstOpen = false;
+      }
+
+      // Update the store with properly merged preferences
+      preferencesStore.set(mergedPrefs as Preferences);
+
+      // Apply colors
+      applyColors(mergedPrefs.colors);
+
+      console.log("Loaded preset:", selectedPreset);
     }
   }
 
+  // Helper function to deeply merge objects, preferring source values
+  function deepMerge(
+    target: {
+      [x: string]: any;
+      firstOpen?: boolean;
+      match_criteria?: string[];
+      ignore_filetype?: boolean;
+      autoselects?: string[];
+      tags?: string[];
+      preservation_order?: PreservationLogic[];
+      columns?: string[];
+      display_all_records?: boolean;
+      safety_db?: boolean;
+      safety_db_tag?: string;
+      erase_files?: string;
+      strip_dual_mono?: boolean;
+      waveform_search_type?: string;
+      similarity_threshold?: number;
+      store_waveforms?: boolean;
+      fetch_waveforms?: boolean;
+      colors?: Colors;
+      algorithms?: Algorithm[];
+    },
+    source: {
+      [x: string]: any;
+      firstOpen?: boolean;
+      match_criteria?: string[];
+      ignore_filetype?: boolean;
+      autoselects?: string[];
+      tags?: string[];
+      preservation_order?: PreservationLogic[];
+      columns?: string[];
+      display_all_records?: boolean;
+      safety_db?: boolean;
+      safety_db_tag?: string;
+      erase_files?: string;
+      strip_dual_mono?: boolean;
+      waveform_search_type?: string;
+      similarity_threshold?: number;
+      store_waveforms?: boolean;
+      fetch_waveforms?: boolean;
+      colors?: Colors;
+      algorithms?: Algorithm[];
+    }
+  ) {
+    const output = { ...target };
+
+    if (isObject(target) && isObject(source)) {
+      Object.keys(source).forEach((key) => {
+        if (isObject(source[key])) {
+          if (!(key in target)) {
+            Object.assign(output, { [key]: source[key] });
+          } else {
+            output[key] = deepMerge(target[key], source[key]);
+          }
+        } else {
+          Object.assign(output, { [key]: source[key] });
+        }
+      });
+    }
+
+    return output;
+  }
+
+  // Helper to check if something is an object
+  function isObject(item: any) {
+    return item && typeof item === "object" && !Array.isArray(item);
+  }
+
+  // Helper function to apply colors to the document
+  function applyColors(colors?: { [s: string]: unknown } | ArrayLike<unknown>) {
+    if (!colors) return;
+
+    Object.entries(colors).forEach(([key, value]) => {
+      const cssVariable = `--${key.replace(/([A-Z])/g, "-$1").toLowerCase()}`;
+      document.documentElement.style.setProperty(cssVariable, String(value));
+    });
+  }
   function deletePreset() {
     if (!selectedPreset || selectedPreset === "Default") {
       console.log("Cannot delete the Default preset.");
@@ -154,7 +257,7 @@
     if (currentPrefs?.colors) {
       Object.entries(currentPrefs.colors).forEach(([key, value]) => {
         const cssVariable = `--${key.replace(/([A-Z])/g, "-$1").toLowerCase()}`;
-        document.documentElement.style.setProperty(cssVariable, value);
+        document.documentElement.style.setProperty(cssVariable, String(value));
       });
     }
 

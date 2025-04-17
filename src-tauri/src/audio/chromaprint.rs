@@ -145,7 +145,7 @@ impl Database {
                         "fingerprinting",
                         new_completed * 100 / total_records,
                         &format!(
-                            "Generating Auio Fingerprints: ({}/{})",
+                            "Generating Audio Fingerprints: ({}/{})",
                             new_completed, total_records
                         ),
                     );
