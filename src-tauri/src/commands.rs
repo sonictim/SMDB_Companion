@@ -289,13 +289,20 @@ pub async fn find(
     app: AppHandle,
 ) -> Result<Vec<FileRecordFrontend>, String> {
     println!("Starting Search");
-    {
+
+    // Use a scope to ensure the mutex is released promptly
+    let _ = {
         let mut state = state.lock().await;
         let case = if case_sensitive { "GLOB" } else { "LIKE" };
         let query =
-            format!("SELECT rowid, filepath, duration FROM {TABLE} WHERE {column} {case} ?");
+            // format!("SELECT rowid, filepath, duration FROM {TABLE} WHERE {column} {case} ?");
+            format!("SELECT rowid, filepath, duration, _fingerprint, description, channels, bitdepth, samplerate, _DualMono  FROM {TABLE} WHERE {column} {case} ?");
+
+        // Get pool with error handling
         let pool = state.db.get_pool().await.unwrap();
-        let rows = sqlx::query(&query)
+
+        // Execute query with error handling
+        let rows = match sqlx::query(&query)
             .bind(if case_sensitive {
                 format!("*{}*", find) // GLOB wildcard (*)
             } else {
@@ -303,30 +310,50 @@ pub async fn find(
             })
             .fetch_all(&pool)
             .await
-            .unwrap();
+        {
+            Ok(rows) => rows,
+            Err(e) => return Err(format!("Database query failed: {}", e)),
+        };
+
         println!("{} Rows Found", rows.len());
         app.status("starting", 50, &format!("{} Records Found", rows.len()));
 
-        let new_records: Vec<FileRecord> = rows
-            .par_iter()
-            .enumerate()
-            .map(|(i, row)| {
-                app.substatus(
-                    "processing",
-                    i * 100 / rows.len(),
-                    &format!("Processing: {}/{} Records", i, rows.len()),
-                );
+        // Add a timeout for processing to prevent hanging
+        let processing_timeout = std::time::Duration::from_secs(60); // 60 second timeout
 
-                FileRecord::new(row, &Enabled::default(), &pref, true)
-            })
-            .map(|mut record| {
-                record.algorithm.insert(A::Replace);
-                record.algorithm.remove(&A::Keep);
-                record
-            })
-            .collect();
+        // Process records with error handling and timeout
+        let new_records: Vec<FileRecord> = match tokio::time::timeout(processing_timeout, async {
+            rows.par_iter()
+                .enumerate()
+                .map(|(i, row)| {
+                    app.substatus(
+                        "processing",
+                        i * 100 / rows.len(),
+                        &format!("Processing: {}/{} Records", i, rows.len()),
+                    );
+                    let mut record = FileRecord::new(row, &Enabled::default(), &pref, true);
+                    // Safely create record with error handling
+                    record.algorithm.insert(A::Replace);
+                    record.algorithm.remove(&A::Keep);
+                    Some(record)
+                })
+                .filter_map(|record| record) // Remove None values
+                .collect()
+        })
+        .await
+        {
+            Ok(records) => records,
+            Err(_) => return Err("Processing timed out after 60 seconds".to_string()),
+        };
+
+        // Update the records in the database
         state.db.records = new_records;
-    }
+
+        // Clone to avoid holding the lock longer than needed
+        state.db.records.clone()
+    };
+
+    // Now state is unlocked, get results (which acquires its own lock)
     println!("Search Ended");
     get_results(state).await
 }

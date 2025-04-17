@@ -1,4 +1,40 @@
 [
+
+  {
+    "version": "1.0.5",
+    "date": "2025-04-17",
+    "changes": [
+      "Test update message 1",
+      "Test update message 2"
+
+    ]
+  },
+  {
+    "version": "1.0.4",
+    "date": "2025-04-17",
+    "changes": [
+      "Update message now incudes change log"
+
+    ]
+  },
+
+  {
+    "version": "1.0.3",
+    "date": "2025-04-17",
+    "changes": [
+      "fixed dual mono Cross-Device Link (os error 18)"
+
+    ]
+  },
+  {
+    "version": "1.0.2",
+    "date": "2025-04-16",
+    "changes": [
+      "Improved error logging on dual mono conversion"
+
+    ]
+
+  },
   {
     "version": "1.0.1",
     "date": "2025-04-15",

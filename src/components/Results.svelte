@@ -383,8 +383,8 @@
   }
 
   async function replaceMetadata() {
-    const confirmed = await ask("Are you sure? This is not undoable", {
-      title: "Confirm Replace",
+    const confirmed = await ask("Are you sure? This is NOT undoable", {
+      title: "⚠️ Confirm Replace",
       kind: "warning",
       okLabel: "Yes",
       cancelLabel: "Cancel",
@@ -691,6 +691,7 @@
     ScanText,
     TextSearch,
     SearchCheck,
+    ArrowLeftRight,
   } from "lucide-svelte";
   function getAlgorithmIcon(algoName: string) {
     const iconMap: Record<
@@ -716,6 +717,7 @@
       SimilarAudio: { component: Activity, tooltip: "Similar Audio" },
       ExactPCM: { component: AudioWaveform, tooltip: "Exact PCM Hash" },
       DualMono: { component: SquareEqual, tooltip: "Dual Mono" },
+      Replace: { component: ArrowLeftRight, tooltip: "Replace Metadata" },
       Remove: {
         component: OctagonX,
         tooltip: "Marked for Removal",
@@ -1091,48 +1093,29 @@
     {/if}
   </div>
   <div class="header" style="margin-bottom: 0px; margin-top: 0px;">
-    <span>
-      Remove Records from:
-      <select
-        class="select-field"
-        bind:value={pref.safety_db}
-        on:change={() => preferencesStore.set(pref)}
-      >
-        {#each [{ bool: true, text: "Safety Database Copy" }, { bool: false, text: "Current Database" }] as option}
-          <option value={option.bool}>{option.text}</option>
-        {/each}
-      </select>
-      {#if pref.safety_db}
-        with tag:
-        <input
-          class="input-field"
-          placeholder="thinned"
-          type="text"
-          id="new_db_tag"
-          bind:value={pref.safety_db_tag}
-          on:change={() => preferencesStore.set(pref)}
-        />
-      {:else}
-        <TriangleAlert
-          size="30"
-          class="blinking"
-          style="color: var(--warning-hover); margin-bottom: -10px"
-        />
-      {/if}
-    </span>
-    {#if algoEnabled("dual_mono")}
+    {#if isRemove}
       <span>
-        Dual Mono Files:
+        Remove Records from:
         <select
           class="select-field"
-          bind:value={pref.strip_dual_mono}
+          bind:value={pref.safety_db}
           on:change={() => preferencesStore.set(pref)}
         >
-          {#each [{ id: false, text: "Keep" }, { id: true, text: "Strip" }] as option}
-            <option value={option.id}>{option.text}</option>
+          {#each [{ bool: true, text: "Safety Database Copy" }, { bool: false, text: "Current Database" }] as option}
+            <option value={option.bool}>{option.text}</option>
           {/each}
         </select>
-        {#if pref.strip_dual_mono}
+        {#if pref.safety_db}
+          with tag:
+          <input
+            class="input-field"
+            placeholder="thinned"
+            type="text"
+            id="new_db_tag"
+            bind:value={pref.safety_db_tag}
+            on:change={() => preferencesStore.set(pref)}
+          />
+        {:else}
           <TriangleAlert
             size="30"
             class="blinking"
@@ -1140,22 +1123,43 @@
           />
         {/if}
       </span>
-    {/if}
-    <span>
-      Checked Files:
-      <select class="select-field" on:change={handleFileEraseChange}>
-        {#each [{ id: "Keep", text: "Keep on Disk" }, { id: "Trash", text: "Move To Trash" }, { id: "Delete", text: "Permanently Delete" }] as option}
-          <option value={option.id}>{option.text}</option>
-        {/each}
-      </select>
-      {#if pref.erase_files !== "Keep"}
-        <TriangleAlert
-          size="30"
-          class={pref.erase_files == "Delete" ? "blinking" : ""}
-          style="color: var(--warning-hover); margin-bottom: -10px"
-        />
+      {#if algoEnabled("dual_mono")}
+        <span>
+          Dual Mono Files:
+          <select
+            class="select-field"
+            bind:value={pref.strip_dual_mono}
+            on:change={() => preferencesStore.set(pref)}
+          >
+            {#each [{ id: false, text: "Keep" }, { id: true, text: "Strip" }] as option}
+              <option value={option.id}>{option.text}</option>
+            {/each}
+          </select>
+          {#if pref.strip_dual_mono}
+            <TriangleAlert
+              size="30"
+              class="blinking"
+              style="color: var(--warning-hover); margin-bottom: -10px"
+            />
+          {/if}
+        </span>
       {/if}
-    </span>
+      <span>
+        Checked Files:
+        <select class="select-field" on:change={handleFileEraseChange}>
+          {#each [{ id: "Keep", text: "Keep on Disk" }, { id: "Trash", text: "Move To Trash" }, { id: "Delete", text: "Permanently Delete" }] as option}
+            <option value={option.id}>{option.text}</option>
+          {/each}
+        </select>
+        {#if pref.erase_files !== "Keep"}
+          <TriangleAlert
+            size="30"
+            class={pref.erase_files == "Delete" ? "blinking" : ""}
+            style="color: var(--warning-hover); margin-bottom: -10px"
+          />
+        {/if}
+      </span>
+    {/if}
   </div>
 </div>
 

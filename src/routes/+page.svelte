@@ -46,6 +46,8 @@
 
   let appInitialized = false;
   let initError: unknown = null;
+  let isBeta = false;
+  let versionChanges = "";
 
   function loadPreset(preset: string) {
     // Your existing code
@@ -172,9 +174,25 @@
         "https://smdbc.com/latest.php?token=how-cool-am-i"
       );
       if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
+      const response_beta = await fetch(
+        "https://smdbc.com/latest_beta.php?token=how-cool-am-i"
+      );
+      if (!response_beta.ok) throw new Error(`HTTP error: ${response.status}`);
+      const response_changelog = await fetch(
+        "https://smdbc.com/changelog.php?token=how-cool-am-i"
+      );
+      if (!response_beta.ok) throw new Error(`HTTP error: ${response.status}`);
 
-      const latestVersion = await response.text();
-      const currentVersion = await invoke("get_current_version");
+      let latestVersion = await response.text();
+      const currentVersion: string = await invoke("get_current_version");
+      if (!currentVersion.endsWith(".0")) {
+        isBeta = true;
+        // If the current version ends with .0, use the beta version
+        latestVersion = await response_beta.text();
+      }
+
+      const fullLog = await response_changelog.text();
+      versionChanges = parseChangelog(fullLog, currentVersion);
 
       console.log("Latest version:", latestVersion);
       console.log("Current version:", currentVersion);
@@ -204,6 +222,43 @@
       if (p1 !== p2) return p1 - p2;
     }
     return 0;
+  }
+
+  // Helper function to parse changelog and extract relevant changes
+  function parseChangelog(changelogJson: string, currentVersion: string) {
+    try {
+      // Parse the JSON
+      const changelog = JSON.parse(changelogJson);
+
+      // Compare versions and collect changes from newer versions
+      let relevantChanges = "";
+
+      // Process each version entry
+      changelog.forEach(
+        (entry: { version: string; date: any; changes: any[] }) => {
+          // Compare this version with current version
+          if (compareVersions(entry.version, currentVersion) > 0) {
+            // This is a newer version, add its changes
+            // relevantChanges += `Version ${entry.version} (${entry.date}):\n`;
+
+            // Add each change with bullet points
+            if (Array.isArray(entry.changes)) {
+              entry.changes.forEach((change) => {
+                relevantChanges += `• ${change}\n`;
+              });
+            }
+
+            // Add extra newline between versions
+          }
+        }
+      );
+      relevantChanges += "\n";
+
+      return relevantChanges.trim();
+    } catch (error) {
+      console.error("Error parsing changelog:", error);
+      return "Unable to parse changelog";
+    }
   }
 
   async function fetchColumns() {
@@ -571,16 +626,22 @@
         if (needsUpdate) {
           console.log("Update available:", latest);
           const confirmed = await confirm(
-            "Version " + latest + " is available. Download now?",
+            versionChanges + "\n\nDownload now?",
             {
-              title: "Update Available",
+              title: "Version " + latest + " is available",
               kind: "info",
             }
           );
           if (confirmed) {
             console.log("User confirmed download.");
-            // Open the download page in the default browser
-            await openUrl("https://smdbc.com/download.php");
+
+            if (isBeta) {
+              // Open the beta download page in the default browser
+              await openUrl("https://smdbc.com/beta.php");
+            } else {
+              // Open the stable download page in the default browser
+              await openUrl("https://smdbc.com/download.php");
+            }
           }
         } else {
           console.log("No updates available");
