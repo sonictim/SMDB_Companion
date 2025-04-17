@@ -61,7 +61,15 @@ impl AudioBuffer {
             Err(error) => return Err(error),
         }
 
-        std::fs::rename(temp_file, output_file)?;
-        Ok(())
+        match std::fs::rename(&temp_file, output_file) {
+            Ok(_) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::CrossesDevices => {
+                // If the file already exists, we can just delete the temp file
+                std::fs::copy(&temp_file, output_file)?;
+                std::fs::remove_file(&temp_file)?;
+                Ok(())
+            }
+            Err(e) => Err(e.into()),
+        }
     }
 }

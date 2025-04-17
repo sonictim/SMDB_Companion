@@ -679,27 +679,145 @@ impl Database {
         println!("Cleaning up multi-mono files");
         println!("{} Records Found", records.len());
         let completed = AtomicUsize::new(0);
+        let failures = AtomicUsize::new(0);
+
         records.par_iter().for_each(|record| {
             let new_completed = completed.fetch_add(1, Ordering::SeqCst) + 1;
             let path = Path::new(&record.path);
+            let filename = path.file_name().unwrap_or_default().to_str().unwrap_or("");
+
             app.rsubstatus(
                 "clean multi mono",
                 new_completed * 100 / records.len(),
-                path.file_name().unwrap_or_default().to_str().unwrap_or(""),
+                filename,
             );
 
-            let mut decoded = audio::decode::decode_to_buffer(path);
-            if decoded.strip_multi_mono().is_ok() {
-                let _ = decoded.export(&record.path);
+            // Debug log initial state
+            println!("Processing file: {}", record.path);
+            println!("  ID: {}", record.id);
+
+            // First check if file exists
+            if !path.exists() {
+                failures.fetch_add(1, Ordering::SeqCst);
+                println!("ERROR: File not found: {}", record.path);
+                return;
+            }
+
+            // Check file extension
+            let extension = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("unknown");
+            println!("  Format: {}", extension);
+
+            // Process the file
+            let decoded = audio::decode::decode_to_buffer(path);
+            let mut decoded = {
+                println!(
+                    "  Decoded: {} channels, {} Hz, {:?} bits",
+                    decoded.channels, decoded.sample_rate, decoded.sample_format
+                );
+                decoded
             };
 
-            // let _ = audio::ffmpeg::cleanup_multi_mono(path);
-        });
-        let record_ids = records.iter().map(|record| record.id).collect::<Vec<_>>();
-        self.update_channel_count_to_mono(app, &record_ids).await?;
-        Ok(())
-    }
+            match decoded.strip_multi_mono() {
+                Ok(_) => {
+                    println!("  Strip multi-mono successful");
 
+                    // Verify the buffer is now mono
+                    if decoded.channels != 1 {
+                        failures.fetch_add(1, Ordering::SeqCst);
+                        println!(
+                            "ERROR: Failed to convert to mono - still has {} channels: {}",
+                            decoded.channels, record.path
+                        );
+                    } else {
+                        println!("  Conversion to mono successful");
+
+                        // Only export if we successfully converted to mono
+                        match decoded.export(&record.path) {
+                            Ok(_) => {
+                                // // Verify the exported file
+                                // match verify_exported_file(&record.path) {
+                                //     Ok(true) => println!("  Export successful and verified"),
+                                //     Ok(false) => {
+                                //         failures.fetch_add(1, Ordering::SeqCst);
+                                //         println!(
+                                //             "ERROR: Exported file verification failed: {}",
+                                //             record.path
+                                //         );
+                                //     }
+                                //     Err(err) => {
+                                //         failures.fetch_add(1, Ordering::SeqCst);
+                                //         println!(
+                                //             "ERROR: Failed to verify export: {}: {}",
+                                //             record.path, err
+                                //         );
+                                //     }
+                                // }
+                            }
+                            Err(export_err) => {
+                                failures.fetch_add(1, Ordering::SeqCst);
+                                println!(
+                                    "ERROR: Export failed for {}: {}",
+                                    record.path, export_err
+                                );
+                            }
+                        }
+                    }
+                }
+                Err(strip_err) => {
+                    failures.fetch_add(1, Ordering::SeqCst);
+                    println!(
+                        "ERROR: Strip multi-mono failed for {}: {}",
+                        record.path, strip_err
+                    );
+                }
+            }
+        });
+
+        // Rest of your function remains the same...
+        let record_ids = records.iter().map(|record| record.id).collect::<Vec<_>>();
+
+        // Add summary logging
+        let total = records.len();
+        let failed = failures.load(Ordering::SeqCst);
+        let success = total - failed;
+        println!(
+            "SUMMARY: Total: {}, Successful: {}, Failed: {}",
+            total, success, failed
+        );
+
+        // Only update database if we have records to update
+        if !record_ids.is_empty() {
+            match self.update_channel_count_to_mono(app, &record_ids).await {
+                Ok(_) => {
+                    let fail_count = failures.load(Ordering::SeqCst);
+                    if fail_count > 0 {
+                        app.rsubstatus(
+                            "complete with errors",
+                            100,
+                            &format!("Completed with {} failures", fail_count),
+                        );
+                    } else {
+                        app.rsubstatus("complete", 100, "All files processed successfully");
+                    }
+                    Ok(())
+                }
+                Err(e) => {
+                    app.rsubstatus(
+                        "database error",
+                        100,
+                        &format!("Error updating database: {}", e),
+                    );
+                    Err(e)
+                }
+            }
+        } else {
+            app.rsubstatus("complete", 100, "No valid records to process");
+            Ok(())
+        }
+    }
     pub async fn fetch(&self, query: &str) -> Vec<SqliteRow> {
         if let Some(pool) = self.get_pool().await {
             sqlx::query(query)
