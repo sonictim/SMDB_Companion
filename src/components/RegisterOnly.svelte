@@ -6,6 +6,7 @@
     Loader,
     Square,
     CheckSquare,
+    Smile,
   } from "lucide-svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
@@ -71,23 +72,23 @@
 
 <div class="block">
   <div class="header">
-    <h2>
-      Search Results:
-      <span class="basic-text" style="display: inline-flex; margin: 0;">
-        {total} duplicates found
-      </span>
-    </h2>
+    <h2>Registration</h2>
     <button class="cta-button cancel" on:click={setReg}> Register </button>
   </div>
   <div class="input-group2" style="margin-left: 110px;">
     <label for="case-sensitive">
-      <span>
-        Registration Required to View Results. License can be purchased:
-        <button class="cta-button small" on:click={openPurchaseLink}
-          >HERE</button
-        ></span
-      >
-      <p>Please enter your credentials below:</p>
+      {#if isRegistered}
+        <Smile style="color: var(--topbar-color)" />
+        Succesfully registered! Thank you for your support.
+      {:else}
+        <p>Please enter your credentials below:</p>
+        <span
+          >If you have not yet purchased a license, you can do so by clicking: <button
+            class="cta-button small"
+            on:click={openPurchaseLink}>HERE</button
+          ></span
+        >
+      {/if}
     </label>
   </div>
   <div class="input-group">
@@ -122,20 +123,16 @@
     />
   </div>
 
+  {#if attemptFailed}
+    <p style="margin-left: 110px; color: var(--topbar-color)">
+      Registration Attempt Failed. Please double check your credentials.
+    </p>
+  {/if}
+
   {#if DEBUG_MODE}
     <div class="debug-info">
       Debug: {r2}
     </div>
-  {/if}
-  {#if attemptFailed}
-    <p style="margin-left: 110px;">
-      Registration Attempt Failed. Please double check your credentials.
-    </p>
-  {/if}
-  {#if isRegistered}
-    <p style="margin-left: 110px;">
-      Succesfully Registered! Thank you for your support.
-    </p>
   {/if}
 </div>
 

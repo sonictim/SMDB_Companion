@@ -25,6 +25,7 @@
   import ResultsComponent from "../components/Results.svelte";
   import MetadataComponent from "../components/Metadata.svelte";
   import RegisterComponent from "../components/Register.svelte";
+  import RegisterOnlyComponent from "../components/RegisterOnly.svelte";
   import { registrationStore } from "../store";
   import { get } from "svelte/store";
   export let dbSize = 0;
@@ -522,6 +523,14 @@
           action: togglePreferencesWindow,
         },
         separator,
+        {
+          id: "registration",
+          text: "Registration",
+          action: () => {
+            activeTab = "register";
+          },
+        },
+        separator,
         services,
         separator,
         hide,
@@ -747,6 +756,8 @@
       {/if}
     {:else if activeTab === "metadata"}
       <MetadataComponent bind:activeTab bind:isRemove bind:selectedDb />
+    {:else if activeTab === "register"}
+      <RegisterOnlyComponent bind:isRegistered />
       <!-- <OrderComponent/> -->
     {/if}
   </main>
