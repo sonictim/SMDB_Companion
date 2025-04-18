@@ -36,6 +36,7 @@
   }
 
   async function setReg() {
+    attemptFailed = false;
     registrationStore.set(reg);
     invoke<boolean>("check_reg", { data: reg })
       .then((result) => {
