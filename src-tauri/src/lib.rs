@@ -676,10 +676,15 @@ impl Database {
         app: &AppHandle,
         records: &Vec<DualMono>,
     ) -> Result<(), sqlx::Error> {
+        use std::sync::Mutex;
+
         println!("Cleaning up multi-mono files");
         println!("{} Records Found", records.len());
         let completed = AtomicUsize::new(0);
         let failures = AtomicUsize::new(0);
+
+        // Create a synchronized collection for successful record IDs only
+        let successful_ids = Arc::new(Mutex::new(Vec::with_capacity(records.len())));
 
         records.par_iter().for_each(|record| {
             let new_completed = completed.fetch_add(1, Ordering::SeqCst) + 1;
@@ -737,24 +742,16 @@ impl Database {
                         // Only export if we successfully converted to mono
                         match decoded.export(&record.path) {
                             Ok(_) => {
-                                // // Verify the exported file
-                                // match verify_exported_file(&record.path) {
-                                //     Ok(true) => println!("  Export successful and verified"),
-                                //     Ok(false) => {
-                                //         failures.fetch_add(1, Ordering::SeqCst);
-                                //         println!(
-                                //             "ERROR: Exported file verification failed: {}",
-                                //             record.path
-                                //         );
-                                //     }
-                                //     Err(err) => {
-                                //         failures.fetch_add(1, Ordering::SeqCst);
-                                //         println!(
-                                //             "ERROR: Failed to verify export: {}: {}",
-                                //             record.path, err
-                                //         );
-                                //     }
-                                // }
+                                // SUCCESSFUL PROCESSING - add ID to successful list
+                                match successful_ids.lock() {
+                                    Ok(mut ids) => {
+                                        ids.push(record.id);
+                                    }
+                                    Err(_) => {
+                                        println!("ERROR: Failed to acquire lock on successful_ids");
+                                    }
+                                }
+                                println!("  Export successful");
                             }
                             Err(export_err) => {
                                 failures.fetch_add(1, Ordering::SeqCst);
@@ -776,32 +773,42 @@ impl Database {
             }
         });
 
-        // Rest of your function remains the same...
-        let record_ids = records.iter().map(|record| record.id).collect::<Vec<_>>();
+        // Safely get the successful IDs
+        let successful_ids = match Arc::try_unwrap(successful_ids) {
+            Ok(mutex) => match mutex.into_inner() {
+                Ok(ids) => ids,
+                Err(_) => {
+                    println!("ERROR: Failed to unlock successful_ids mutex");
+                    Vec::new()
+                }
+            },
+            Err(_) => {
+                println!("ERROR: Failed to unwrap Arc for successful_ids");
+                Vec::new()
+            }
+        };
 
         // Add summary logging
         let total = records.len();
         let failed = failures.load(Ordering::SeqCst);
-        let success = total - failed;
+        let success = successful_ids.len();
         println!(
             "SUMMARY: Total: {}, Successful: {}, Failed: {}",
             total, success, failed
         );
 
-        // Only update database if we have records to update
-        if !record_ids.is_empty() {
-            match self.update_channel_count_to_mono(app, &record_ids).await {
+        // Only update database if we have SUCCESSFUL records to update
+        if !successful_ids.is_empty() {
+            match self
+                .update_channel_count_to_mono(app, &successful_ids)
+                .await
+            {
                 Ok(_) => {
-                    let fail_count = failures.load(Ordering::SeqCst);
-                    if fail_count > 0 {
-                        app.rsubstatus(
-                            "complete with errors",
-                            100,
-                            &format!("Completed with {} failures", fail_count),
-                        );
-                    } else {
-                        app.rsubstatus("complete", 100, "All files processed successfully");
-                    }
+                    app.rsubstatus(
+                        "complete with results",
+                        100,
+                        &format!("Updated {} files to mono, {} failures", success, failed),
+                    );
                     Ok(())
                 }
                 Err(e) => {
@@ -814,10 +821,11 @@ impl Database {
                 }
             }
         } else {
-            app.rsubstatus("complete", 100, "No valid records to process");
+            app.rsubstatus("complete", 100, "No files were successfully processed");
             Ok(())
         }
     }
+
     pub async fn fetch(&self, query: &str) -> Vec<SqliteRow> {
         if let Some(pool) = self.get_pool().await {
             sqlx::query(query)

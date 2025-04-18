@@ -17,6 +17,7 @@
   import type { Registration } from "../store";
 
   const DEBUG_MODE = import.meta.env.DEV || false; // Will be true in development, false in production
+  let attemptFailed = false;
 
   let reg: Registration = get(registrationStore);
 
@@ -38,6 +39,7 @@
     registrationStore.set(reg);
     invoke<boolean>("check_reg", { data: reg })
       .then((result) => {
+        attemptFailed = !result;
         isRegistered = result;
         console.log("Registration:", result);
         if (!result) getreg();
@@ -57,8 +59,6 @@
   onMount(getreg);
 
   import { openUrl } from "@tauri-apps/plugin-opener";
-
-  // ... existing code
 
   async function openPurchaseLink() {
     await openUrl("https://buy.stripe.com/9AQcPw4D0dFycSYaEE");
@@ -121,6 +121,9 @@
     <div class="debug-info">
       Debug: {r2}
     </div>
+  {/if}
+  {#if attemptFailed}
+    <p>Registration Attempt Failed. Please double check your credentials.</p>
   {/if}
 </div>
 

@@ -31,7 +31,6 @@ declare module '$env/static/private' {
 	export const INIT_CWD: string;
 	export const SHELL: string;
 	export const TERM: string;
-	export const APPLE_ID: string;
 	export const CARGO_BUILD_JOBS: string;
 	export const TMPDIR: string;
 	export const TERM_PROGRAM_VERSION: string;
@@ -39,9 +38,9 @@ declare module '$env/static/private' {
 	export const ORIGINAL_XDG_CURRENT_DESKTOP: string;
 	export const TAURI_CLI_VERBOSITY: string;
 	export const ZDOTDIR: string;
+	export const TAURI_ENV_DEBUG: string;
 	export const npm_config_registry: string;
 	export const PNPM_HOME: string;
-	export const APPLE_PASSWORD: string;
 	export const USER: string;
 	export const TAURI_ENV_TARGET_TRIPLE: string;
 	export const COMMAND_MODE: string;
@@ -53,7 +52,6 @@ declare module '$env/static/private' {
 	export const TAURI_ENV_PLATFORM: string;
 	export const npm_config_frozen_lockfile: string;
 	export const npm_config_verify_deps_before_run: string;
-	export const APPLE_TEAM_ID: string;
 	export const PATH: string;
 	export const CARGO_HOME: string;
 	export const TAURI_ENV_FAMILY: string;
@@ -84,7 +82,6 @@ declare module '$env/static/private' {
 	export const RUST_RECURSION_COUNT: string;
 	export const npm_lifecycle_script: string;
 	export const VSCODE_GIT_IPC_HANDLE: string;
-	export const APPLE_CERTIFICATE: string;
 	export const npm_config_user_agent: string;
 	export const GIT_ASKPASS: string;
 	export const VSCODE_GIT_ASKPASS_NODE: string;
@@ -127,7 +124,6 @@ declare module '$env/dynamic/private' {
 		INIT_CWD: string;
 		SHELL: string;
 		TERM: string;
-		APPLE_ID: string;
 		CARGO_BUILD_JOBS: string;
 		TMPDIR: string;
 		TERM_PROGRAM_VERSION: string;
@@ -135,9 +131,9 @@ declare module '$env/dynamic/private' {
 		ORIGINAL_XDG_CURRENT_DESKTOP: string;
 		TAURI_CLI_VERBOSITY: string;
 		ZDOTDIR: string;
+		TAURI_ENV_DEBUG: string;
 		npm_config_registry: string;
 		PNPM_HOME: string;
-		APPLE_PASSWORD: string;
 		USER: string;
 		TAURI_ENV_TARGET_TRIPLE: string;
 		COMMAND_MODE: string;
@@ -149,7 +145,6 @@ declare module '$env/dynamic/private' {
 		TAURI_ENV_PLATFORM: string;
 		npm_config_frozen_lockfile: string;
 		npm_config_verify_deps_before_run: string;
-		APPLE_TEAM_ID: string;
 		PATH: string;
 		CARGO_HOME: string;
 		TAURI_ENV_FAMILY: string;
@@ -180,7 +175,6 @@ declare module '$env/dynamic/private' {
 		RUST_RECURSION_COUNT: string;
 		npm_lifecycle_script: string;
 		VSCODE_GIT_IPC_HANDLE: string;
-		APPLE_CERTIFICATE: string;
 		npm_config_user_agent: string;
 		GIT_ASKPASS: string;
 		VSCODE_GIT_ASKPASS_NODE: string;
