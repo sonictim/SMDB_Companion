@@ -1,11 +1,56 @@
 use crate::prelude::*;
+use metaflac::{Block, Tag};
 
 // Chunk Identifiers
 const FMT_CHUNK_ID: &[u8; 4] = b"fmt ";
 const DATA_CHUNK_ID: &[u8; 4] = b"data";
 
-// Chunk Structures
-const HEADER_SIZE: usize = 12; // RIFF + size + WAVE
+#[derive(Debug)]
+pub enum Metadata {
+    Wav(Vec<MetadataChunk>),
+    Flac(metaflac::Tag),
+}
+
+impl Default for Metadata {
+    fn default() -> Self {
+        Metadata::Wav(Vec::new())
+    }
+}
+
+impl Metadata {
+    pub fn get_metadata(path: &Path) -> Self {
+        if let Some(path) = path.extension() {
+            let p = path.to_str().unwrap_or_default();
+            match path.to_str() {
+                Some("wav") => {
+                    let c = WavCodec;
+                    c.extract_metadata_from_file(p).unwrap_or_default()
+                }
+                Some("flac") => {
+                    let c = FlacCodec;
+                    c.extract_metadata_from_file(p).unwrap_or_default()
+                }
+                _ => Metadata::default(),
+            }
+        } else {
+            Metadata::default()
+        }
+    }
+    pub fn set_metadata(&self, p: &str) -> R<()> {
+        match self {
+            Metadata::Wav(chunks) => {
+                let c = WavCodec;
+                c.embed_metadata_to_file(p, &Metadata::Wav(chunks.clone()))?;
+            }
+            Metadata::Flac(tag) => {
+                let c = FlacCodec;
+                c.embed_metadata_to_file(p, &Metadata::Flac(tag.clone()))?;
+            }
+        }
+
+        Ok(())
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum MetadataChunk {
@@ -117,7 +162,7 @@ impl MetadataChunk {
 }
 
 impl WavCodec {
-    pub fn extract_file_metadata_chunks(&self, file_path: &str) -> Result<Vec<MetadataChunk>> {
+    pub fn extract_metadata_from_file(&self, file_path: &str) -> R<Metadata> {
         println!("extract_file_metadata_chunks - Processing {}", file_path);
 
         let file = std::fs::File::open(file_path)?;
@@ -133,15 +178,16 @@ impl WavCodec {
                 channel_count
             );
         }
-
-        self.extract_metadata_chunks(&mapped_file)
+        let chunks = self.extract_metadata_chunks(&mapped_file)?;
+        Ok(Metadata::Wav(chunks))
     }
 
-    pub fn embed_file_metadata_chunks(
-        &self,
-        file_path: &str,
-        chunks: &[MetadataChunk],
-    ) -> Result<()> {
+    pub fn embed_metadata_to_file(&self, file_path: &str, metadata: &Metadata) -> R<()> {
+        let chunks = match metadata {
+            Metadata::Wav(chunks) => chunks,
+            _ => return Err(anyhow!("Unsupported metadata format")),
+        };
+
         let file = std::fs::File::open(file_path)?;
         let mapped_file = unsafe { MmapOptions::new().map(&file)? };
 
@@ -163,7 +209,7 @@ impl WavCodec {
         std::fs::write(file_path, new_data)?;
         Ok(())
     }
-    fn extract_metadata_chunks(&self, input: &[u8]) -> Result<Vec<MetadataChunk>> {
+    fn extract_metadata_chunks(&self, input: &[u8]) -> R<Vec<MetadataChunk>> {
         let mut cursor = Cursor::new(input);
 
         let mut header = [0u8; 12];
@@ -250,7 +296,7 @@ impl WavCodec {
         Ok(chunks)
     }
 
-    fn embed_metadata_chunks(&self, input: &[u8], chunks: &[MetadataChunk]) -> Result<Vec<u8>> {
+    fn embed_metadata_chunks(&self, input: &[u8], chunks: &[MetadataChunk]) -> R<Vec<u8>> {
         let mut cursor = Cursor::new(input);
         let mut output = Cursor::new(Vec::new());
 
@@ -472,7 +518,7 @@ impl WavCodec {
     }
 }
 
-fn write_chunk<W: Write>(writer: &mut W, id: &[u8], data: &[u8]) -> Result<()> {
+fn write_chunk<W: Write>(writer: &mut W, id: &[u8], data: &[u8]) -> R<()> {
     writer.write_all(id)?;
     writer.write_u32::<LittleEndian>(data.len() as u32)?;
     writer.write_all(data)?;
@@ -480,4 +526,34 @@ fn write_chunk<W: Write>(writer: &mut W, id: &[u8], data: &[u8]) -> Result<()> {
         writer.write_all(&[0])?; // padding
     }
     Ok(())
+}
+
+impl FlacCodec {
+    pub fn extract_metadata_from_file(&self, file_path: &str) -> R<Metadata> {
+        let tag = Tag::read_from_path(file_path)?;
+        Ok(Metadata::Flac(tag))
+    }
+    pub fn embed_metadata_to_file(&self, file_path: &str, metadata: &Metadata) -> R<()> {
+        let source_tag = match metadata {
+            Metadata::Flac(tag) => tag,
+            _ => return Err(anyhow!("Unsupported metadata format")),
+        };
+        let mut dest_tags = Tag::read_from_path(file_path)?;
+        for block in source_tag.blocks() {
+            match block {
+                Block::VorbisComment(_)
+                | Block::Picture(_)
+                | Block::CueSheet(_)
+                | Block::Application(_)
+                | Block::Unknown(_) => {
+                    dest_tags.push_block(block.clone());
+                }
+                _ => {}
+            }
+        }
+
+        dest_tags.save()?;
+
+        Ok(())
+    }
 }

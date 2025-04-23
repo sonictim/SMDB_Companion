@@ -140,7 +140,7 @@ pub fn decode_interleaved(path: &Path) -> DecodedAudioInterleaved {
     }
 }
 
-fn ignore_end_of_stream_error(result: Result<(), Error>) -> Result<(), Error> {
+fn ignore_end_of_stream_error(result: R<(), Error>) -> R<(), Error> {
     match result {
         Err(Error::IoError(err))
             if err.kind() == std::io::ErrorKind::UnexpectedEof
@@ -158,11 +158,11 @@ pub struct DecodedAudioSeparated {
     pub channels_samples: Vec<Vec<f32>>, // Each inner Vec represents samples for one channel
     pub sample_rate: u32,
     pub channels: u16,
-    pub metadata: HashMap<String, String>,
+    pub metadata: metadata::Metadata,
 }
 
 impl DecodedAudioSeparated {
-    pub fn convert_dual_mono(&mut self) -> Result<()> {
+    pub fn convert_dual_mono(&mut self) -> R<()> {
         if self.channels_samples.is_empty() || self.channels < 2 {
             return Ok(());
         }
@@ -261,6 +261,7 @@ pub fn decode_separated(path: &Path) -> DecodedAudioSeparated {
             }
         }
     }
+    let metadata = metadata::Metadata::get_metadata(path);
 
     DecodedAudioSeparated {
         channels_samples,
@@ -635,7 +636,7 @@ pub fn resample_separated(
 }
 
 impl FileRecord {
-    pub fn get_raw_pcm(&self) -> Result<Vec<u8>> {
+    pub fn get_raw_pcm(&self) -> R<Vec<u8>> {
         use rubato::{Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType};
 
         let file = std::fs::File::open(self.get_filepath())?;

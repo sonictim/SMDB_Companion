@@ -37,7 +37,7 @@ pub struct AudioBuffer {
 }
 
 impl AudioBuffer {
-    pub fn strip_multi_mono(&mut self) -> Result<()> {
+    pub fn strip_multi_mono(&mut self) -> R<()> {
         if self.data.is_empty() || self.channels < 2 {
             return Ok(());
         }
@@ -51,7 +51,7 @@ impl AudioBuffer {
         Ok(())
     }
 
-    pub fn export(&self, output_file: &str) -> Result<()> {
+    pub fn export(&self, output_file: &str) -> R<()> {
         // Create a Path object for the output file
         let output_path = Path::new(output_file);
 

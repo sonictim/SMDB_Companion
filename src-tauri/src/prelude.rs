@@ -1,6 +1,6 @@
 pub use crate::audio::*;
 pub use crate::*;
-pub use anyhow::{Context, Result, anyhow};
+pub use anyhow::{Context, Result as R, anyhow};
 pub use once_cell::sync::Lazy;
 // pub use preferences::*;
 pub use rayon::prelude::*;

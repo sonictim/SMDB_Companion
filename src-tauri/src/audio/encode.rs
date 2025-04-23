@@ -53,7 +53,7 @@ const AIF_DATA_CHUNK_ID: &[u8; 4] = b"SSND";
 // const HEADER_SIZE: usize = 12; // FORM + size + AIFF
 // const MIN_VALID_FILE_SIZE: usize = 12;
 
-pub fn get_encoder(file_path: &str) -> Result<Box<dyn Encoder>> {
+pub fn get_encoder(file_path: &str) -> R<Box<dyn Encoder>> {
     let extension = std::path::Path::new(file_path)
         .extension()
         .and_then(|ext| ext.to_str())
@@ -72,14 +72,13 @@ pub fn get_encoder(file_path: &str) -> Result<Box<dyn Encoder>> {
 }
 
 pub trait Encoder: Send + Sync {
-    fn encode(&self, buffer: &AudioBuffer) -> Result<Vec<u8>>;
+    fn encode(&self, buffer: &AudioBuffer) -> R<Vec<u8>>;
 
-    fn encode_file(&self, buffer: &AudioBuffer, file_path: &str) -> Result<()> {
+    fn encode_file(&self, buffer: &AudioBuffer, file_path: &str) -> R<()> {
         let encoded_data = self.encode(buffer)?;
         std::fs::write(file_path, encoded_data)?;
         Ok(())
     }
-    fn copy_metadata(&self, source: &str, target: &str) -> Result<()>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -106,7 +105,7 @@ impl SampleFormat {
 
 pub struct WavCodec;
 impl Encoder for WavCodec {
-    fn encode(&self, buffer: &AudioBuffer) -> Result<Vec<u8>> {
+    fn encode(&self, buffer: &AudioBuffer) -> R<Vec<u8>> {
         let mut output = Cursor::new(Vec::new());
 
         // Ensure channel count in buffer is consistent with data
@@ -169,18 +168,11 @@ impl Encoder for WavCodec {
 
         Ok(out)
     }
-
-    fn copy_metadata(&self, source: &str, target: &str) -> Result<()> {
-        let source_metadata = self.extract_file_metadata_chunks(source)?;
-        self.embed_file_metadata_chunks(target, &source_metadata)?;
-
-        Ok(())
-    }
 }
 
 pub struct FlacCodec;
 impl Encoder for FlacCodec {
-    fn encode(&self, buffer: &AudioBuffer) -> Result<Vec<u8>> {
+    fn encode(&self, buffer: &AudioBuffer) -> R<Vec<u8>> {
         // Get audio parameters
         let bits_per_sample = get_bits_per_sample(buffer.sample_format);
         let channels = buffer.channels as usize;
@@ -281,30 +273,9 @@ impl Encoder for FlacCodec {
         // Return the encoded FLAC data
         Ok(sink.as_slice().to_vec())
     }
-
-    fn copy_metadata(&self, source: &str, target: &str) -> Result<()> {
-        use metaflac::{Block, Tag};
-        let mut dest_tags = Tag::read_from_path(target).unwrap();
-        let source_tag = Tag::read_from_path(source).unwrap();
-        for block in source_tag.blocks() {
-            match block {
-                Block::VorbisComment(_)
-                | Block::Picture(_)
-                | Block::CueSheet(_)
-                | Block::Application(_)
-                | Block::Unknown(_) => {
-                    dest_tags.push_block(block.clone());
-                }
-                _ => {}
-            }
-        }
-
-        dest_tags.save()?;
-        Ok(())
-    }
 }
 
-fn encode_samples<W: Write>(out: &mut W, buffer: &AudioBuffer, bits_per_sample: u16) -> Result<()> {
+fn encode_samples<W: Write>(out: &mut W, buffer: &AudioBuffer, bits_per_sample: u16) -> R<()> {
     // Ensure channel count doesn't exceed available data channels
     let available_channels = buffer.data.len();
     let channels = std::cmp::min(buffer.channels as usize, available_channels);
@@ -361,7 +332,7 @@ fn get_bits_per_sample(format: SampleFormat) -> u16 {
 
 pub struct AifCodec;
 impl Encoder for AifCodec {
-    fn encode(&self, buffer: &AudioBuffer) -> Result<Vec<u8>> {
+    fn encode(&self, buffer: &AudioBuffer) -> R<Vec<u8>> {
         let mut output = Cursor::new(Vec::new());
 
         // Write FORM header
@@ -424,13 +395,10 @@ impl Encoder for AifCodec {
 
         Ok(out)
     }
-    fn copy_metadata(&self, source: &str, target: &str) -> Result<()> {
-        Ok(())
-    }
 }
 
 // Helper function to write IEEE 80-bit extended float (required for AIFF)
-fn write_ieee_extended<W: Write>(writer: &mut W, mut value: f64) -> Result<()> {
+fn write_ieee_extended<W: Write>(writer: &mut W, mut value: f64) -> R<()> {
     let mut buffer = [0u8; 10];
 
     if value < 0.0 {
@@ -481,7 +449,7 @@ fn write_ieee_extended<W: Write>(writer: &mut W, mut value: f64) -> Result<()> {
     writer.write_all(&buffer).map_err(|e| anyhow::anyhow!(e))
 }
 
-fn write_ieee_extended_simple<W: Write>(writer: &mut W, value: f64) -> Result<()> {
+fn write_ieee_extended_simple<W: Write>(writer: &mut W, value: f64) -> R<()> {
     // For common audio sample rates, use precomputed values
     let buffer: [u8; 10] = match value as u32 {
         44100 => [0x40, 0x0E, 0xAC, 0x44, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
@@ -502,7 +470,7 @@ fn write_ieee_extended_simple<W: Write>(writer: &mut W, value: f64) -> Result<()
 
 // pub struct Mp3Codec;
 // impl Encoder for Mp3Codec {
-//     fn encode(&self, buffer: &AudioBuffer) -> Result<Vec<u8>> {
+//     fn encode(&self, buffer: &AudioBuffer) -> R<Vec<u8>> {
 //         // Validate input buffer
 //         if buffer.data.is_empty() {
 //             return Err(anyhow!("Empty audio buffer"));

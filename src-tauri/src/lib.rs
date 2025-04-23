@@ -724,6 +724,7 @@ impl Database {
                 );
                 decoded
             };
+            let metadata = metadata::Metadata::get_metadata(path);
 
             match decoded.strip_multi_mono() {
                 Ok(_) => {
@@ -742,6 +743,7 @@ impl Database {
                         // Only export if we successfully converted to mono
                         match decoded.export(&record.path) {
                             Ok(_) => {
+                                let _ = metadata.set_metadata(path.to_str().unwrap_or_default());
                                 // SUCCESSFUL PROCESSING - add ID to successful list
                                 match successful_ids.lock() {
                                     Ok(mut ids) => {
