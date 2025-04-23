@@ -3,6 +3,7 @@ pub use byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
 use flacenc::component::BitRepr;
 use flacenc::error::Verify;
 pub use memmap2::MmapOptions;
+pub use metadata::*;
 pub use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 
 // Sample normalization constants
@@ -42,6 +43,12 @@ const AIFF_FORMAT_ID: &[u8; 4] = b"AIFF";
 const AIF_FMT_CHUNK_ID: &[u8; 4] = b"COMM";
 const AIF_DATA_CHUNK_ID: &[u8; 4] = b"SSND";
 
+// Format tags
+
+// Chunk Identifiers
+
+// Chunk Structures
+
 // Chunk Structures
 // const HEADER_SIZE: usize = 12; // FORM + size + AIFF
 // const MIN_VALID_FILE_SIZE: usize = 12;
@@ -55,7 +62,7 @@ pub fn get_encoder(file_path: &str) -> Result<Box<dyn Encoder>> {
     match extension {
         "wav" => Ok(Box::new(WavCodec)),
         "flac" => Ok(Box::new(FlacCodec)),
-        "aif" => Ok(Box::new(AifCodec)),
+        // "aif" => Ok(Box::new(AifCodec)),
         // "mp3" => Ok(Box::new(Mp3Codec)),
         _ => Err(anyhow::anyhow!(
             "No Encoder found for extension: {}",
@@ -72,6 +79,7 @@ pub trait Encoder: Send + Sync {
         std::fs::write(file_path, encoded_data)?;
         Ok(())
     }
+    fn copy_metadata(&self, source: &str, target: &str) -> Result<()>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -160,6 +168,13 @@ impl Encoder for WavCodec {
         (&mut out[4..8]).write_u32::<LittleEndian>(riff_size)?;
 
         Ok(out)
+    }
+
+    fn copy_metadata(&self, source: &str, target: &str) -> Result<()> {
+        let source_metadata = self.extract_file_metadata_chunks(source)?;
+        self.embed_file_metadata_chunks(target, &source_metadata)?;
+
+        Ok(())
     }
 }
 
@@ -265,6 +280,27 @@ impl Encoder for FlacCodec {
 
         // Return the encoded FLAC data
         Ok(sink.as_slice().to_vec())
+    }
+
+    fn copy_metadata(&self, source: &str, target: &str) -> Result<()> {
+        use metaflac::{Block, Tag};
+        let mut dest_tags = Tag::read_from_path(target).unwrap();
+        let source_tag = Tag::read_from_path(source).unwrap();
+        for block in source_tag.blocks() {
+            match block {
+                Block::VorbisComment(_)
+                | Block::Picture(_)
+                | Block::CueSheet(_)
+                | Block::Application(_)
+                | Block::Unknown(_) => {
+                    dest_tags.push_block(block.clone());
+                }
+                _ => {}
+            }
+        }
+
+        dest_tags.save()?;
+        Ok(())
     }
 }
 
@@ -387,6 +423,9 @@ impl Encoder for AifCodec {
         (&mut out[4..8]).write_u32::<BigEndian>(form_size)?;
 
         Ok(out)
+    }
+    fn copy_metadata(&self, source: &str, target: &str) -> Result<()> {
+        Ok(())
     }
 }
 
