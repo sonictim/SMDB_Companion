@@ -58,6 +58,7 @@ byteorder = "1.5.0"
 flacenc = "0.4.0"
 memmap2 = "0.9.5"
 metaflac = "0.2.8"
+FFcodex = { path = "/Users/tfarrell/Documents/CODE/FFcodex" }
 # lame = "0.1.3"
 
 

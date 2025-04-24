@@ -22,7 +22,9 @@
   import { openUrl } from "@tauri-apps/plugin-opener";
 
   import SearchComponent from "../components/Search.svelte";
+  import SearchSkinnyComponent from "../components/SearchSkinny.svelte";
   import ResultsComponent from "../components/Results.svelte";
+  import ResultsSkinnyComponent from "../components/ResultsSkinny.svelte";
   import MetadataComponent from "../components/Metadata.svelte";
   import RegisterComponent from "../components/Register.svelte";
   import RegisterOnlyComponent from "../components/RegisterOnly.svelte";
@@ -711,7 +713,15 @@
     <div class="top-bar-right">
       <button
         class="nav-link {activeTab === 'search' ? 'active' : ''}"
-        on:click={() => (activeTab = "search")}
+        on:click={(event) => {
+          if (event.metaKey) {
+            // Command key is pressed
+            activeTab = "searchSkinny"; // Or any other action you want
+          } else {
+            // Normal click
+            activeTab = "search";
+          }
+        }}
       >
         <div class="flex items-center gap-2">
           <SearchIcon size={18} />
@@ -748,6 +758,19 @@
   <main class="content">
     {#if activeTab === "search"}
       <SearchComponent bind:selectedDb bind:activeTab bind:isRemove />
+    {:else if activeTab === "searchSkinny"}
+      <div class="grid">
+        <SearchSkinnyComponent bind:selectedDb bind:activeTab bind:isRemove />
+        {#if isRegistered}
+          <ResultsSkinnyComponent
+            bind:isRemove
+            bind:activeTab
+            bind:selectedDb
+          />
+        {:else}
+          <RegisterComponent bind:isRegistered />
+        {/if}
+      </div>
     {:else if activeTab === "results"}
       {#if isRegistered}
         <ResultsComponent bind:isRemove bind:activeTab bind:selectedDb />

@@ -716,52 +716,15 @@ impl Database {
             println!("  Format: {}", extension);
 
             // Process the file
-            let decoded = audio::decode::decode_to_buffer(path);
-            let mut decoded = {
-                println!(
-                    "  Decoded: {} channels, {} Hz, {:?} bits",
-                    decoded.channels, decoded.sample_rate, decoded.sample_format
-                );
-                decoded
-            };
-            let metadata = metadata::Metadata::get_metadata(path);
-
-            match decoded.strip_multi_mono() {
+            match ffcodex_lib::clean_multi_mono(path.to_str().unwrap_or_default()) {
                 Ok(_) => {
                     println!("  Strip multi-mono successful");
-
-                    // Verify the buffer is now mono
-                    if decoded.channels != 1 {
-                        failures.fetch_add(1, Ordering::SeqCst);
-                        println!(
-                            "ERROR: Failed to convert to mono - still has {} channels: {}",
-                            decoded.channels, record.path
-                        );
-                    } else {
-                        println!("  Conversion to mono successful");
-
-                        // Only export if we successfully converted to mono
-                        match decoded.export(&record.path) {
-                            Ok(_) => {
-                                let _ = metadata.set_metadata(path.to_str().unwrap_or_default());
-                                // SUCCESSFUL PROCESSING - add ID to successful list
-                                match successful_ids.lock() {
-                                    Ok(mut ids) => {
-                                        ids.push(record.id);
-                                    }
-                                    Err(_) => {
-                                        println!("ERROR: Failed to acquire lock on successful_ids");
-                                    }
-                                }
-                                println!("  Export successful");
-                            }
-                            Err(export_err) => {
-                                failures.fetch_add(1, Ordering::SeqCst);
-                                println!(
-                                    "ERROR: Export failed for {}: {}",
-                                    record.path, export_err
-                                );
-                            }
+                    match successful_ids.lock() {
+                        Ok(mut ids) => {
+                            ids.push(record.id);
+                        }
+                        Err(_) => {
+                            println!("ERROR: Failed to acquire lock on successful_ids");
                         }
                     }
                 }

@@ -789,9 +789,9 @@
   }
 </script>
 
-<div class="block">
+<div class="block" style=" width: 75vw;">
   <div class="header">
-    <h2>Search Results:</h2>
+    <h2>Results:</h2>
     <span style="font-size: 18px">
       {#if isRemove}
         {getTotalChecks()} of {results.length} Records marked for Removal
@@ -1095,13 +1095,12 @@
   <div class="header" style="margin-bottom: 0px; margin-top: 0px;">
     {#if isRemove}
       <span>
-        Remove Records from:
         <select
           class="select-field"
           bind:value={pref.safety_db}
           on:change={() => preferencesStore.set(pref)}
         >
-          {#each [{ bool: true, text: "Safety Database Copy" }, { bool: false, text: "Current Database" }] as option}
+          {#each [{ bool: true, text: "Safety Database Copy" }, { bool: false, text: "Modify Current Database" }] as option}
             <option value={option.bool}>{option.text}</option>
           {/each}
         </select>
@@ -1125,13 +1124,12 @@
       </span>
       {#if algoEnabled("dual_mono")}
         <span>
-          Dual Mono Files:
           <select
             class="select-field"
             bind:value={pref.strip_dual_mono}
             on:change={() => preferencesStore.set(pref)}
           >
-            {#each [{ id: false, text: "Preserve" }, { id: true, text: "Strip" }] as option}
+            {#each [{ id: false, text: "Preserve Dual Mono" }, { id: true, text: "Strip Dual Mono" }] as option}
               <option value={option.id}>{option.text}</option>
             {/each}
           </select>
@@ -1145,9 +1143,8 @@
         </span>
       {/if}
       <span>
-        Checked Files:
         <select class="select-field" on:change={handleFileEraseChange}>
-          {#each [{ id: "Keep", text: "Keep on Disk" }, { id: "Trash", text: "Move To Trash" }, { id: "Delete", text: "Permanently Delete" }] as option}
+          {#each [{ id: "Keep", text: "Keep Audio Files on Disk" }, { id: "Trash", text: "Move Audio Files To Trash" }, { id: "Delete", text: "Permanently Delete Audio Files" }] as option}
             <option value={option.id}>{option.text}</option>
           {/each}
         </select>
