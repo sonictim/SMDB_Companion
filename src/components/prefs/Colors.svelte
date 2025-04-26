@@ -1,91 +1,19 @@
 <script lang="ts">
-  import { emit } from "@tauri-apps/api/event";
-  import { preferencesStore } from "../../store";
-  import { get } from "svelte/store";
-  import type { Preferences, Colors } from "../../store";
+  // Import from main store instead
+  import { preferencesStore } from "../../stores/preferences";
+  import type { Colors } from "../../stores/types";
+  import {
+    colorVariables,
+    changeColor,
+    resetColors,
+  } from "../../stores/colors";
 
   // Use the $: syntax to ensure preferences stays reactive
   $: preferences = $preferencesStore;
 
-  async function changeColor(colorKey: keyof Colors, newColor: string) {
-    // Update the color in preferencesStore
-    preferencesStore.update((prefs) => {
-      const updatedColors = { ...prefs.colors, [colorKey]: newColor };
-      return { ...prefs, colors: updatedColors };
-    });
-
-    // Get the CSS variable name based on colorKey by converting camelCase to kebab-case
-    const cssVariable = `--${colorKey.replace(/([A-Z])/g, "-$1").toLowerCase()}`;
-
-    // Update the CSS variable in the document
-    document.documentElement.style.setProperty(cssVariable, newColor);
-
-    // Special handling for text color to ensure it propagates properly
-    if (colorKey === "textColor") {
-      // Apply text color to body as a fallback
-      document.body.style.color = newColor;
-
-      // Force refresh of text color on key elements
-      document
-        .querySelectorAll(
-          ".color-label, p, h1, h2, h3, h4, h5, h6, span, label, button"
-        )
-        .forEach((el) => {
-          (el as HTMLElement).style.color = ""; // Clear explicit colors
-        });
-    }
-
-    // Emit the change to all windows
-    await emit("color-updated", { colorKey, cssVariable, newColor });
-
-    // Log the change to the console
-    console.log(`Updated ${colorKey} (${cssVariable}) to ${newColor}`);
-  }
-
-  // Color variables with mapping between store keys and display labels
-  const colorVariables = [
-    { key: "primaryBg", label: "Primary Background" },
-    { key: "secondaryBg", label: "Secondary Background" },
-    { key: "textColor", label: "Text Color" },
-    { key: "topbarColor", label: "Topbar Color" },
-    { key: "accentColor", label: "Accent Color" },
-    { key: "hoverColor", label: "Hover Color" },
-    { key: "warningColor", label: "Warning Color" },
-    { key: "warningHover", label: "Warning Hover Color" },
-    { key: "inactiveColor", label: "Inactive Color" },
-  ];
-
   // Function to get current color value - this is now reactive
   function getCurrentColor(colorKey: keyof Colors): string {
     return preferences?.colors[colorKey] || "";
-  }
-
-  // Function to reset colors to defaults
-  function resetColors() {
-    // Get the default preferences from your store
-    const defaultColors = {
-      primaryBg: "#2e3a47", // Default value for primary background
-      secondaryBg: "#1f2731", // Default value for secondary background
-      textColor: "#ffffff", // Default text color
-      topbarColor: "#FFB81C", // Default topbar color
-      accentColor: "#f0a500", // Default accent color
-      hoverColor: "#ffcc00", // Default hover color
-      warningColor: "#b91c1c", // Default warning color
-      warningHover: "#dc2626", // Default warning hover color
-      inactiveColor: "#888888", // Default inactive color
-    };
-
-    // Update store with default colors
-    preferencesStore.update((prefs) => {
-      return { ...prefs, colors: defaultColors };
-    });
-
-    // Update all CSS variables
-    for (const { key } of colorVariables) {
-      const cssVariable = `--${key.replace(/([A-Z])/g, "-$1").toLowerCase()}`;
-      const color = defaultColors[key as keyof Colors];
-      document.documentElement.style.setProperty(cssVariable, color);
-    }
   }
 </script>
 

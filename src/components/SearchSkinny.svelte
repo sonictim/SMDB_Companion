@@ -23,20 +23,20 @@
 
   let isFinding = false;
 
-  import { preferencesStore } from "../store";
+  import type { Algorithm, Preferences, FileRecord } from "../stores/types";
+  import { preferencesStore } from "../stores/preferences";
+  import { resultsStore } from "../stores/results";
+  import { metadataStore } from "../stores/metadata";
   import {
-    resultsStore,
-    metadataStore,
-    isSearching,
     searchProgressStore,
+    isSearching,
     initializeSearchListeners,
     resetSearchProgress,
-  } from "../session-store";
+  } from "../stores/status";
+
   import { get } from "svelte/store";
   import { open } from "@tauri-apps/plugin-dialog";
   import { basename, extname } from "@tauri-apps/api/path";
-  import type { Algorithm, Preferences } from "../store";
-  import type { FileRecord } from "../session-store";
 
   async function getFilenameWithoutExtension(fullPath: string) {
     const name = await basename(fullPath); // Extracts filename with extension
@@ -242,22 +242,6 @@
   function checkAnyAlgorithmEnabled() {
     return $preferencesStore.algorithms.some((algo) => algo.enabled);
   }
-  $: sortedAlgorithms = [...($preferencesStore.algorithms || [])]
-    .filter((a) => a && a.id)
-    .sort((a, b) => {
-      const order: { [key: string]: number } = {
-        basic: 1,
-        filename: 2,
-        audiosuite: 3,
-        waveform: 4,
-        dual_mono: 5,
-        filetags: 6,
-        invalidpath: 7,
-        duration: 8,
-        dbcompare: 9,
-      };
-      return (order[a.id] || 100) - (order[b.id] || 100);
-    });
 </script>
 
 <div class="page-columns">
@@ -293,7 +277,7 @@
       </div>
     {:else}
       <div class="grid">
-        {#each sortedAlgorithms as algo}
+        {#each $preferencesStore.algorithms as algo}
           <div
             class="grid item {getAlgoClass(algo, $preferencesStore.algorithms)}"
           >

@@ -1,7 +1,8 @@
 <script lang="ts">
-  import VirtualList from "svelte-virtual-list"; // Ensure this package is installed
+  import VirtualList from "svelte-virtual-list";
   import { Square, CheckSquare, OctagonX } from "lucide-svelte";
-  import { preferencesStore } from "../../store";
+  // Import from main store instead
+  import { preferencesStore } from "../../stores/preferences";
   import { invoke } from "@tauri-apps/api/core";
   import { ask, confirm } from "@tauri-apps/plugin-dialog";
 

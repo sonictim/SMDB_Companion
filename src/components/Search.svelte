@@ -23,20 +23,19 @@
 
   let isFinding = false;
 
-  import { preferencesStore } from "../store";
+  import type { Algorithm, Preferences, FileRecord } from "../stores/types";
+  import { preferencesStore } from "../stores/preferences";
+  import { resultsStore } from "../stores/results";
+  import { metadataStore } from "../stores/metadata";
   import {
-    resultsStore,
-    metadataStore,
     isSearching,
     searchProgressStore,
     initializeSearchListeners,
     resetSearchProgress,
-  } from "../session-store";
+  } from "../stores/status";
   import { get } from "svelte/store";
   import { open } from "@tauri-apps/plugin-dialog";
   import { basename, extname } from "@tauri-apps/api/path";
-  import type { Algorithm, Preferences } from "../store";
-  import type { FileRecord } from "../session-store";
 
   async function getFilenameWithoutExtension(fullPath: string) {
     const name = await basename(fullPath); // Extracts filename with extension
@@ -502,11 +501,14 @@
 <style>
   .grid {
     grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, auto);
+    grid-auto-flow: column;
   }
 
   .page-columns {
     display: grid;
     grid-template-columns: repeat(1, 1fr); /* 3 equal columns */
+
     gap: 10px;
   }
 

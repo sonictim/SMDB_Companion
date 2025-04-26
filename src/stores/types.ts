@@ -1,3 +1,6 @@
+console.log('Loading module:', 'types.ts');  // Add to each file
+
+
 // src/stores/types.ts
 export type HashMap = Record<string, string>;
 
@@ -20,7 +23,7 @@ export type Algorithm = {
 export type Registration = { 
   name: string; 
   email: string; 
-  license: string 
+  license: string;
 };
 
 export type PreservationLogic = { 
@@ -57,10 +60,10 @@ export type Database = {
     path: string;
     size: number;
     columns: string[];
+    isLoading: boolean;
+    error: null | string;
     // records: FileRecord[];
 }
-
-
 
 export type Preferences = { 
   firstOpen: boolean;

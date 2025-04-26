@@ -1,5 +1,11 @@
+console.log('Loading module:', 'metadata.ts');  // Add to each file
+
+
 import type { Metadata } from './types';
 import { writable, type Writable } from 'svelte/store';
+import {createSessionStore } from './utils';
+
+
 
 export const metadataDefault = { 
     find: '', 
@@ -18,9 +24,5 @@ try {
     initialMetadata = metadataDefault;
 }
 
-export const metadataStore: Writable<Metadata> = writable<Metadata>(initialMetadata);
+export const metadataStore = createSessionStore<Metadata>('metadata', initialMetadata);
 
-// Subscribe to changes and save to sessionStorage
-metadataStore.subscribe(value => {
-    sessionStorage.setItem('metadata', JSON.stringify(value));
-});

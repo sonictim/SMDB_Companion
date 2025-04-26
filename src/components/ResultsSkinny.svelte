@@ -3,9 +3,10 @@
   import { onMount, onDestroy } from "svelte";
   import { listen } from "@tauri-apps/api/event";
 
-  import { preferencesStore } from "../store";
-  import { resultsStore, metadataStore } from "../session-store";
-  import type { FileRecord } from "../session-store";
+  import type { FileRecord } from "../stores/types";
+  import { preferencesStore } from "../stores/preferences";
+  import { resultsStore } from "../stores/results";
+  import { metadataStore } from "../stores/metadata";
   import { ask, message } from "@tauri-apps/plugin-dialog";
   import { createVirtualizer } from "@tanstack/svelte-virtual";
 

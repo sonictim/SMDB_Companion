@@ -1,12 +1,10 @@
-// src/stores/results.ts
+console.log('Loading module:', 'colors.ts');  // Add to each file
+
 import type { FileRecord } from './types';
-import { writable, type Writable } from 'svelte/store';
+import { createSessionStore } from './utils';
 
+export const resultsStore = createSessionStore<FileRecord[]>('results', []);
 
-// Initialize results store with proper typing
-export const resultsStore: Writable<FileRecord[]> = writable<FileRecord[]>([]);
-
-// Helper function to update results store
 export function updateResultsStore(newResults: any): void {
     // If newResults is already an array of records, use it directly
     if (newResults && !Array.isArray(newResults[0])) {
@@ -19,4 +17,8 @@ export function updateResultsStore(newResults: any): void {
     else {
         resultsStore.set([]);
     }
+}
+
+export function clearResults(): void {
+    resultsStore.set([]);
 }

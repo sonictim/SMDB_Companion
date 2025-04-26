@@ -1,5 +1,21 @@
-// src/stores/colors.ts
+console.log('Loading module:', 'colors.ts');
+
+import { emit } from "@tauri-apps/api/event";
 import type { Colors } from './types';
+import { preferencesStore, } from './preferences';
+import { get } from 'svelte/store';
+
+export const colorVariables = [
+  { key: "primaryBg", label: "Primary Background" },
+  { key: "secondaryBg", label: "Secondary Background" },
+  { key: "textColor", label: "Text Color" },
+  { key: "topbarColor", label: "Topbar Color" },
+  { key: "accentColor", label: "Accent Color" },
+  { key: "hoverColor", label: "Hover Color" },
+  { key: "warningColor", label: "Warning Color" },
+  { key: "warningHover", label: "Warning Hover Color" },
+  { key: "inactiveColor", label: "Inactive Color" },
+];
 
 export const defaultColors: Colors = {
     primaryBg: "#2e3a47", // Default value for primary background
@@ -11,7 +27,6 @@ export const defaultColors: Colors = {
     warningColor: "#b91c1c", // Default warning color
     warningHover: "#ff4013", // Default warning hover color
     inactiveColor: "#888888" // Default inactive color
-
 };
 
 export const lightModeColors: Colors = {
@@ -134,10 +149,150 @@ export const lcarsColors: Colors = {
     inactiveColor: "#666666",
 };
 
+// Create a collection of all available color themes for easy access
+export const colorThemes = {
+  default: defaultColors,
+  lightMode: lightModeColors,
+  terminal: terminalColors,
+  twilight: twilightColors,
+  dracula: draculaColors,
+  nord: nordColors,
+  oneDark: oneDarkColors,
+  tokyoNight: tokyoNightColors,
+  monokaiPro: monokaiProColors,
+  gruvbox: gruvboxColors,
+  lcars: lcarsColors
+};
 
-export function applyColorsToDocument(colors: Colors): void {
-  Object.entries(colors).forEach(([key, value]) => {
-    const cssVariable = `--${key.replace(/([A-Z])/g, "-$1").toLowerCase()}`;
-    document.documentElement.style.setProperty(cssVariable, value);
+// List of theme names and labels for UI display
+export const themeOptions = [
+  { value: 'default', label: 'Default' },
+  { value: 'lightMode', label: 'Light Mode' },
+  { value: 'terminal', label: 'Terminal' },
+  { value: 'twilight', label: 'Twilight' },
+  { value: 'dracula', label: 'Dracula' },
+  { value: 'nord', label: 'Nord' },
+  { value: 'oneDark', label: 'One Dark' },
+  { value: 'tokyoNight', label: 'Tokyo Night' },
+  { value: 'monokaiPro', label: 'Monokai Pro' },
+  { value: 'gruvbox', label: 'Gruvbox' },
+  { value: 'lcars', label: 'LCARS' }
+];
+
+// Enhanced apply colors function
+export async function applyColors(colors: Colors, skipEvent = false): Promise<void> {
+  try {
+    if (!colors) return;
+    console.log("Applying colors safely:", Object.keys(colors));
+    
+    // Apply each color with individual error handling
+    Object.entries(colors).forEach(([key, value]) => {
+      try {
+        const cssVariable = `--${key.replace(/([A-Z])/g, "-$1").toLowerCase()}`;
+        document.documentElement.style.setProperty(cssVariable, value);
+      } catch (err) {
+        console.error(`Error applying color ${key}:`, err);
+      }
+    });
+
+    // Emit event to update all other windows with the new colors
+    if (!skipEvent) {
+      await emit("theme-updated", { colors });
+    }
+    
+  } catch (error) {
+    console.error("Error in applyColors:", error);
+  }
+}
+
+// Function to apply a specific theme by name
+export async function applyTheme(themeName: keyof typeof colorThemes): Promise<void> {
+  try {
+    const theme = colorThemes[themeName];
+    if (!theme) {
+      console.error(`Theme "${themeName}" not found`);
+      return;
+    }
+    
+    // Update preferences store with the new theme
+    preferencesStore.update(prefs => ({
+      ...prefs,
+      colors: theme
+    }));
+    
+    // Apply the colors to the current window
+    await applyColors(theme);
+    
+    console.log(`Applied theme: ${themeName}`);
+  } catch (error) {
+    console.error(`Error applying theme "${themeName}":`, error);
+  }
+}
+
+// Function to change a single color
+export async function changeColor(colorKey: keyof Colors, newColor: string): Promise<void> {
+  try {
+    // Update the color in preferencesStore
+    preferencesStore.update((prefs) => {
+      const updatedColors = { ...prefs.colors, [colorKey]: newColor };
+      return { ...prefs, colors: updatedColors };
+    });
+
+    // Get the CSS variable name based on colorKey
+    const cssVariable = `--${colorKey.replace(/([A-Z])/g, "-$1").toLowerCase()}`;
+
+    // Update the CSS variable in the document
+    document.documentElement.style.setProperty(cssVariable, newColor);
+
+    // Special handling for text color to ensure it propagates properly
+    if (colorKey === "textColor" && document.body) {
+      // Apply text color to body as a fallback
+      document.body.style.color = newColor;
+
+      // Force refresh of text color on key elements
+      const elements = document.querySelectorAll(
+        ".color-label, p, h1, h2, h3, h4, h5, h6, span, label, button"
+      );
+      
+      if (elements.length > 0) {
+        elements.forEach((el) => {
+          (el as HTMLElement).style.color = ""; // Clear explicit colors
+        });
+      }
+    }
+
+    // Emit event to update other windows
+    await emit("color-updated", { colorKey, cssVariable, newColor });
+
+    console.log(`Updated ${colorKey} (${cssVariable}) to ${newColor}`);
+  } catch (error) {
+    console.error(`Error changing color ${colorKey}:`, error);
+  }
+}
+
+// Function to reset colors to defaults
+export async function resetColors(): Promise<void> {
+  try {
+    // Update store with default colors
+    preferencesStore.update((prefs) => {
+      return { ...prefs, colors: defaultColors };
+    });
+
+    // Update all CSS variables
+    await applyColors(defaultColors);
+    
+    console.log("Reset colors to defaults");
+  } catch (error) {
+    console.error("Error resetting colors:", error);
+  }
+}
+
+export function initColorHandling() {
+  // Subscribe to preference changes
+  preferencesStore.subscribe((value) => {
+    if (value?.colors) {
+      // Use skipEvent=true during initial load to prevent circular updates
+      applyColors(value.colors, document.readyState !== 'complete');
+    }
   });
 }

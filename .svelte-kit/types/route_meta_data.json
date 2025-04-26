@@ -6,6 +6,9 @@
 	"/preferences": [
 		"src/routes/+layout.js"
 	],
+	"/preferences/full": [
+		"src/routes/+layout.js"
+	],
 	"/save": [
 		"src/routes/+layout.js"
 	]

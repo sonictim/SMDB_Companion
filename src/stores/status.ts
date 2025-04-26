@@ -1,3 +1,6 @@
+console.log('Loading module:', 'status.ts');  // Add to each file
+
+
 import type { SearchProgressState } from './types';
 import { writable, type Writable } from 'svelte/store';
 import { listen } from "@tauri-apps/api/event";

@@ -1,21 +1,12 @@
 <script lang="ts">
-  import {
-    X,
-    Search,
-    AlertCircle,
-    Loader,
-    Square,
-    CheckSquare,
-  } from "lucide-svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
   export let isRegistered: boolean;
 
-  import { registrationStore } from "../store";
-  import { resultsStore } from "../session-store";
+  import type { Registration } from "../stores/types";
+  import { registrationStore } from "../stores/registration";
+  import { resultsStore } from "../stores/results";
   import { get } from "svelte/store";
-
-  import type { Registration } from "../store";
 
   const DEBUG_MODE = import.meta.env.DEV || false; // Will be true in development, false in production
   let attemptFailed = false;

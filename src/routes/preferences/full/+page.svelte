@@ -1,45 +1,56 @@
 <script lang="ts">
-  import { ListOrdered, ListCheck, Tags, Palette } from "lucide-svelte";
-  import "../../styles.css";
+  import {
+    ListOrdered,
+    ListCheck,
+    Tags,
+    Palette,
+    Settings2,
+  } from "lucide-svelte";
+  import "../../../styles.css";
   import { onMount } from "svelte";
   import { get } from "svelte/store";
 
-  // Import components
-  import MatchComponent from "../../components/prefs/Match.svelte";
-  import OrderComponent from "../../components/prefs/Order.svelte";
-  import TagsComponent from "../../components/prefs/Tags.svelte";
-  import ColorsComponent from "../../components/prefs/Colors.svelte";
+  // Import all your components
+  import MatchComponent from "../../../components/prefs/Match.svelte";
+  import OrderComponent from "../../../components/prefs/Order.svelte";
+  import TagsComponent from "../../../components/prefs/Tags.svelte";
+  import ColorsComponent from "../../../components/prefs/Colors.svelte";
 
-  // Import from specific store files (not from index) to avoid circular dependencies
-  import { preferencesStore } from "../../stores/preferences";
+  import { preferencesStore } from "../../../stores/preferences";
   import {
     presetsStore,
     loadPreset,
     savePreset,
     deletePreset,
-  } from "../../stores/presets";
-  import { applyColors, initColorHandling } from "../../stores/colors";
+  } from "../../../stores/presets";
+  import { applyColors, initColorHandling } from "../../../stores/colors";
+
+  // Add debug mode detection
+  const IS_DEV_MODE = import.meta.env.DEV || false;
 
   // Component state
   let activeTab = "matchCriteria";
   let loadingStage = "initializing";
   let error: unknown = null;
-  let showDebugInfo = false;
+  let componentError: null = null;
   let newPreset = "";
   let selectedPreset = "";
 
-  // Reactive variables
-  $: presets = $presetsStore || [];
-  $: pref = $preferencesStore;
+  // Debug info visibility - only enabled in dev mode
+  let showDebugInfo = false;
 
   function toggleDebugInfo() {
     showDebugInfo = !showDebugInfo;
   }
 
-  onMount(() => {
+  // Reactive variables
+  $: presets = $presetsStore || [];
+  $: pref = $preferencesStore;
+
+  onMount(async () => {
     try {
-      console.log("Preferences component mounting");
       loadingStage = "applying-colors";
+      console.log("Preferences mount start");
 
       // Initialize color handling
       initColorHandling();
@@ -51,13 +62,17 @@
       }
 
       loadingStage = "ready";
-      console.log("Preferences component ready");
+      console.log("Preferences mount complete");
     } catch (e) {
       error = e;
       loadingStage = "error";
       console.error("Error in onMount:", e);
     }
   });
+
+  function handleComponentError(event: { detail: any }) {
+    componentError = event.detail;
+  }
 </script>
 
 <svelte:head>
@@ -65,15 +80,18 @@
 </svelte:head>
 
 <div class="app-container">
-  <!-- Movable debug info -->
-  {#if showDebugInfo}
-    <div class="debug-info">
-      <button class="close-button" on:click={toggleDebugInfo}>×</button>
-      <p>State: {loadingStage}</p>
-      <p>Active Tab: {activeTab}</p>
-    </div>
-  {:else}
-    <button class="show-debug-button" on:click={toggleDebugInfo}>Debug</button>
+  <!-- Debug tools only available in development mode -->
+  {#if IS_DEV_MODE}
+    {#if showDebugInfo}
+      <div class="debug-info">
+        <button class="close-button" on:click={toggleDebugInfo}>×</button>
+        <p>State: {loadingStage}</p>
+        <p>Active Tab: {activeTab}</p>
+      </div>
+    {:else}
+      <button class="show-debug-button" on:click={toggleDebugInfo}>Debug</button
+      >
+    {/if}
   {/if}
 
   {#if error}
@@ -83,7 +101,7 @@
       <button on:click={() => window.location.reload()}>Reload</button>
     </div>
   {:else}
-    <!-- Top navigation bar -->
+    <!-- Updated top navigation bar styling to match main app -->
     <div class="top-bar">
       <div class="top-bar-left">
         <button
@@ -125,17 +143,26 @@
       </div>
     </div>
 
+    <!-- Component error display -->
+    {#if componentError}
+      <div class="component-error">
+        <h3>Component Error</h3>
+        <pre>{String(componentError)}</pre>
+        <button on:click={() => (componentError = null)}>Dismiss</button>
+      </div>
+    {/if}
+
     <!-- Main content area -->
     <main class="content" style="margin-bottom: 0px">
       <div>
         {#if activeTab === "matchCriteria"}
-          <MatchComponent />
+          <MatchComponent on:error={handleComponentError} />
         {:else if activeTab === "preservationOrder"}
-          <OrderComponent />
+          <OrderComponent on:error={handleComponentError} />
         {:else if activeTab === "audiosuiteTags"}
-          <TagsComponent />
+          <TagsComponent on:error={handleComponentError} />
         {:else if activeTab === "colors"}
-          <ColorsComponent />
+          <ColorsComponent on:error={handleComponentError} />
         {/if}
       </div>
 
@@ -232,6 +259,31 @@
     white-space: pre-wrap;
   }
 
+  .component-error {
+    background-color: rgba(255, 85, 85, 0.8);
+    color: white;
+    padding: 15px;
+    margin: 10px 20px;
+    border-radius: 5px;
+    font-family: monospace;
+  }
+
+  .bar {
+    background-color: var(--primary-bg);
+  }
+
+  /* Updated top bar styling to match main app */
+  .top-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: var(--topbar-color);
+    padding: 0;
+    width: 100%;
+    height: 60px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+
   .top-bar-left {
     display: flex;
     justify-content: space-around;
@@ -239,29 +291,6 @@
     width: 100%;
     height: 100%;
     padding: 0 20px;
-  }
-
-  .nav-link {
-    height: 100%;
-    padding: 0 20px;
-    display: flex;
-    align-items: center;
-    background: transparent;
-    border: none;
-    cursor: pointer;
-    color: var(--primary-bg);
-    font-weight: 500;
-    font-size: 16px;
-    transition: background-color 0.2s;
-  }
-
-  .nav-link:hover {
-    background-color: rgba(0, 0, 0, 0.1);
-  }
-
-  .nav-link.active {
-    background-color: rgba(0, 0, 0, 0.15);
-    font-weight: 600;
   }
 
   .app-container {
@@ -297,5 +326,28 @@
 
   .gap-2 {
     gap: 10px;
+  }
+
+  .nav-link {
+    height: 100%;
+    padding: 0 20px;
+    display: flex;
+    align-items: center;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: var(--primary-bg);
+    font-weight: 500;
+    font-size: 16px;
+    transition: background-color 0.2s;
+  }
+
+  .nav-link:hover {
+    background-color: rgba(0, 0, 0, 0.1);
+  }
+
+  .nav-link.active {
+    background-color: rgba(0, 0, 0, 0.15);
+    font-weight: 600;
   }
 </style>

@@ -13,11 +13,10 @@
   import { onMount, tick } from "svelte";
   export let isRegistered: boolean;
 
-  import { registrationStore } from "../store";
-  import { resultsStore } from "../session-store";
+  import type { Registration } from "../stores/types";
+  import { registrationStore } from "../stores/registration";
+  import { resultsStore } from "../stores/results";
   import { get } from "svelte/store";
-
-  import type { Registration } from "../store";
 
   const DEBUG_MODE = import.meta.env.DEV || false; // Will be true in development, false in production
   let attemptFailed = false;

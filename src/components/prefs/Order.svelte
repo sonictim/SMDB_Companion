@@ -2,9 +2,9 @@
   import { invoke } from "@tauri-apps/api/core";
   import { Square, CheckSquare, OctagonX, GripVertical } from "lucide-svelte";
 
-  import { preferencesStore } from "../../store";
+  import { preferencesStore } from "../../stores/preferences";
   import { get } from "svelte/store";
-  import type { PreservationLogic } from "../../store";
+  import type { PreservationLogic } from "../../stores/types";
   import { onMount } from "svelte";
 
   onMount(() => {
@@ -47,7 +47,7 @@
     preferencesStore.update((pref) => ({
       ...pref,
       preservation_order: pref.preservation_order.filter(
-        (item) => !list.includes(item),
+        (item) => !list.includes(item)
       ),
     }));
     clearSelected();
@@ -72,7 +72,7 @@
         (item) =>
           item.column === currentColumn &&
           item.operator === currentOperator && // Using operator.id here
-          item.variable === newOption,
+          item.variable === newOption
       )
     ) {
       preferencesStore.update((pref) => ({

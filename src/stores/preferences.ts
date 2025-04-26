@@ -1,9 +1,9 @@
+console.log('Loading module:', 'preferences.ts');  // Add to each file
 // src/stores/preferences.ts
-import { writable, get } from 'svelte/store';
 import type { Preferences } from './types';
-import { defaultColors, terminalColors, applyColorsToDocument } from './colors';
+import { defaultColors, terminalColors, applyColors } from './colors';
 import { defaultAlgorithms } from './algorithms';
-import { loadFromLocalStorage, saveToLocalStorage, } from './utils';
+import { createLocalStore } from './utils';
 
 // Define default preferences
 export const defaultPreferences: Preferences = {
@@ -287,20 +287,9 @@ try {
     initialPreferences = defaultPreferences;
 }
 
-export const preferencesStore = writable<Preferences>(initialPreferences);
+export const preferencesStore = createLocalStore<Preferences>('preferences', initialPreferences);
 
-// Update the subscription to prevent saving empty preferences
-preferencesStore.subscribe(value => {
-    if (value && Object.keys(value).length > 0) {
-        const prefsToSave = {
-            ...defaultPreferences,
-            ...value,
-            algorithms: Array.isArray(value.algorithms)
-                ? value.algorithms
-                : defaultAlgorithms
-        };
-        localStorage.setItem('preferencesInfo', JSON.stringify(prefsToSave));
-    } else {
-        preferencesStore.set(defaultPreferences);
-    }
-});
+export function resetPreferences() {
+    preferencesStore.set({ ...defaultPreferences });
+}
+
