@@ -1,7 +1,16 @@
 console.log('Loading module:', 'utils.ts');  // Add to each file
 
   import { invoke } from "@tauri-apps/api/core";
+import { getAllWindows, Window } from "@tauri-apps/api/window";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { writable } from 'svelte/store';
+
+import { listen } from "@tauri-apps/api/event";
+import { applyColors } from "./colors";
+import { preferencesStore } from "./preferences";
+import type { Colors } from "./types";
+import { get } from "svelte/store";
+  import { onMount, onDestroy } from "svelte";
 
 
 
@@ -166,3 +175,11 @@ export async function checkForUpdates(): Promise<{
     return 0;
   }
 
+
+
+
+ export function refreshPreferences() {
+    // Force a re-render by creating a new reference
+    preferencesStore.update(prefs => ({...prefs}));
+    console.log("Preferences refreshed");
+  }

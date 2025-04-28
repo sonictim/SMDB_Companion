@@ -10,6 +10,8 @@ import { createLocalStore } from './utils';
 import { get } from 'svelte/store';
 import {preferencesStore} from './preferences';
 import { applyColors } from './colors';
+import { invoke } from "@tauri-apps/api/core";
+import { emit } from '@tauri-apps/api/event';
 
 const defaultPresets: Preset[] = [
   { name: "Default", pref: defaultPreferences },
@@ -28,29 +30,37 @@ const defaultPresets: Preset[] = [
 // For example, to display a dropdown of available presets
 export const presetsStore = createLocalStore<Preset[]>('presets', defaultPresets);
 
-export function loadPreset(name: string | null): void {
+export async function applyPreset(preset: Preset)  {
+    if (!preset || !preset.pref) {
+        console.warn("Invalid preset provided.");
+        return;
+    }
+    preferencesStore.set(preset.pref);
+    await applyColors(preset.pref.colors);
+    console.log("Applied preset:", preset.name);
+
+}
+
+
+
+export async function loadPreset(name: string | null) {
     if (!name) {
         console.warn("No preset name provided.");
         return;
     }
   console.log("Loading preset:", name);
   
-  // Get the current presets from the store
   const presets = get(presetsStore);
-  
-  // Find the preset with the matching name
   const preset = presets.find(p => p.name === name);
   
   if (preset) {
-    // Update the preferences store with the preset's preferences
     preferencesStore.set(preset.pref);
     
-    // Apply the colors
-    if (preset.pref.colors) {
-      applyColors(preset.pref.colors);
-    }
-    
-    console.log(`Loaded preset: ${name}`);
+    emit('preset-change', { 
+        preset: preset
+    }).catch(err => {
+      console.error('Error emitting preset-change event:', err);
+    });
   } else {
     console.warn(`Preset not found: ${name}`);
   }

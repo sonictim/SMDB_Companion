@@ -12,14 +12,14 @@
   } from "lucide-svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { onMount, onDestroy } from "svelte";
-
+  import { databaseStore, openSqliteFile } from "../stores/database";
+  $: database = $databaseStore;
   import { listen } from "@tauri-apps/api/event";
 
   // Define props
   // export let dbSize: number;
   export let activeTab: string; // This prop is now bindable
   export let isRemove: boolean;
-  export let selectedDb: string | null;
 
   let isFinding = false;
 
@@ -43,16 +43,9 @@
     return name.replace(ext, ""); // Removes extension
   }
 
-  async function openSqliteFile() {
+  async function getCompareDb() {
     try {
-      let compareDb = await open({
-        multiple: false,
-        directory: false,
-        filters: [{ name: "SQLite Database", extensions: ["sqlite"] }],
-      });
-      if (Array.isArray(compareDb)) {
-        compareDb = compareDb[0];
-      }
+      let compareDb = await openSqliteFile();
       if (compareDb) {
         preferencesStore.update((prefs) => ({
           ...prefs,
@@ -70,12 +63,9 @@
     }
   }
 
-  $: results = resultsStore;
   $: metadata = metadataStore;
-  let waveform_match = true;
 
-  let pref: Preferences = get(preferencesStore);
-  // let algorithms = get(algorithmsStore);
+  // let pref: Preferences = get(preferencesStore);
 
   $: isBasicEnabled =
     $preferencesStore?.algorithms?.find((a) => a.id === "basic")?.enabled ||
@@ -94,7 +84,6 @@
   async function replaceMetadata() {
     isRemove = false;
     isFinding = true;
-    // Your logic for replacing metadata goes here
     const metaValue = get(metadataStore);
     console.log(
       `Finding: ${metaValue.find}, Replacing: ${metaValue.replace}, Case Sensitive: ${metaValue.case_sensitive}, Column: ${metaValue.column}`
@@ -120,9 +109,6 @@
       case_sensitive: !meta.case_sensitive,
     }));
   }
-
-  // Don't create a local snapshot - use the store directly when needed
-  // Remove this line: $: prefs = $preferencesStore;
 
   function toggleAlgorithm(id: string) {
     preferencesStore.update((prefs) => ({
@@ -198,8 +184,6 @@
 
   // Setup event listener when component mounts
   onMount(async () => {
-    selectedDb = await invoke<string>("get_db_name");
-
     // Initialize the listeners only once in the application lifecycle
     await initializeSearchListeners();
 
@@ -247,7 +231,7 @@
   <div class="block" style="height: 40vh">
     <div class="header">
       <h2>Search Algorithms</h2>
-      {#if selectedDb == null || selectedDb == "" || selectedDb == "Select Database" || !checkAnyAlgorithmEnabled()}
+      {#if database == null || database.name == "" || database.name == "Select Database" || !checkAnyAlgorithmEnabled()}
         <button class="cta-button inactive">
           <SearchCheck size={18} />
           <span>Search for Records</span>
@@ -342,7 +326,7 @@
                 {#await getFilenameWithoutExtension(algo.db) then filename}
                   <!-- svelte-ignore a11y_click_events_have_key_events -->
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
-                  <span class="clickable" on:click={openSqliteFile}
+                  <span class="clickable" on:click={getCompareDb}
                     >{filename}</span
                   >
                 {/await}
@@ -350,7 +334,7 @@
                 <button
                   type="button"
                   class="small-button"
-                  on:click={openSqliteFile}>Select DB</button
+                  on:click={getCompareDb}>Select DB</button
                 >
               {/if}
             {/if}
@@ -366,33 +350,10 @@
               />
               s
             {/if}
-            <!-- {#if algo.id === "waveform"}
-                            <select
-                                class="select-field"
-                                style="width: 150px"
-                                bind:value={waveform_match}
-                            >
-                                {#each [{ text: "Exact Match", val: true }, { text: "Relative Match", val: false }] as { text, val }}
-                                    <option value={val}>{text}</option>
-                                {/each}
-                            </select>
-                        {/if} -->
           </div>
         {/each}
       </div>
-      <span style="margin-left: 255px">
-        <!-- {#if waveform_match == false}
-                    <span>
-                        Threshold:
-                        <input
-                            type="number"
-                            class="input-field"
-                            style="width: 100px"
-                            placeholder="0.0"
-                        />
-                    </span>
-                {/if} -->
-      </span>
+      <span style="margin-left: 255px"> </span>
     {/if}
     <!-- </div> -->
   </div>
@@ -400,7 +361,7 @@
   <div class="block" style="height: 100%; margin-top: 20px">
     <div class="header">
       <h2>Metadata Replacement</h2>
-      {#if selectedDb == null || selectedDb == "" || selectedDb == "Select Database" || $metadata.find == "" || $metadata.find == null}
+      {#if database == null || database.name == "" || database.name == "Select Database" || $metadata.find == "" || $metadata.find == null}
         <button class="cta-button inactive" style="width: 225px">
           <SearchCode size={18} />
           <span> Find Metadata </span>
@@ -489,7 +450,7 @@
           bind:value={$metadata.column}
           class="select-field"
         >
-          {#each pref.columns as option}
+          {#each $preferencesStore.columns as option}
             <option value={option}>{option}</option>
           {/each}
         </select>

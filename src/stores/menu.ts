@@ -272,7 +272,8 @@ async function setupMenu() {
   
 const algoMenu = await Submenu.new({
     text: "Algorithms",
-    items: await Promise.all(prefs.algorithms.map(async (algo) => {
+    items: await Promise.all((prefs?.algorithms || []).map(async (algo) => {
+      
         return await CheckMenuItem.new({
             id: algo.id,
             text: algo.name,
@@ -281,6 +282,11 @@ const algoMenu = await Submenu.new({
                 algo.enabled = !algo.enabled;
                 // Update the preferences store to reflect the change
                 preferencesStore.update(prefs => {
+                    if (!prefs || !prefs.algorithms) {
+                        console.warn("Cannot update algorithms: preferences not properly initialized");
+                        return prefs || {};
+                    }
+                    
                     // Find the algorithm in the preferences and update it
                     const updatedAlgorithms = prefs.algorithms.map(a => 
                         a.id === algo.id ? {...a, enabled: algo.enabled} : a
@@ -302,7 +308,7 @@ const algoMenu = await Submenu.new({
         return {
           id: preset.name,
           text: preset.name,
-          action: () => loadPreset(preset.name),
+          action: async () => await loadPreset(preset.name),
         };
       })
     : [];

@@ -267,7 +267,7 @@ export const TJFPreferences: Preferences = {
 }
 
 
-const storedPreferences = localStorage.getItem('preferencesInfo');
+const storedPreferences = localStorage.getItem('preferences');
 let initialPreferences: Preferences;
 try {
     const parsedPreferences = storedPreferences ? JSON.parse(storedPreferences) : null;

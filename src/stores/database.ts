@@ -5,48 +5,45 @@ import { invoke } from '@tauri-apps/api/core';
 import { preferencesStore } from './preferences';
 import { createLocalStore, createSessionStore } from './utils';
 import type { Database } from './types';
+import { open } from "@tauri-apps/plugin-dialog";
 
 
-// Initialize with null (no database loaded)
+
 export const databaseStore = createSessionStore<Database | null>('database', null);
 
-export async function openDatabase(is_compare: boolean = false): Promise<string | null> {
-    // Set loading state
+
+export async function setDatabase(path: string | null, is_compare: boolean) {
     databaseStore.set({
         path: '',
+        name: 'Select Database',
         size: 0,
         columns: [],
         isLoading: true,
         error: null
     });
-    
+
     try {
         // Get database path from Tauri
-        const dbPath = await invoke<string>("open_db", { isCompare: is_compare });
-        console.log("db path: ", dbPath);
+        const name = await invoke<string>("open_db", {path: path, isCompare: is_compare });
+        const size = await invoke<number>("get_db_size");
+        const columns = await invoke<string[]>("get_columns");  
         
-        // Get database size
-        const size = await getSize();
-        
-        // Get columns
-        const columns = await fetchColumns();
-        
-        // Update store with complete database info
         databaseStore.set({
-            path: dbPath,
-            size,
-            columns,
+            path: '',
+            name: name,
+            size: size,
+            columns: columns,
             isLoading: false,
             error: null
         });
         
-        return dbPath;
     } catch (error) {
-        console.error("Error opening database:", error);
+        console.error("Error setting database:", error);
         
         // Update store with error
         databaseStore.set({
             path: '',
+            name: null,
             size: 0,
             columns: [],
             isLoading: false,
@@ -55,9 +52,18 @@ export async function openDatabase(is_compare: boolean = false): Promise<string 
         
         return null;
     }
+
+}
+
+
+export async function openDatabase(is_compare: boolean){
+    let path = await openSqliteFile();
+    if (path) {setDatabase(path, is_compare);}
+    
 }
 
 export async function closeDatabase(): Promise<boolean> {
+
     try {
         // Close the database first, then update the store
         await invoke<string>("close_db");
@@ -130,3 +136,23 @@ export function getDatabasePath(): string | null {
     const db = get(databaseStore);
     return db ? db.path : null;
 }
+
+
+ export async function openSqliteFile(): Promise<string | null> {
+    try {
+      let db = await open({
+        multiple: false,
+        directory: false,
+        defaultPath: "~/Library/Application Support/SoundminerV6/Databases",
+        filters: [{ name: "SQLite Database", extensions: ["sqlite"] }],
+      });
+      if (Array.isArray(db)) {
+        db = db[0];
+      }
+      return db;
+    }
+    catch (error) {
+      console.error("Error opening SQLite file:", error);
+      return null;
+    }
+  }

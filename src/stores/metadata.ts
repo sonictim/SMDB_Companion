@@ -2,7 +2,6 @@ console.log('Loading module:', 'metadata.ts');  // Add to each file
 
 
 import type { Metadata } from './types';
-import { writable, type Writable } from 'svelte/store';
 import {createSessionStore } from './utils';
 
 

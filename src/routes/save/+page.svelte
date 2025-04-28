@@ -22,11 +22,11 @@
     defaultPreferences,
     defaultAlgorithms,
     // algorithmsStore,
-  } from "../../store";
-  import type { Preferences } from "../../store";
+  } from "../../stores_OLD/store";
+  import type { Preferences } from "../../stores_OLD/store";
   import { get } from "svelte/store";
   import { listen } from "@tauri-apps/api/event";
-  import { initColorHandling } from "../../store";
+  import { initColorHandling } from "../../stores_OLD/store";
   import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 
   onMount(() => {

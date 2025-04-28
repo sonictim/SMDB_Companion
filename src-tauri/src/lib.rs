@@ -63,6 +63,7 @@ pub fn run() {
             pause_audio,
             resume_audio,
             clear_fingerprints,
+            refresh_all_windows
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -475,11 +476,14 @@ pub struct Database {
 }
 
 impl Database {
-    // pub async fn new() -> Self {
-    //     let d = Database {
-
-    //     }
-    // };
+    pub async fn new(path: &str, is_compare: bool) -> Self {
+        let mut d = Database::default();
+        d.path = Some(PathBuf::from(path));
+        d.size = d.fetch_size().await.unwrap();
+        d.records = Vec::with_capacity(d.size);
+        d.is_compare = is_compare;
+        d
+    }
 
     pub async fn open(&mut self, is_compare: bool) -> Option<Self> {
         let home_dir = home_dir();

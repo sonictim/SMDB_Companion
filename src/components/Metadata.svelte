@@ -1,6 +1,5 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
-  import { onMount } from "svelte";
 
   import {
     X,
@@ -12,12 +11,13 @@
 
   export let activeTab: string; // This prop is now bindable
   export let isRemove: boolean;
-  export let selectedDb: string | null;
 
   import type { Preferences } from "../stores/types";
   import { preferencesStore } from "../stores/preferences";
   import { get } from "svelte/store";
   let pref: Preferences = get(preferencesStore);
+  import { databaseStore } from "../stores/database";
+  $: database = $databaseStore;
 
   let findText = "";
   let replaceText = "";
@@ -46,16 +46,12 @@
   function toggleCaseSensitivity() {
     isCaseSensitive = !isCaseSensitive;
   }
-
-  function checkDB(): boolean {
-    return selectedDb === "Select Database";
-  }
 </script>
 
 <div class="block">
   <div class="header">
     <h2>Metadata Replacement</h2>
-    {#if selectedDb == null}
+    {#if database == null}
       <button class="cta-button inactive">
         <Search size={18} />
         <span> Find Records </span>

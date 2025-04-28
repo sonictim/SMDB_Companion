@@ -2,20 +2,18 @@
   import {
     Database,
     Search as SearchIcon,
-    FileText,
     FilesIcon,
     Settings2,
   } from "lucide-svelte";
   import "../styles.css";
-  import { invoke } from "@tauri-apps/api/core";
-  import { Window } from "@tauri-apps/api/window";
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
+  import { get } from "svelte/store";
   import { confirm } from "@tauri-apps/plugin-dialog";
   import { openUrl } from "@tauri-apps/plugin-opener";
+  import { listen } from "@tauri-apps/api/event";
+  import { message } from "@tauri-apps/plugin-dialog";
 
-  // Import menu functions from the new menu.ts module
-  import { initializeMenu } from "../stores/menu";
-
+  // Components
   import SearchComponent from "../components/Search.svelte";
   import SearchSkinnyComponent from "../components/SearchSkinny.svelte";
   import ResultsComponent from "../components/Results.svelte";
@@ -23,177 +21,100 @@
   import MetadataComponent from "../components/Metadata.svelte";
   import RegisterComponent from "../components/Register.svelte";
   import RegisterOnlyComponent from "../components/RegisterOnly.svelte";
-  import { get } from "svelte/store";
-  export let dbSize = 0;
-  export let activeTab = "search";
-  export let isRemove = true;
-  export let isRegistered = false;
-  export let selectedDb: string | null = null;
-  import { ask, message, save } from "@tauri-apps/plugin-dialog";
-  import type { Preferences } from "../stores/types";
+
+  // Stores and utilities
   import { preferencesStore } from "../stores/preferences";
-  import { presetsStore } from "../stores/presets";
-  import { registrationStore } from "../stores/registration";
   import { databaseStore, openDatabase } from "../stores/database";
   import { checkForUpdates } from "../stores/utils";
   import { checkRegistered } from "../stores/registration";
-  import { togglePreferencesWindow } from "../stores/menu";
+  import { togglePreferencesWindow, initializeMenu } from "../stores/menu";
+  import { applyPreset } from "../stores/presets";
+  import type { Preset } from "../stores/types";
 
+  // Component state
+  export let activeTab = "search";
+  export let isRemove = true;
+  export let isRegistered = false;
   let appInitialized = false;
   let initError: unknown = null;
+  let presetChangedListener: (() => void) | null = null;
 
-  // Use the database store for db state
-  $: {
-    if ($databaseStore) {
-      selectedDb = $databaseStore.path;
-      dbSize = $databaseStore.size;
-    } else {
-      selectedDb = null;
-      dbSize = 0;
-    }
-  }
-
-  // Wrap your onMount in proper error handling
+  // Initialize all on mount
   onMount(async () => {
     try {
+      // App initialization
       console.log("Starting app initialization");
-
-      // Ensure window is visible and properly positioned
-      const mainWindow = Window.getCurrent();
-      await mainWindow.show();
-      await mainWindow.setFocus();
-
-      // Reset position in case window was created offscreen
-      await mainWindow.center();
-
-      console.log("Window setup complete");
-
-      // Initialize the menu
       await initializeMenu();
-
-      // Run your initialization code
       isRegistered = await checkRegistered();
-
-      // Check for updates (but don't block UI on this)
-      checkForUpdates().catch((err) => {
-        console.error("Update check failed:", err);
-      });
-
-      // Mark initialization as complete
       appInitialized = true;
       console.log("App initialization complete");
+      const currentPrefs = get(preferencesStore);
+
+      // Update CSS variables from current preferences
+      if (currentPrefs?.colors) {
+        Object.entries(currentPrefs.colors).forEach(([key, value]) => {
+          const cssVariable = `--${key.replace(/([A-Z])/g, "-$1").toLowerCase()}`;
+          document.documentElement.style.setProperty(
+            cssVariable,
+            String(value)
+          );
+        });
+      }
+
+      // First open dialog and update checks
+      if ($preferencesStore.firstOpen) {
+        await message(
+          "Please be sure to back up your Databases and Audio Files before using this application."
+        );
+        preferencesStore.update((prefs) => ({ ...prefs, firstOpen: false }));
+      }
+
+      // Set up preset listener
+      presetChangedListener = await listen("preset-change", (event) => {
+        console.log("Preset change event received:", event);
+
+        let presetData = event.payload as { preset: Preset };
+        if (presetData?.preset) {
+          console.log("Applying preset:", presetData.preset.name);
+          applyPreset(presetData.preset);
+        } else {
+          console.error("Invalid preset data received:", event.payload);
+        }
+      });
+
+      // Check for updates (non-blocking)
+      const updateCheck = await checkForUpdates().catch((err) => {
+        console.error("Update check failed:", err);
+        return null;
+      });
+
+      if (updateCheck?.needsUpdate) {
+        const { latest, versionChanges, isBeta } = updateCheck;
+        console.log("Update available:", latest);
+
+        const confirmed = await confirm(versionChanges + "\n\nDownload now?", {
+          title: "Version " + latest + " is available",
+          kind: "info",
+        });
+
+        if (confirmed) {
+          await openUrl(
+            isBeta
+              ? "https://smdbc.com/beta.php"
+              : "https://smdbc.com/download.php"
+          );
+        }
+      }
     } catch (error) {
       console.error("Fatal error during app initialization:", error);
       initError = error;
     }
   });
 
-  let pref: Preferences = get(preferencesStore);
-
-  let preferences;
-  preferencesStore.subscribe((value) => {
-    preferences = value;
-    // Ensure colors object exists before accessing properties
-    if (value?.colors) {
-      const { colors } = value;
-      document.documentElement.style.setProperty(
-        "--primary-bg",
-        colors.primaryBg ?? "#1a1a1a"
-      );
-      document.documentElement.style.setProperty(
-        "--secondary-bg",
-        colors.secondaryBg ?? "#2a2a2a"
-      );
-      document.documentElement.style.setProperty(
-        "--text-color",
-        colors.textColor ?? "#ffffff"
-      );
-      document.documentElement.style.setProperty(
-        "--topbar-color",
-        colors.topbarColor ?? "#333333"
-      );
-      document.documentElement.style.setProperty(
-        "--accent-color",
-        colors.accentColor ?? "#007acc"
-      );
-      document.documentElement.style.setProperty(
-        "--hover-color",
-        colors.hoverColor ?? "#2b2b2b"
-      );
-      document.documentElement.style.setProperty(
-        "--warning-color",
-        colors.warningColor ?? "#ff4444"
-      );
-      document.documentElement.style.setProperty(
-        "--warning-hover",
-        colors.warningHover ?? "#cc0000"
-      );
-      document.documentElement.style.setProperty(
-        "--inactive-color",
-        colors.inactiveColor ?? "#666666"
-      );
-    }
+  // Clean up on component destruction
+  onDestroy(() => {
+    if (presetChangedListener) presetChangedListener();
   });
-
-  async function getSize() {
-    console.log("getting size");
-    invoke<number>("get_db_size")
-      .then((size) => {
-        dbSize = size;
-        console.log("get size:", size);
-      })
-      .catch((error) => console.error(error));
-  }
-
-  function removeResults() {
-    console.log("Remove selected results");
-  }
-
-  onMount(firstOpen);
-  onMount(() => {
-    checkForUpdates()
-      .then(async ({ latest, needsUpdate, versionChanges, isBeta }) => {
-        // needsUpdate = true;
-        if (needsUpdate) {
-          console.log("Update available:", latest);
-          const confirmed = await confirm(
-            versionChanges + "\n\nDownload now?",
-            {
-              title: "Version " + latest + " is available",
-              kind: "info",
-            }
-          );
-          if (confirmed) {
-            console.log("User confirmed download.");
-
-            if (isBeta) {
-              // Open the beta download page in the default browser
-              await openUrl("https://smdbc.com/beta.php");
-            } else {
-              // Open the stable download page in the default browser
-              await openUrl("https://smdbc.com/download.php");
-            }
-          }
-        } else {
-          console.log("No updates available");
-        }
-      })
-      .catch((err) => {
-        console.error("Update check failed:", err);
-      });
-  });
-  async function firstOpen() {
-    if (get(preferencesStore).firstOpen) {
-      await message(
-        "Please be sure to back up your Databases and Audio Files before using this application."
-      );
-    }
-
-    preferencesStore.update((prefs) => ({
-      ...prefs,
-      firstOpen: false,
-    }));
-  }
 </script>
 
 <svelte:head>
@@ -225,21 +146,21 @@
     <div class="top-bar-left">
       <button class="nav-link" on:click={() => openDatabase(false)}>
         <Database size={18} />
-        <span style="font-size: 24px;"
-          >{selectedDb ? selectedDb : "Select Database"}</span
-        >
+        <span style="font-size: 24px;">
+          {$databaseStore?.name || "Select Database"}
+          {#if $databaseStore}
+            <span style="font-size: 14px;"
+              >{$databaseStore.size} total records</span
+            >
+          {/if}
+        </span>
       </button>
     </div>
     <div class="top-bar-right">
       <button
         class="nav-link {activeTab === 'search' ? 'active' : ''}"
-        on:click={(event) => {
-          if (event.metaKey) {
-            activeTab = "searchSkinny";
-          } else {
-            activeTab = "search";
-          }
-        }}
+        on:click={(event) =>
+          (activeTab = event.metaKey ? "searchSkinny" : "search")}
         title="Click for Search, ⌘+Click for Split View"
       >
         <div class="flex items-center gap-2">
@@ -248,17 +169,11 @@
         </div>
       </button>
       <button
-        class="nav-link {activeTab === 'results' ||
-        activeTab === 'resultsSkinny'
+        class="nav-link {['results', 'resultsSkinny'].includes(activeTab)
           ? 'active'
           : ''}"
-        on:click={(event) => {
-          if (event.metaKey) {
-            activeTab = "resultsSkinny";
-          } else {
-            activeTab = "results";
-          }
-        }}
+        on:click={(event) =>
+          (activeTab = event.metaKey ? "resultsSkinny" : "results")}
         title="Click for Results, ⌘+Click for Split View"
       >
         <div class="flex items-center gap-2">
@@ -277,34 +192,28 @@
   <!-- Main Content Area -->
   <main class="content">
     {#if activeTab === "search"}
-      <SearchComponent bind:selectedDb bind:activeTab bind:isRemove />
+      <SearchComponent bind:activeTab bind:isRemove />
     {:else if activeTab === "searchSkinny"}
       <div class="grid">
-        <SearchSkinnyComponent bind:selectedDb bind:activeTab bind:isRemove />
+        <SearchSkinnyComponent bind:activeTab bind:isRemove />
         {#if isRegistered}
-          <ResultsSkinnyComponent
-            bind:isRemove
-            bind:activeTab
-            bind:selectedDb
-          />
+          <ResultsSkinnyComponent bind:isRemove bind:activeTab />
         {:else}
           <RegisterComponent bind:isRegistered />
         {/if}
       </div>
-    {:else if activeTab === "results"}
+    {:else if activeTab === "results" || activeTab === "resultsSkinny"}
       {#if isRegistered}
-        <ResultsComponent bind:isRemove bind:activeTab bind:selectedDb />
-      {:else}
-        <RegisterComponent bind:isRegistered />
-      {/if}
-    {:else if activeTab === "resultsSkinny"}
-      {#if isRegistered}
-        <ResultsSkinnyComponent bind:isRemove bind:activeTab bind:selectedDb />
+        {#if activeTab === "results"}
+          <ResultsComponent bind:isRemove bind:activeTab />
+        {:else}
+          <ResultsSkinnyComponent bind:isRemove bind:activeTab />
+        {/if}
       {:else}
         <RegisterComponent bind:isRegistered />
       {/if}
     {:else if activeTab === "metadata"}
-      <MetadataComponent bind:activeTab bind:isRemove bind:selectedDb />
+      <MetadataComponent bind:activeTab bind:isRemove />
     {:else if activeTab === "register"}
       <RegisterOnlyComponent bind:isRegistered />
     {/if}
@@ -312,10 +221,6 @@
 </div>
 
 <style>
-  /* .hidden {
-    display: none;
-  } */
-
   .loading-screen,
   .error-screen {
     display: flex;

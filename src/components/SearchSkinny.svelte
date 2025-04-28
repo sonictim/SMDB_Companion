@@ -19,7 +19,6 @@
   // export let dbSize: number;
   export let activeTab: string; // This prop is now bindable
   export let isRemove: boolean;
-  export let selectedDb: string | null;
 
   let isFinding = false;
 
@@ -27,6 +26,8 @@
   import { preferencesStore } from "../stores/preferences";
   import { resultsStore } from "../stores/results";
   import { metadataStore } from "../stores/metadata";
+  import { databaseStore } from "../stores/database";
+  $: database = $databaseStore;
   import {
     searchProgressStore,
     isSearching,
@@ -199,8 +200,6 @@
 
   // Setup event listener when component mounts
   onMount(async () => {
-    selectedDb = await invoke<string>("get_db_name");
-
     // Initialize the listeners only once in the application lifecycle
     await initializeSearchListeners();
 
@@ -374,7 +373,7 @@
                 {/if} -->
       </span>
     {/if}
-    {#if selectedDb == null || selectedDb == "" || selectedDb == "Select Database" || !checkAnyAlgorithmEnabled()}
+    {#if database == null || database.name == "" || database.name == "Select Database" || !checkAnyAlgorithmEnabled()}
       <button class="cta-button inactive">
         <SearchCheck size={18} />
         <span>Search for Records</span>

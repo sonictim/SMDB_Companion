@@ -30,14 +30,11 @@ pub async fn check_reg(data: Registration) -> Result<bool, String> {
 #[tauri::command]
 pub async fn open_db(
     state: State<'_, Mutex<AppState>>,
+    path: String,
     is_compare: bool,
 ) -> Result<Arc<str>, String> {
     let mut state = state.lock().await;
-    let x = state.db.path.clone();
-    state.db.open(is_compare).await;
-    if x == state.db.path {
-        return Err(String::from("no path change"));
-    }
+    state.db = Database::new(&path, is_compare).await;
     if let Some(name) = state.db.get_name() {
         return Ok(name);
     }
@@ -501,4 +498,13 @@ pub async fn cancel_search(state: State<'_, Mutex<AppState>>) -> Result<String, 
     println!("❌❌❌❌❌ ABORTING SEARCH!!!!!!!!!");
 
     Ok(String::from("Search Canceled"))
+}
+
+// use tauri::{AppHandle, Manager, Window};
+
+#[tauri::command]
+pub fn refresh_all_windows(app: AppHandle) {
+    for (_label, window) in app.webview_windows() {
+        let _ = window.eval("window.location.reload()");
+    }
 }

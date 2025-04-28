@@ -180,10 +180,12 @@ export const themeOptions = [
 ];
 
 // Enhanced apply colors function
-export async function applyColors(colors: Colors, skipEvent = false): Promise<void> {
+export async function applyColors(colors: Colors): Promise<void> {
   try {
+    // Check if we've received the nested format or direct colors object
+    
     if (!colors) return;
-    console.log("Applying colors safely:", Object.keys(colors));
+    console.log("Applying colors:", Object.keys(colors));
     
     // Apply each color with individual error handling
     Object.entries(colors).forEach(([key, value]) => {
@@ -194,11 +196,6 @@ export async function applyColors(colors: Colors, skipEvent = false): Promise<vo
         console.error(`Error applying color ${key}:`, err);
       }
     });
-
-    // Emit event to update all other windows with the new colors
-    if (!skipEvent) {
-      await emit("theme-updated", { colors });
-    }
     
   } catch (error) {
     console.error("Error in applyColors:", error);
@@ -287,12 +284,3 @@ export async function resetColors(): Promise<void> {
   }
 }
 
-export function initColorHandling() {
-  // Subscribe to preference changes
-  preferencesStore.subscribe((value) => {
-    if (value?.colors) {
-      // Use skipEvent=true during initial load to prevent circular updates
-      applyColors(value.colors, document.readyState !== 'complete');
-    }
-  });
-}

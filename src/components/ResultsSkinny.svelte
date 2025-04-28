@@ -7,16 +7,17 @@
   import { preferencesStore } from "../stores/preferences";
   import { resultsStore } from "../stores/results";
   import { metadataStore } from "../stores/metadata";
+  import { databaseStore } from "../stores/database";
   import { ask, message } from "@tauri-apps/plugin-dialog";
   import { createVirtualizer } from "@tanstack/svelte-virtual";
 
   export let isRemove: boolean;
   export let activeTab: string; // This prop is now bindable
-  export let selectedDb: string | null = null;
 
   $: pref = $preferencesStore;
   $: results = $resultsStore;
   $: metadata = $metadataStore;
+  $: database = $databaseStore;
 
   let processing = false;
   let loading = true;

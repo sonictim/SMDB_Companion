@@ -58,6 +58,7 @@ export type FileRecord = {
 
 export type Database = {
     path: string;
+    name: string | null;
     size: number;
     columns: string[];
     isLoading: boolean;
