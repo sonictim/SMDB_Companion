@@ -4,6 +4,10 @@ import type { Preferences } from './types';
 import { defaultColors, terminalColors, applyColors } from './colors';
 import { defaultAlgorithms } from './algorithms';
 import { createLocalStore } from './utils';
+  import { get } from "svelte/store";
+
+
+
 
 // Define default preferences
 export const defaultPreferences: Preferences = {
@@ -293,3 +297,40 @@ export function resetPreferences() {
     preferencesStore.set({ ...defaultPreferences });
 }
 
+export function toggle_ignore_filetype() {
+    preferencesStore.update(currentPreferences => ({
+        ...currentPreferences,
+        ignore_filetype: !currentPreferences.ignore_filetype
+    }));
+}
+export function toggle_remove_records_from() {
+    preferencesStore.update(currentPreferences => ({
+        ...currentPreferences,
+        safety_db: !currentPreferences.safety_db
+    }));
+}
+export function toggle_strip_dual_mono() {
+    preferencesStore.update(currentPreferences => ({
+        ...currentPreferences,
+        strip_dual_mono: !currentPreferences.strip_dual_mono
+    }));
+}
+
+export function set_keep_audio_files() {
+    preferencesStore.update(currentPreferences => ({
+        ...currentPreferences,
+        erase_files: "Keep"
+    }));
+}
+export function set_trash_audio_files() {
+    preferencesStore.update(currentPreferences => ({
+        ...currentPreferences,
+        erase_files: "Trash"
+    }));
+}
+export function set_remove_audio_files() {
+    preferencesStore.update(currentPreferences => ({
+        ...currentPreferences,
+        erase_files: "Remove"
+    }));
+}

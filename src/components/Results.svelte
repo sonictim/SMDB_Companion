@@ -1147,7 +1147,7 @@
       {/if}
       <span>
         Checked Files:
-        <select class="select-field" on:change={handleFileEraseChange}>
+        <select class="select-field" bind:value={$preferencesStore.erase_files}>
           {#each [{ id: "Keep", text: "Keep on Disk" }, { id: "Trash", text: "Move To Trash" }, { id: "Delete", text: "Permanently Delete" }] as option}
             <option value={option.id}>{option.text}</option>
           {/each}

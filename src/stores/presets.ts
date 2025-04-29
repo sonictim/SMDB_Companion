@@ -97,6 +97,11 @@ export function savePreset(newPreset: string): string | undefined {
         ]);
         console.log("Preset saved:", trimmedPreset);
       }
+          emit('preset-change', { 
+        preset: {name: trimmedPreset, pref: get(preferencesStore) }
+    }).catch(err => {
+      console.error('Error emitting preset-change event:', err);
+    });
 
       return trimmedPreset;
 

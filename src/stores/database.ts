@@ -9,6 +9,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 
 
 
+
 export const databaseStore = createSessionStore<Database | null>('database', null);
 
 
@@ -21,21 +22,25 @@ export async function setDatabase(path: string | null, is_compare: boolean) {
         isLoading: true,
         error: null
     });
+    if (!path) return;
 
     try {
         // Get database path from Tauri
         const name = await invoke<string>("open_db", {path: path, isCompare: is_compare });
         const size = await invoke<number>("get_db_size");
         const columns = await invoke<string[]>("get_columns");  
-        
-        databaseStore.set({
-            path: '',
+
+        let db = {
+            path: path,
             name: name,
             size: size,
             columns: columns,
             isLoading: false,
             error: null
-        });
+        }
+        
+        databaseStore.set(db);
+        addRecentDatabase({name: name, path: path});
         
     } catch (error) {
         console.error("Error setting database:", error);
@@ -58,7 +63,10 @@ export async function setDatabase(path: string | null, is_compare: boolean) {
 
 export async function openDatabase(is_compare: boolean){
     let path = await openSqliteFile();
-    if (path) {setDatabase(path, is_compare);}
+    if (path) {
+        setDatabase(path, is_compare);
+
+    }
     
 }
 
@@ -156,3 +164,24 @@ export function getDatabasePath(): string | null {
       return null;
     }
   }
+
+
+export const recentDbStore = createLocalStore<{name: string, path: string}[]>('recentDatabases', []);
+
+function addRecentDatabase(db: {name: string, path: string}) {
+    if (!db || !db.name) return;
+    recentDbStore.update(currentList => {
+        // Remove the path if it already exists
+        const updatedList = currentList.filter(item => item.name !== db.name);
+        
+        // Add the new path to the beginning of the list
+        updatedList.unshift(db);
+        
+        // Limit the list to the last 10 entries
+        if (updatedList.length > 10) {
+            updatedList.pop();
+        }
+        
+        return updatedList;
+    });
+}

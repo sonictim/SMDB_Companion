@@ -8,9 +8,9 @@ import {
 } from "@tauri-apps/api/menu";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { writable, get } from 'svelte/store';
-import { preferencesStore } from './preferences';
+import { preferencesStore, toggle_ignore_filetype, toggle_remove_records_from, } from './preferences';
 import { presetsStore } from './presets';
-import { openDatabase, closeDatabase } from './database';
+import { openDatabase, closeDatabase, recentDbStore, setDatabase } from './database';
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Window } from '@tauri-apps/api/window';
 import { loadPreset } from './presets';
@@ -20,15 +20,32 @@ export async function initializeMenu() {
   try {
     menuStore.update(state => ({ ...state, isReady: false, error: null }));
     await setupMenu();
-    const unsubscribe = preferencesStore.subscribe(async (newPrefs) => {
+    
+    // Create subscriptions to both stores
+    const prefUnsubscribe = preferencesStore.subscribe(async () => {
       await setupMenu();
     });
     
-    // Store unsubscribe function to clean up later if needed
+    // Add subscription to recentDbStore
+    const recentDbUnsubscribe = recentDbStore.subscribe(async () => {
+      await setupMenu();
+    });
+    
+    // Also subscribe to presets store to update preset menu items
+    const presetsUnsubscribe = presetsStore.subscribe(async () => {
+      await setupMenu();
+    });
+    
+    // Store unsubscribe functions to clean up later if needed
     menuStore.update(state => ({ 
       ...state, 
       isReady: true,
-      unsubscribe 
+      // Combine all unsubscribe functions
+      unsubscribe: () => {
+        prefUnsubscribe();
+        recentDbUnsubscribe();
+        presetsUnsubscribe();
+      }
     }));
     
     return true;
@@ -267,17 +284,132 @@ async function setupMenu() {
   });
 
 
-  const prefs = get(preferencesStore);
+ const optionsMenu = await Submenu.new({
+    text: "Options",
+    items: [
+      await CheckMenuItem.new({
+        id: "ignore-filetypes",
+        text: "Ignore File Types",
+        checked: get(preferencesStore).ignore_filetype,
+        action: () => {toggle_ignore_filetype()},
+
+      }),
+      separator,
+      await CheckMenuItem.new({
+        id: "safety-database",
+        text: "Create Safety Database",
+        checked: get(preferencesStore).safety_db,
+        action: () => {toggle_remove_records_from()},
+
+      }),
+      await Submenu.new({
+        text: "Audio Files",
+        items: [
+          await CheckMenuItem.new({
+            id: "keep-audio-files",
+            text: "Keep on Disk",
+            checked: get(preferencesStore).erase_files === "Keep",
+            action: () => {
+              preferencesStore.update(currentPreferences => ({
+                ...currentPreferences,
+                erase_files: "Keep"
+              }));
+            },
+          }),
+          await CheckMenuItem.new({
+            id: "trash-audio-files",
+            text: "Move to Trash",
+            checked: get(preferencesStore).erase_files === "Trash",
+            action: () => {
+              preferencesStore.update(currentPreferences => ({
+                ...currentPreferences,
+                erase_files: "Trash"
+              }));
+            },
+          }),
+          await CheckMenuItem.new({
+            id: "remove-audio-files",
+            text: "Permanently Delete",
+            checked: get(preferencesStore).erase_files === "Delete",
+            action: () => {
+              preferencesStore.update(currentPreferences => ({
+                ...currentPreferences,
+                erase_files: "Delete"
+              }));
+            },
+          }),
+        ]
+
+
+
+      }),
+      separator,
+      await CheckMenuItem.new({
+        id: "strip-dual-mono",
+        text: "Strip Dual Mono",
+        checked: get(preferencesStore).strip_dual_mono,
+        action: () => {preferencesStore.update(prefs => ({
+          ...prefs,
+          strip_dual_mono: !prefs.strip_dual_mono
+        }))},
+
+      }),
+      separator,
+          await Submenu.new({
+        text: "Audio Fingerprints",
+        items: [
+          await CheckMenuItem.new({
+            id: "save-audio-fingerprints",
+            text: "Save to Database",
+            checked: get(preferencesStore).store_waveforms,
+            action: () => {
+              preferencesStore.update(currentPreferences => ({
+                ...currentPreferences,
+                store_waveforms: !currentPreferences.store_waveforms
+              }));
+            },
+          }),
+          await CheckMenuItem.new({
+            id: "fetch-audio-fingerprints",
+            text: "Fetch from Database",
+            checked: get(preferencesStore).fetch_waveforms,
+            action: () => {
+              preferencesStore.update(currentPreferences => ({
+                ...currentPreferences,
+                fetch_waveforms: !currentPreferences.fetch_waveforms
+              }));
+            },
+          }),
+
+        ]
+
+
+
+      }),
+
+
+    ]
+
+
+ });
+
+
+const prefs = get(preferencesStore);
+let enabled = prefs?.algorithms?.some(algo => algo.id === 'basic' && algo.enabled === false) ? false : true;
 
   
 const algoMenu = await Submenu.new({
     text: "Algorithms",
+    
     items: await Promise.all((prefs?.algorithms || []).map(async (algo) => {
       
-        return await CheckMenuItem.new({
+
+      
+      return await CheckMenuItem.new({
             id: algo.id,
             text: algo.name,
             checked: algo.enabled,
+            enabled: (!(algo.id === 'filename' || algo.id === 'audiosuite') || enabled),
             action: () => {
                 algo.enabled = !algo.enabled;
                 // Update the preferences store to reflect the change
@@ -341,6 +473,8 @@ const algoMenu = await Submenu.new({
     ],
   });
 
+  let recentdb = get(recentDbStore);
+
   const fileMenu = await Submenu.new({
     text: "File",
     items: [
@@ -350,6 +484,24 @@ const algoMenu = await Submenu.new({
         action: () => openDatabase(false),
       },
       { id: "close", text: "Close Database", action: () => closeDatabase() },
+      
+      await Submenu.new({
+        text: "Recent Databases",
+        items: recentdb
+          .filter(db => db.name !== null && db.path !== null  && db.name !== "Select Database")
+          .map((db) => {
+            return {
+              id: db.name!,
+              text: db.name!,
+              action: async () => {
+                await setDatabase(db.path!, false);
+              }
+            };
+          })
+
+      }),
+      
+      
       separator,
       loadPresetMenu,
       separator,
@@ -400,7 +552,7 @@ const algoMenu = await Submenu.new({
   });
 
   const menu = await Menu.new({
-    items: [appMenu, fileMenu, editMenu, viewMenu, algoMenu, helpMenu],
+    items: [appMenu, fileMenu, editMenu, viewMenu, algoMenu, optionsMenu, helpMenu],
   });
 
   await menu.setAsAppMenu();

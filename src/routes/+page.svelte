@@ -77,6 +77,9 @@
         if (presetData?.preset) {
           console.log("Applying preset:", presetData.preset.name);
           applyPreset(presetData.preset);
+          preferencesStore.update((prefs) => ({
+            ...prefs,
+          }));
         } else {
           console.error("Invalid preset data received:", event.payload);
         }
