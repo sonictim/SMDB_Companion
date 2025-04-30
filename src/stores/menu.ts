@@ -14,6 +14,27 @@ import { openDatabase, closeDatabase, recentDbStore, setDatabase } from './datab
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Window } from '@tauri-apps/api/window';
 import { loadPreset } from './presets';
+  import {
+    resultsStore,
+    filteredItemsStore,
+    selectedItemsStore,
+    currentFilterStore,
+    enableSelectionsStore,
+    toggleEnableSelections,
+    clearSelected,
+    invertSelected,
+    toggleSelect,
+    toggleChecked,
+    checkSelected,
+    uncheckSelected,
+    toggleChecksSelected,
+    getTotalChecks,
+    updateCurrentFilter,
+    filterItems,
+    filtersStore,
+    manualFiltersStore,
+  } from "../stores/results";
+import { show } from "@tauri-apps/api/app";
 
 
 export async function initializeMenu() {
@@ -283,6 +304,46 @@ async function setupMenu() {
     },
   });
 
+  const filters = get(filtersStore);
+  const manualFilters = get(manualFiltersStore);
+  const currentFilter = get(currentFilterStore);
+
+  const filtersMenu = await Submenu.new({
+    text: "Results Filter",
+    items: [
+      // ...manualFilters.map((filter) => ({
+      //   id: filter.id,
+      //   text: filter.name,
+      //   checked: filter.id === currentFilter,
+      //   action: () => { 
+      //     updateCurrentFilter(filter.id);
+      //   }
+      // })),
+      // separator,
+
+      ...filters.map((filter) => {
+        if (filter.id === "spacer") return separator;
+        return {
+          id: filter.id,
+          text: filter.name,
+          checked: filter.id === currentFilter,
+          action: async () => {
+            // Update the store
+            updateCurrentFilter(filter.id);
+            
+            // Force menu refresh to ensure only one item is checked
+            await setupMenu();
+          }
+        };
+
+
+
+      })
+
+
+    ]
+  });
+
 
  const optionsMenu = await Submenu.new({
     text: "Options",
@@ -386,6 +447,19 @@ async function setupMenu() {
 
 
       }),
+      separator,
+      await CheckMenuItem.new({
+        id: "showToolbars",
+        text: "Show Toolbars",
+        checked: get(preferencesStore).showToolbars,
+        action: () => {preferencesStore.update(prefs => ({
+          ...prefs,
+          showToolbars: !prefs.showToolbars
+        }))},
+
+      }),
+
+
 
 
     ]
@@ -402,9 +476,6 @@ const algoMenu = await Submenu.new({
     text: "Algorithms",
     
     items: await Promise.all((prefs?.algorithms || []).map(async (algo) => {
-      
-
-      
       return await CheckMenuItem.new({
             id: algo.id,
             text: algo.name,
@@ -512,13 +583,78 @@ const algoMenu = await Submenu.new({
   const editMenu = await Submenu.new({
     text: "Edit",
     id: "edit",
-    items: [undo, redo, separator, cut, copy, paste, separator, select_all],
+    items: [
+      {
+        id: "checkSelected",
+        text: "Check Selected",
+        action: () => {checkSelected()}
+      },
+      {
+        id: "uncheckSelected",
+        text: "Uncheck Selected",
+        action: () => {uncheckSelected()}
+      },
+      {
+        id: "toggleSelected",
+        text: "Toggle Selected",
+        action: () => {toggleChecksSelected()}
+      },
+      separator,
+      {
+        id: "invertSelected",
+        text: "Invert Selection",
+        action: () => {invertSelected()}
+      },
+      {
+        id: "clearSelected",
+        text: "Clear Selection",
+        action: () => {clearSelected()}
+
+      },
+      // separator,
+      // undo, redo, separator, cut, copy, paste, separator, select_all
+    ],
   });
+
+  const viewState = get(viewStore);
 
   const viewMenu = await Submenu.new({
     text: "View",
     id: "view",
-    items: [minimize, maximize, separator, fullscreen],
+    items: [
+      minimize, 
+      maximize, 
+      separator, 
+      fullscreen, 
+      separator,
+      await CheckMenuItem.new({
+        id: "search-view",
+        text: "Search",
+        checked: viewState.searchView,
+        action: showSearchView,
+      }),
+      await CheckMenuItem.new({
+        id: "results-view",
+        text: "Results",
+        checked: viewState.resultsView,
+        action: showResultsView,
+      }),
+      await CheckMenuItem.new({
+        id: "split-view",
+        text: "Split",
+        checked: viewState.splitView,
+        action: showSplitView,
+      }),
+      await CheckMenuItem.new({
+        id: "nofrills-view",
+        text: "No Frills",
+        checked: viewState.noFrillsView,
+        action: showNoFrillsView,
+      }),
+
+      separator,
+      filtersMenu
+    ],
   });
 
   const licenseMenu = await Submenu.new({
@@ -556,4 +692,96 @@ const algoMenu = await Submenu.new({
   });
 
   await menu.setAsAppMenu();
+}
+
+// View state store
+export const viewStore = writable({
+  searchView: false,
+  resultsView: false,
+  splitView: true,
+  noFrillsView: false,
+});
+
+// View state management function
+export function showSearchView() {
+  viewStore.update(state => ({
+    ...state,
+    searchView: true,
+    resultsView: false,
+    splitView: false,
+    noFrillsView: false,
+  }));
+  // Force menu refresh
+  setupMenu();
+}
+
+export function showResultsView() {
+  viewStore.update(state => ({
+    ...state,
+    searchView: false,
+    resultsView: true,
+    splitView: false,
+    noFrillsView: false,
+  }));
+  // Force menu refresh
+  setupMenu();
+}
+
+export function showSplitView() {
+  viewStore.update(state => ({
+    ...state,
+    searchView: false,
+    resultsView: false,
+    splitView: true,
+    noFrillsView: false,
+  }));
+  // Force menu refresh
+  setupMenu();
+}
+
+export function showNoFrillsView() {
+  viewStore.update(state => ({
+    ...state,
+    searchView: false,
+    resultsView: false,
+    splitView: false,
+    noFrillsView: true,
+  }));
+  // Force menu refresh
+  setupMenu();
+}
+
+
+export function toggleNoFrillsView() {
+  viewStore.update(state => ({
+    ...state,
+    noFrillsView: !state.noFrillsView
+  }));
+}
+
+
+export function toggleSearchView() {
+
+ 
+
+  viewStore.update(state => ({
+    ...state,
+    searchView: state.resultsView ? !state.searchView : true,
+    splitView: false,
+  }));
+}
+
+export function toggleResultsView() {
+  viewStore.update(state => ({
+    ...state,
+    resultsView: state.searchView ? !state.resultsView : true,
+    splitView: false,
+  }));
+}
+
+export function toggleSplitView() {
+  viewStore.update(state => ({
+    ...state,
+    splitView: !state.splitView
+  }));
 }

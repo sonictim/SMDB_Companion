@@ -21,6 +21,13 @@
   export let activeTab: string; // This prop is now bindable
   export let isRemove: boolean;
 
+  // Import viewStore and view control functions
+  import { viewStore, showResultsView } from "../stores/menu";
+
+  // Bind to the viewStore values instead of using local props
+  $: searchView = $viewStore.searchView;
+  $: resultsView = $viewStore.resultsView;
+
   let isFinding = false;
 
   import type { Algorithm, Preferences, FileRecord } from "../stores/types";
@@ -31,7 +38,9 @@
     isSearching,
     searchProgressStore,
     initializeSearchListeners,
-    resetSearchProgress,
+    toggleSearch, // Import the moved functions
+    search,
+    cancelSearch,
   } from "../stores/status";
   import { get } from "svelte/store";
   import { open } from "@tauri-apps/plugin-dialog";
@@ -119,88 +128,30 @@
     }));
   }
 
-  function toggleSearch() {
-    console.log("Toggle Search");
-    $isSearching = !$isSearching;
-    if ($isSearching) {
-      search();
-    } else {
-      cancelSearch();
-    }
-  }
-
-  // Update the search function
-  async function search() {
-    if (!$preferencesStore || !$preferencesStore.algorithms) {
-      console.error("Preferences store not properly initialized");
-      alert(
-        "Application settings not loaded properly. Please restart the application."
-      );
-      return;
-    }
-    let $pref = get(preferencesStore);
-    let algorithms = $pref.algorithms; // Get algorithms directly from preferences
-
-    console.log("Starting Search");
-    isRemove = true;
-    resultsStore.set([]);
-
-    let algorithmState = algorithms.reduce(
-      (acc: Record<string, boolean | number | string>, algo: Algorithm) => {
-        acc[algo.id] = algo.enabled;
-        if (algo.id === "duration") {
-          acc["min_dur"] = algo.min_dur ?? 0;
-        }
-        if (algo.id === "dbcompare") {
-          acc["compare_db"] = algo.db ?? "";
-        }
-        return acc;
-      },
-      {} as Record<string, boolean | number | string>
-    );
-
-    if (!algorithmState.basic) {
-      algorithmState.audiosuite = false;
-    }
-
-    await invoke<FileRecord[]>("search", {
-      enabled: algorithmState,
-      pref: get(preferencesStore),
-    })
-      .then((result) => {
-        console.log("Search Results:", result);
-        resultsStore.set(result);
-      })
-      .catch((error) => {
-        $isSearching = false;
-        console.error(error);
-      });
-
-    if ($isSearching) {
-      $isSearching = false;
+  // Handle search tab navigation after search completion
+  $: {
+    // When search completes and returns results, navigate to results tab
+    if (!$isSearching && $resultsStore.length > 0) {
       activeTab = "results";
     }
   }
 
   // Setup event listener when component mounts
-  onMount(async () => {
+  onMount(() => {
     // Initialize the listeners only once in the application lifecycle
-    await initializeSearchListeners();
+    initializeSearchListeners().then(() => {
+      console.log("Search component mounted, isSearching:", $isSearching);
+    });
 
-    console.log("Search component mounted, isSearching:", $isSearching);
+    // Add debugging to track isSearching changes
+    const unsubscribe = isSearching.subscribe((value) => {
+      console.log("isSearching changed:", value);
+    });
+
+    return () => {
+      unsubscribe();
+    };
   });
-
-  async function cancelSearch() {
-    await invoke("cancel_search")
-      .then(() => {
-        console.log("Search cancellation requested");
-        $isSearching = false;
-
-        // Reset progress in store
-        resetSearchProgress();
-      })
-      .catch((error) => console.error("Error cancelling search:", error));
-  }
 
   function getAlgorithmTooltip(id: string): string {
     const tooltips: Record<string, string> = {
@@ -239,7 +190,20 @@
       {:else}
         <button
           class="cta-button {$isSearching ? 'cancel' : ''}"
-          on:click={toggleSearch}
+          on:click={async () => {
+            const result = await toggleSearch();
+            if (result) {
+              activeTab = "results";
+              // Use the showResultsView function from the menu store
+              showResultsView();
+              console.log(
+                "searchView:",
+                searchView,
+                "resultsView:",
+                resultsView
+              );
+            }
+          }}
         >
           <div class="flex items-center gap-2">
             {#if $isSearching}

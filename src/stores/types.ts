@@ -68,6 +68,7 @@ export type Database = {
 
 export type Preferences = { 
   firstOpen: boolean;
+  showToolbars: boolean;
   match_criteria: string[]; 
   ignore_filetype: boolean; 
   autoselects: string[]; 

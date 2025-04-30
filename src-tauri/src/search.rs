@@ -1,3 +1,5 @@
+use rayon::slice::ChunkBy;
+
 pub use crate::prelude::*;
 
 impl Database {
@@ -211,38 +213,41 @@ impl Database {
         println!("Starting Dual Mono Search");
         let total = self.records.len();
         let completed = AtomicUsize::new(0);
-        let batch_size = 100;
+        let batch_size = 2000;
+        let mut chunks_completed = 0;
+        let mut records_batch = Vec::with_capacity(batch_size);
 
+        app.status("dual_mono", 0, "Starting Dual Mono Search");
         for chunk in self.records.chunks_mut(batch_size) {
             if self.abort.load(Ordering::SeqCst) {
                 println!("Aborting dual mono search - early exit");
                 break;
             }
-
             // First collect results from parallel processing
             let records_to_update = {
                 chunk
                     .par_iter_mut()
                     .filter_map(|record: &mut FileRecord| {
                         let new_completed = completed.fetch_add(1, Ordering::SeqCst) + 1;
-                        app.substatus(
-                            "dupes",
-                            new_completed * 100 / total,
-                            &format!("Dual Mono Search: {}/{}", new_completed, total),
-                        );
 
+                        if record.algorithm.contains(&A::InvalidPath) {
+                            return None;
+                        }
+                        // if !record.check_path() {
+                        //     return None;
+                        // }
                         if let Some(b) = record.dual_mono {
                             if b {
                                 record.algorithm.insert(A::DualMono);
                             }
-                            // Already checked and is dual mono
                             return None;
                         }
 
-                        if !record.check_path() {
-                            return None;
-                        }
-
+                        app.substatus(
+                            "dual_mono",
+                            new_completed * 100 / total,
+                            &format!("Dual Mono Search: {}/{}", new_completed, total),
+                        );
                         let is_identical = audio::decode::are_channels_identical(&record.path);
                         record.dual_mono = Some(is_identical);
                         if is_identical {
@@ -255,15 +260,35 @@ impl Database {
                     .collect::<Vec<(usize, bool)>>()
             }; // Mutable borrow of self.records (through chunk) ends here
 
-            if pref.store_waveforms {
-                let to_db: Vec<(usize, &str)> = records_to_update
+            records_batch.extend(records_to_update);
+
+            if pref.store_waveforms && records_batch.len() >= batch_size {
+                app.substatus("dual_mono", 0, "storing chunk to database");
+                let to_db: Vec<(usize, &str)> = records_batch
                     .iter()
                     .map(|(id, is_identical)| (*id, if *is_identical { "1" } else { "0" }))
                     .collect();
 
                 crate::batch_store_data_optimized(&pool, &to_db, "_DualMono", app).await;
+                records_batch.clear();
             }
+            chunks_completed += batch_size;
+            app.status(
+                "dual_mono",
+                100 * chunks_completed / total,
+                &format!("Dual Mono Search: {}/{}", chunks_completed, total),
+            );
             // Then transform the results into the format needed for batch_store_data_optimized
+        }
+        if pref.store_waveforms && !records_batch.is_empty() {
+            app.substatus("dual_mono", 0, "storing chunk to database");
+            let to_db: Vec<(usize, &str)> = records_batch
+                .iter()
+                .map(|(id, is_identical)| (*id, if *is_identical { "1" } else { "0" }))
+                .collect();
+
+            crate::batch_store_data_optimized(&pool, &to_db, "_DualMono", app).await;
+            records_batch.clear();
         }
     }
     pub async fn dual_mono_search_seq(&mut self, app: &AppHandle) {

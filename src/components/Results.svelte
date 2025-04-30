@@ -5,102 +5,66 @@
 
   import type { FileRecord } from "../stores/types";
   import { preferencesStore } from "../stores/preferences";
-  import { resultsStore } from "../stores/results";
+  import {
+    resultsStore,
+    filteredItemsStore,
+    selectedItemsStore,
+    currentFilterStore,
+    enableSelectionsStore,
+    toggleEnableSelections,
+    clearSelected,
+    invertSelected,
+    toggleSelect,
+    toggleChecked,
+    checkSelected,
+    uncheckSelected,
+    toggleChecksSelected,
+    totalChecksStore,
+    selectedChecksStore,
+    updateCurrentFilter,
+    manualFiltersStore, // Import the new manualFiltersStore
+    filtersStore,
+    clearResults, // Import the derived filtersStore
+  } from "../stores/results";
   import { metadataStore } from "../stores/metadata";
+  import { databaseStore, setDatabase } from "../stores/database";
+  import { viewStore, showSearchView, showResultsView } from "../stores/menu";
   import { ask, message } from "@tauri-apps/plugin-dialog";
   import { createVirtualizer } from "@tanstack/svelte-virtual";
 
   export let isRemove: boolean;
   export let activeTab: string; // This prop is now bindable
   export let selectedDb: string | null = null;
+  export let searchView = false;
+  export let resultsView = true;
 
   $: pref = $preferencesStore;
   $: results = $resultsStore;
   $: metadata = $metadataStore;
+  $: filteredItems = $filteredItemsStore;
+  $: selectedItems = $selectedItemsStore;
+  $: currentFilter = $currentFilterStore;
+  $: enableSelections = $enableSelectionsStore;
+  $: totalChecks = $totalChecksStore;
+  $: selectedChecks = $selectedChecksStore; // Create a reactive reference to selected checks
 
   let processing = false;
   let loading = true;
-  let selectedItems = new Set<number>();
-  let currentFilter = "Relevant";
   let idsToRemove: number[] = [];
   let filesToRemove: string[] = [];
   let dualMono: { id: number; path: string }[] = [];
-  let filteredItems: FileRecord[] = [];
-  let enableSelections = true;
   let lastPlayed = "Timbo";
 
-  function toggle_enable_selections() {
-    enableSelections = !enableSelections;
-  }
-
-  $: {
-    let newFiltered = filterItems(results, currentFilter);
-    const scrollElement = parentRef;
-    const scrollTop = scrollElement?.scrollTop;
-
-    newFiltered.forEach((item) => {
-      if (selectedItems.has(item.id)) {
-        selectedItems.add(item.id); // Ensure selected state persists
-      }
-    });
-    filteredItems = newFiltered;
-
-    queueMicrotask(() => {
-      if (scrollElement && scrollTop !== undefined) {
-        scrollElement.scrollTop = scrollTop;
-      }
-      updateVirtualizer();
-    });
-  }
+  // Function to update UI after store changes
   function updateUI() {
+    // Force reactivity by causing an update
     results = [...results];
-
-    filteredItems = filterItems(results, currentFilter);
-  }
-  function filterItems(items: FileRecord[], filter: string): FileRecord[] {
-    switch (filter) {
-      case "All":
-        return items;
-      case "Relevant":
-        return items.filter(
-          (item) =>
-            !item.algorithm.includes("Keep") || item.algorithm.length > 1
-        );
-      case "Keep":
-        return items.filter((item) => item.algorithm.includes("Keep"));
-      case "Remove":
-        return items.filter((item) => !item.algorithm.includes("Keep"));
-      case "audiosuite":
-        return items.filter((item) => item.algorithm.includes("Tags"));
-      case "dual_mono":
-        return items.filter((item) => item.algorithm.includes("DualMono"));
-      case "filename":
-        return items.filter((item) =>
-          item.algorithm.includes("SimilarFilename")
-        );
-      case "waveform":
-        return items.filter(
-          (item) =>
-            item.algorithm.includes("Waveforms") ||
-            item.algorithm.includes("SimilarAudio") ||
-            item.algorithm.includes("waveform")
-        );
-      default:
-        // For algorithm filters, check if the filter name matches any algorithm in the item
-        // Try both exact match and lowercase match for better compatibility
-        return items.filter((item) =>
-          item.algorithm.some(
-            (algo) =>
-              algo === filter || algo.toLowerCase() === filter.toLowerCase()
-          )
-        );
-    }
   }
 
   // Handle filter change
   function handleFilterChange(event: Event) {
     const select = event.target as HTMLSelectElement;
-    currentFilter = select.value;
+    updateCurrentFilter(select.value);
   }
 
   let columnConfigs = [
@@ -152,87 +116,6 @@
     window.addEventListener("mouseup", onMouseUp);
   }
 
-  function checkSelected() {
-    // Start with current results
-    const updatedResults = [...results];
-    const selectedSet = selectedItems;
-
-    // Create lookup map for faster access
-    const resultMap = new Map(updatedResults.map((item) => [item.id, item]));
-
-    // Process all selected items in one batch
-    selectedSet.forEach((id) => {
-      const item = resultMap.get(id);
-      if (item && item.algorithm.includes("Keep")) {
-        resultMap.set(id, {
-          ...item,
-          algorithm: item.algorithm.filter((algo) => algo !== "Keep"),
-        });
-      }
-    });
-
-    // Update the results array once
-    results = updatedResults.map((item) => resultMap.get(item.id) || item);
-
-    // Update UI once
-    updateUI();
-  }
-
-  function uncheckSelected() {
-    // Start with current results
-    const updatedResults = [...results];
-    const selectedSet = selectedItems;
-
-    // Create lookup map for faster access
-    const resultMap = new Map(updatedResults.map((item) => [item.id, item]));
-
-    // Process all selected items in one batch
-    selectedSet.forEach((id) => {
-      const item = resultMap.get(id);
-      if (item && !item.algorithm.includes("Keep")) {
-        resultMap.set(id, {
-          ...item,
-          algorithm: [...item.algorithm, "Keep"],
-        });
-      }
-    });
-
-    // Update the results array once
-    results = updatedResults.map((item) => resultMap.get(item.id) || item);
-
-    // Update UI once
-    updateUI();
-  }
-
-  function toggleChecksSelected() {
-    // Start with current results
-    const updatedResults = [...results];
-    const selectedSet = selectedItems;
-
-    // Create lookup map for faster access
-    const resultMap = new Map(updatedResults.map((item) => [item.id, item]));
-
-    // Process all selected items in one batch
-    selectedSet.forEach((id) => {
-      const item = resultMap.get(id);
-      if (item) {
-        const hasKeep = item.algorithm.includes("Keep");
-        resultMap.set(id, {
-          ...item,
-          algorithm: hasKeep
-            ? item.algorithm.filter((algo) => algo !== "Keep")
-            : [...item.algorithm, "Keep"],
-        });
-      }
-    });
-
-    // Update the results array once
-    results = updatedResults.map((item) => resultMap.get(item.id) || item);
-
-    // Update UI once
-    updateUI();
-  }
-
   function addCheck(item: FileRecord) {
     if (!item.algorithm.includes("Keep")) {
       const updatedItem = {
@@ -255,8 +138,6 @@
     }
   }
 
-  let lastSelectedIndex = -1;
-
   function updateVirtualizer() {
     if ($rowVirtualizer) {
       const scrollElement = parentRef;
@@ -272,115 +153,23 @@
     }
   }
 
-  function addSelected(item: FileRecord) {
-    selectedItems.add(item.id);
-    selectedItems = new Set(selectedItems);
-    updateVirtualizer();
-  }
-
-  function removeSelected(item: FileRecord) {
-    selectedItems.delete(item.id);
-    selectedItems = new Set(selectedItems);
-    updateVirtualizer();
-  }
-
-  function toggleSelect(item: FileRecord, event: MouseEvent) {
-    event.preventDefault();
-
-    const scrollElement = parentRef;
-    const scrollTop = scrollElement?.scrollTop;
-
-    const currentIndex = filteredItems.findIndex(
-      (record) => record.id === item.id
-    );
-
-    if (event.altKey) {
-      if (selectedItems.size > 0) {
-        selectedItems.clear();
-      } else {
-        filteredItems.forEach((record) => selectedItems.add(record.id));
-      }
-      selectedItems = new Set(selectedItems);
-      queueMicrotask(() => {
-        updateVirtualizer();
-        if (scrollTop !== undefined && scrollElement) {
-          scrollElement.scrollTop = scrollTop;
-        }
-      });
-      return;
-    }
-
-    // Handle Shift click (range selection)
-    if (event.shiftKey && lastSelectedIndex !== -1) {
-      const start = Math.min(lastSelectedIndex, currentIndex);
-      const end = Math.max(lastSelectedIndex, currentIndex);
-
-      for (let i = start; i <= end; i++) {
-        selectedItems.add(filteredItems[i].id);
-      }
-    } else {
-      if (selectedItems.has(item.id)) {
-        selectedItems.delete(item.id);
-      } else {
-        selectedItems.add(item.id);
-        lastSelectedIndex = currentIndex;
-      }
-    }
-
-    selectedItems = new Set(selectedItems);
-    queueMicrotask(() => {
+  $: {
+    if ($selectedItemsStore) {
       updateVirtualizer();
-      if (scrollTop !== undefined && scrollElement) {
-        scrollElement.scrollTop = scrollTop;
-      }
-    });
-  }
-
-  function toggleChecked(item: FileRecord) {
-    const isKeeping = item.algorithm.includes("Keep");
-
-    const scrollElement = parentRef;
-    const scrollTop = scrollElement?.scrollTop;
-
-    const updatedAlgorithms = isKeeping
-      ? item.algorithm.filter((algo) => algo !== "Keep")
-      : [...item.algorithm, "Keep"]; // Add "Keep"
-
-    const updatedItem = {
-      ...item,
-      algorithm: updatedAlgorithms,
-    };
-
-    results = results.map((i) => (i === item ? updatedItem : i));
-
-    queueMicrotask(() => {
-      updateVirtualizer();
-      if (scrollTop !== undefined && scrollElement) {
-        scrollElement.scrollTop = scrollTop;
-      }
-    });
+    }
   }
 
   $: {
-    if (selectedItems) {
-      updateVirtualizer();
-    }
-  }
+    // This reactive statement watches for filter changes
+    const scrollElement = parentRef;
+    const scrollTop = scrollElement?.scrollTop;
 
-  function invertSelected() {
-    filteredItems.forEach((item) => {
-      if (selectedItems.has(item.id)) {
-        selectedItems.delete(item.id);
-      } else {
-        selectedItems.add(item.id);
+    queueMicrotask(() => {
+      if (scrollElement && scrollTop !== undefined) {
+        scrollElement.scrollTop = scrollTop;
       }
+      updateVirtualizer();
     });
-    selectedItems = new Set(selectedItems);
-  }
-
-  function clearSelected() {
-    selectedItems.clear();
-    selectedItems = new Set(selectedItems);
   }
 
   async function replaceMetadata() {
@@ -408,11 +197,6 @@
     }
   }
 
-  function getTotalChecks() {
-    return filteredItems.filter((item) => !item.algorithm.includes("Keep"))
-      .length;
-  }
-
   async function fetchData() {
     try {
       loading = true;
@@ -424,23 +208,17 @@
   }
 
   onMount(() => {
-    loading = false;
-    fetchData();
+    // Delay setting loading to false to ensure UI renders the loading state first
+    setTimeout(() => {
+      loading = false;
+    }, 100);
 
     if (containerElement) {
       containerWidth = containerElement.clientWidth;
     }
   });
 
-  let manualFilters = [
-    { id: "All", name: "All Records", enabled: true },
-    { id: "Relevant", name: "Relevant Records", enabled: true },
-    { id: "Keep", name: "Records to Keep", enabled: true },
-    { id: "Remove", name: "Records to Remove", enabled: true },
-    { id: "spacer", name: "──────────", enabled: true },
-  ];
-
-  $: filters = [...manualFilters, ...pref.algorithms];
+  $: filters = $filtersStore;
 
   async function confirmDialog() {
     let dbDialog = "Create Safety Copy";
@@ -511,7 +289,10 @@
             );
           }
           console.log("Successfully removed records with IDs:", idsToRemove);
-          selectedDb = updatedDb;
+          processing = false;
+          // clearResults();
+          setDatabase(updatedDb, false);
+          showSearchView();
         })
         .catch((error) => {
           console.error("Error removing records:", error);
@@ -795,7 +576,7 @@
     <h2>Search Results:</h2>
     <span style="font-size: 18px">
       {#if isRemove}
-        {getTotalChecks()} of {results.length} Records marked for Removal
+        {totalChecks} of {results.length} Records marked for Removal
       {:else}
         {results.length} Records found
       {/if}
@@ -806,16 +587,16 @@
         {#if selectedItems.size > 0}
           <button class="cta-button cancel" on:click={removeSelectedRecords}>
             <OctagonX size="18" />
-            Remove Selected Checked Records
+            Remove {selectedChecks} Selected Records
           </button>
           <button class="cta-button cancel" on:click={removeRecords}>
             <OctagonX size="18" />
-            Remove ALL Checked Records
+            Remove all {totalChecks} Records
           </button>
         {:else}
           <button class="cta-button cancel" on:click={removeRecords}>
             <OctagonX size="18" />
-            Remove Checked Records
+            Remove {totalChecks} Records
           </button>
         {/if}
       {:else}
@@ -827,83 +608,87 @@
       {/if}
     </div>
   </div>
-
-  <div class="bar" style="margin-top: 10px; margin-bottom: 20px; padding: 0px;">
-    {#if enableSelections}
-      <button class="small-button" on:click={toggleChecksSelected}
-        >Toggle Selected</button
-      >
-      <button class="small-button" on:click={checkSelected}
-        >Check Selected</button
-      >
-      <button class="small-button" on:click={uncheckSelected}
-        >Uncheck Selected</button
-      >
-      <button class="small-button" on:click={invertSelected}
-        >Invert Selections</button
-      >
-      <button class="small-button" on:click={clearSelected}
-        >Clear Selections</button
-      >
-      {#if selectedItems.size > 0}
-        <p style="margin-left: 10px">({selectedItems.size} selected)</p>
-      {/if}
-      {#if processingBatch}
-        <div class="batch-processing">
-          <Loader size={24} class="spinner" />
-          <span>Processing {selectedItems.size} items...</span>
-        </div>
-      {/if}
-    {/if}
-
-    <div class="filter-container">
-      {#if isRemove}
-        <span>Filter by: </span>
-        <select
-          class="select-field"
-          bind:value={currentFilter}
-          on:change={handleFilterChange}
+  {#if $preferencesStore.showToolbars}
+    <div
+      class="bar"
+      style="margin-top: 10px; margin-bottom: 20px; padding: 0px;"
+    >
+      {#if enableSelections}
+        <button class="small-button" on:click={toggleChecksSelected}
+          >Toggle Selected</button
         >
-          {#each filters as option}
-            {#if option.enabled}
-              {#if option.id === "spacer"}
-                <option disabled>{option.name}</option>
-              {:else}
-                <option value={option.id}>{option.name}</option>
-              {/if}
-            {/if}
-          {/each}
-        </select>
-      {:else}
-        <button
-          type="button"
-          class="grid item"
-          style="margin-left: 120px"
-          on:click={toggleMarkDirty}
+        <button class="small-button" on:click={checkSelectedWithIndicator}
+          >Check Selected</button
         >
-          {#if $metadataStore.mark_dirty}
-            <CheckSquare
-              size={20}
-              class="checkbox checked {metadata.column == 'FilePath' ||
-              metadata.column == 'Filename' ||
-              metadata.column == 'Pathname'
-                ? 'inactive'
-                : ''}"
-            />
-          {:else}
-            <Square size={20} class="checkbox" />
-          {/if}
-          <span
-            class={metadata.column == "FilePath" ||
-            metadata.column == "Filename" ||
-            metadata.column == "Pathname"
-              ? "inactive"
-              : ""}>Mark Records as Dirty</span
+        <button class="small-button" on:click={uncheckSelected}
+          >Uncheck Selected</button
+        >
+        <button class="small-button" on:click={invertSelected}
+          >Invert Selections</button
+        >
+        <button class="small-button" on:click={clearSelected}
+          >Clear Selections</button
+        >
+        {#if selectedItems.size > 0}
+          <p style="margin-left: 10px">({selectedItems.size} selected)</p>
+        {/if}
+        {#if processingBatch}
+          <div class="batch-processing">
+            <Loader size={24} class="spinner" />
+            <span>Processing {selectedItems.size} items...</span>
+          </div>
+        {/if}
+      {/if}
+
+      <div class="filter-container">
+        {#if isRemove}
+          <span>Filter by: </span>
+          <select
+            class="select-field"
+            bind:value={currentFilter}
+            on:change={handleFilterChange}
           >
-        </button>
-      {/if}
+            {#each filters as option}
+              {#if option.enabled}
+                {#if option.id === "spacer"}
+                  <option disabled>{option.name}</option>
+                {:else}
+                  <option value={option.id}>{option.name}</option>
+                {/if}
+              {/if}
+            {/each}
+          </select>
+        {:else}
+          <button
+            type="button"
+            class="grid item"
+            style="margin-left: 120px"
+            on:click={toggleMarkDirty}
+          >
+            {#if $metadataStore.mark_dirty}
+              <CheckSquare
+                size={20}
+                class="checkbox checked {metadata.column == 'FilePath' ||
+                metadata.column == 'Filename' ||
+                metadata.column == 'Pathname'
+                  ? 'inactive'
+                  : ''}"
+              />
+            {:else}
+              <Square size={20} class="checkbox" />
+            {/if}
+            <span
+              class={metadata.column == "FilePath" ||
+              metadata.column == "Filename" ||
+              metadata.column == "Pathname"
+                ? "inactive"
+                : ""}>Mark Records as Dirty</span
+            >
+          </button>
+        {/if}
+      </div>
     </div>
-  </div>
+  {/if}
   <div
     class="block inner"
     bind:this={containerElement}
@@ -934,18 +719,8 @@
               style="grid-template-columns: {gridTemplateColumns};"
             >
               {#each columnConfigs as key, i}
-                <div
-                  class="grid-item header {i === 0
-                    ? 'sticky-column'
-                    : // : i === 9
-                      //   ? 'sticky-column-right'
-                      ''}"
-                >
-                  <!-- {#if key.name === "audio"}
-                    <Volume2 size={18} />
-                  {:else} -->
+                <div class="grid-item header {i === 0 ? 'sticky-column' : ''}">
                   {key.header}
-                  <!-- {/if} -->
                 </div>
               {/each}
             </div>
@@ -1093,50 +868,31 @@
       </div>
     {/if}
   </div>
-  <div class="header" style="margin-bottom: 0px; margin-top: 0px;">
-    {#if isRemove}
-      <span>
-        Remove Records from:
-        <select
-          class="select-field"
-          bind:value={pref.safety_db}
-          on:change={() => preferencesStore.set(pref)}
-        >
-          {#each [{ bool: true, text: "Safety Database Copy" }, { bool: false, text: "Current Database" }] as option}
-            <option value={option.bool}>{option.text}</option>
-          {/each}
-        </select>
-        {#if pref.safety_db}
-          with tag:
-          <input
-            class="input-field"
-            placeholder="thinned"
-            type="text"
-            id="new_db_tag"
-            bind:value={pref.safety_db_tag}
-            on:change={() => preferencesStore.set(pref)}
-          />
-        {:else}
-          <TriangleAlert
-            size="30"
-            class="blinking"
-            style="color: var(--warning-hover); margin-bottom: -10px"
-          />
-        {/if}
-      </span>
-      {#if algoEnabled("dual_mono")}
+  {#if $preferencesStore.showToolbars}
+    <div class="header" style="margin-bottom: 0px; margin-top: 0px;">
+      {#if isRemove}
         <span>
-          Dual Mono Files:
+          Remove Records from:
           <select
             class="select-field"
-            bind:value={pref.strip_dual_mono}
+            bind:value={pref.safety_db}
             on:change={() => preferencesStore.set(pref)}
           >
-            {#each [{ id: false, text: "Preserve" }, { id: true, text: "Strip" }] as option}
-              <option value={option.id}>{option.text}</option>
+            {#each [{ bool: true, text: "Safety Database Copy" }, { bool: false, text: "Current Database" }] as option}
+              <option value={option.bool}>{option.text}</option>
             {/each}
           </select>
-          {#if pref.strip_dual_mono}
+          {#if pref.safety_db}
+            with tag:
+            <input
+              class="input-field"
+              placeholder="thinned"
+              type="text"
+              id="new_db_tag"
+              bind:value={pref.safety_db_tag}
+              on:change={() => preferencesStore.set(pref)}
+            />
+          {:else}
             <TriangleAlert
               size="30"
               class="blinking"
@@ -1144,24 +900,48 @@
             />
           {/if}
         </span>
-      {/if}
-      <span>
-        Checked Files:
-        <select class="select-field" bind:value={$preferencesStore.erase_files}>
-          {#each [{ id: "Keep", text: "Keep on Disk" }, { id: "Trash", text: "Move To Trash" }, { id: "Delete", text: "Permanently Delete" }] as option}
-            <option value={option.id}>{option.text}</option>
-          {/each}
-        </select>
-        {#if pref.erase_files !== "Keep"}
-          <TriangleAlert
-            size="30"
-            class={pref.erase_files == "Delete" ? "blinking" : ""}
-            style="color: var(--warning-hover); margin-bottom: -10px"
-          />
+        {#if algoEnabled("dual_mono")}
+          <span>
+            Dual Mono Files:
+            <select
+              class="select-field"
+              bind:value={pref.strip_dual_mono}
+              on:change={() => preferencesStore.set(pref)}
+            >
+              {#each [{ id: false, text: "Preserve" }, { id: true, text: "Strip" }] as option}
+                <option value={option.id}>{option.text}</option>
+              {/each}
+            </select>
+            {#if pref.strip_dual_mono}
+              <TriangleAlert
+                size="30"
+                class="blinking"
+                style="color: var(--warning-hover); margin-bottom: -10px"
+              />
+            {/if}
+          </span>
         {/if}
-      </span>
-    {/if}
-  </div>
+        <span>
+          Checked Files:
+          <select
+            class="select-field"
+            bind:value={$preferencesStore.erase_files}
+          >
+            {#each [{ id: "Keep", text: "Keep on Disk" }, { id: "Trash", text: "Move To Trash" }, { id: "Delete", text: "Permanently Delete" }] as option}
+              <option value={option.id}>{option.text}</option>
+            {/each}
+          </select>
+          {#if pref.erase_files !== "Keep"}
+            <TriangleAlert
+              size="30"
+              class={pref.erase_files == "Delete" ? "blinking" : ""}
+              style="color: var(--warning-hover); margin-bottom: -10px"
+            />
+          {/if}
+        </span>
+      {/if}
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -1258,6 +1038,7 @@
     background-color: var(--primary-bg);
     border-bottom: 1px solid var(--inactive-color);
     margin-left: 0px;
+    width: 100vw;
   }
 
   .ellipsis {
@@ -1294,6 +1075,7 @@
     -webkit-user-select: none;
     -moz-user-select: none;
     -ms-user-select: none;
+    width: 100vw;
   }
 
   .algorithm-icons {

@@ -1,9 +1,12 @@
 console.log('Loading module:', 'status.ts');  // Add to each file
 
 
-import type { SearchProgressState } from './types';
-import { writable, type Writable } from 'svelte/store';
+import type { SearchProgressState, Algorithm, FileRecord } from './types';
+import { writable, type Writable, get } from 'svelte/store';
 import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
+import { preferencesStore } from './preferences';
+import { resultsStore } from './results';
 
 
 export const isSearching = writable(false);
@@ -11,6 +14,10 @@ export const currentTaskId = writable<number | null>(null);
 export const virtualizerStore = writable(null);
 export const scrollPositionStore = writable(0);
 
+
+  export let activeTab: string;
+  export let searchView = true;
+  export let resultsView = false;
 
 // Create a store for search progress with persistence
 export const searchProgressStore = writable<SearchProgressState>({
@@ -48,6 +55,15 @@ export async function initializeSearchListeners(): Promise<void> {
                 searchMessage: status.message,
                 searchStage: status.stage,
             }));
+            
+            // Set isSearching to true whenever we get a search status update
+            // This ensures the UI stays in "searching" mode while the backend is working
+            if (status.stage !== "complete" && status.stage !== "cancelled") {
+                isSearching.set(true);
+            } else if (status.stage === "complete" || status.stage === "cancelled") {
+                isSearching.set(false);
+            }
+            
             console.log(
                 `Search status: ${status.stage} - ${status.progress}% - ${status.message}`
             );
@@ -77,6 +93,117 @@ export async function initializeSearchListeners(): Promise<void> {
 }
 
 /**
+ * Toggle search state and start/cancel search accordingly
+ * @returns {Promise<void>}
+ */
+export async function toggleSearch(): Promise<boolean> {
+    console.log("Toggle Search");
+    const currentSearching = get(isSearching);
+    isSearching.set(!currentSearching);
+    
+    if (!currentSearching) {
+       return await search();
+    } else {
+        cancelSearch();
+        return false;
+    }
+}
+
+/**
+ * Start a search operation based on current preferences
+ * @returns {Promise<string>} The next active tab to navigate to
+ */
+export async function search(): Promise<boolean> {
+    // Set isSearching to true at the start of the search process
+    isSearching.set(true);
+    
+    const preferences = get(preferencesStore);
+    
+    if (!preferences || !preferences.algorithms) {
+        console.error("Preferences store not properly initialized");
+        alert(
+            "Application settings not loaded properly. Please restart the application."
+        );
+        isSearching.set(false); // Make sure to reset if we exit early
+        return false;
+    }
+    
+    let algorithms = preferences.algorithms;
+
+    console.log("Starting Search");
+    resultsStore.set([]);
+
+    let algorithmState = algorithms.reduce(
+        (acc: Record<string, boolean | number | string>, algo: Algorithm) => {
+            acc[algo.id] = algo.enabled;
+            if (algo.id === "duration") {
+                acc["min_dur"] = algo.min_dur ?? 0;
+            }
+            if (algo.id === "dbcompare") {
+                acc["compare_db"] = algo.db ?? "";
+            }
+            return acc;
+        },
+        {} as Record<string, boolean | number | string>
+    );
+
+    if (!algorithmState.basic) {
+        algorithmState.audiosuite = false;
+    }
+
+    // Reset search progress to initial state to ensure UI shows the correct status
+    searchProgressStore.set({
+        searchProgress: 0,
+        searchMessage: "Initializing search...",
+        searchStage: "starting",
+        subsearchProgress: 0,
+        subsearchMessage: "Preparing search...",
+        subsearchStage: "starting"
+    });
+
+    try {
+        // Log the search start for debugging
+        console.log("Invoking backend search with params:", { algorithmState, preferences });
+        
+        const result = await invoke<FileRecord[]>("search", {
+            enabled: algorithmState,
+            pref: preferences,
+        });
+        
+        console.log("Search Results:", result);
+        resultsStore.set(result);
+        
+        // Set isSearching to false now that the search is complete
+        isSearching.set(false);
+        // If we have results, we'll navigate to the results page
+        if (result && result.length > 0) {
+           
+            return true;
+        }
+    } catch (error) {
+        console.error("Search error:", error);
+        isSearching.set(false); // Make sure to reset on error
+    }
+    
+    return false;
+}
+
+/**
+ * Cancel an ongoing search operation
+ */
+export async function cancelSearch(): Promise<void> {
+    await invoke("cancel_search")
+        .then(() => {
+            console.log("Search cancellation requested");
+            isSearching.set(false);
+
+            // Reset progress in store
+            resetSearchProgress();
+        })
+        .catch((error) => console.error("Error cancelling search:", error));
+}
+
+/**
  * Reset search progress state
  */
 export function resetSearchProgress(): void {
@@ -98,3 +225,4 @@ export function cleanupSearchListeners(): void {
     // Kept for API compatibility
     console.log("cleanupSearchListeners is deprecated - listeners are now persistent");
 }
+

@@ -269,9 +269,12 @@ impl FileRecord {
 
         let mut algorithm = HashSet::new();
         let mut keep = true;
-        if enabled.invalidpath && !path.exists() {
+        if (enabled.invalidpath || enabled.dual_mono) && !path.exists() {
             algorithm.insert(Algorithm::InvalidPath);
-            keep = false;
+            if enabled.invalidpath {
+                keep = false;
+            }
+            // keep = false;
         }
         if enabled.duration && checkduration(duration_str, enabled.min_dur) {
             algorithm.insert(Algorithm::Duration);

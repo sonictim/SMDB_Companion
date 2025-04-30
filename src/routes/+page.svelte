@@ -1,10 +1,4 @@
 <script lang="ts">
-  import {
-    Database,
-    Search as SearchIcon,
-    FilesIcon,
-    Settings2,
-  } from "lucide-svelte";
   import "../styles.css";
   import { onMount, onDestroy } from "svelte";
   import { get } from "svelte/store";
@@ -14,6 +8,7 @@
   import { message } from "@tauri-apps/plugin-dialog";
 
   // Components
+  import Header from "../components/Header.svelte";
   import SearchComponent from "../components/Search.svelte";
   import SearchSkinnyComponent from "../components/SearchSkinny.svelte";
   import ResultsComponent from "../components/Results.svelte";
@@ -21,13 +16,14 @@
   import MetadataComponent from "../components/Metadata.svelte";
   import RegisterComponent from "../components/Register.svelte";
   import RegisterOnlyComponent from "../components/RegisterOnly.svelte";
+  import AdvancedComponent from "../components/AdvancedMode.svelte";
 
   // Stores and utilities
   import { preferencesStore } from "../stores/preferences";
-  import { databaseStore, openDatabase } from "../stores/database";
+  import { databaseStore } from "../stores/database";
   import { checkForUpdates } from "../stores/utils";
   import { checkRegistered } from "../stores/registration";
-  import { togglePreferencesWindow, initializeMenu } from "../stores/menu";
+  import { initializeMenu, viewStore } from "../stores/menu";
   import { applyPreset } from "../stores/presets";
   import type { Preset } from "../stores/types";
 
@@ -38,6 +34,12 @@
   let appInitialized = false;
   let initError: unknown = null;
   let presetChangedListener: (() => void) | null = null;
+
+  // Use the viewStore instead of local variables
+  $: searchView = $viewStore.searchView;
+  $: resultsView = $viewStore.resultsView;
+  $: splitView = $viewStore.splitView;
+  $: noFrillsView = $viewStore.noFrillsView;
 
   // Initialize all on mount
   onMount(async () => {
@@ -143,85 +145,51 @@
   </div>
 {/if}
 
-<div class="app-container">
-  <!-- Top Bar -->
-  <div class="top-bar">
-    <div class="top-bar-left">
-      <button class="nav-link" on:click={() => openDatabase(false)}>
-        <Database size={18} />
-        <span style="font-size: 24px;">
-          {$databaseStore?.name || "Select Database"}
-          {#if $databaseStore}
-            <span style="font-size: 14px;"
-              >{$databaseStore.size} total records</span
-            >
-          {/if}
-        </span>
-      </button>
-    </div>
-    <div class="top-bar-right">
-      <button
-        class="nav-link {activeTab === 'search' ? 'active' : ''}"
-        on:click={(event) =>
-          (activeTab = event.metaKey ? "searchSkinny" : "search")}
-        title="Click for Search, ⌘+Click for Split View"
-      >
-        <div class="flex items-center gap-2">
-          <SearchIcon size={18} />
-          <span>Search</span>
-        </div>
-      </button>
-      <button
-        class="nav-link {['results', 'resultsSkinny'].includes(activeTab)
-          ? 'active'
-          : ''}"
-        on:click={(event) =>
-          (activeTab = event.metaKey ? "resultsSkinny" : "results")}
-        title="Click for Results, ⌘+Click for Split View"
-      >
-        <div class="flex items-center gap-2">
-          <FilesIcon size={18} />
-          <span>Results</span>
-        </div>
-      </button>
-      <button class="nav-link" on:click={togglePreferencesWindow}>
-        <div class="flex items-center gap-2">
-          <Settings2 size={18} /> Options
-        </div>
-      </button>
-    </div>
-  </div>
+{#if noFrillsView}
+  <AdvancedComponent />
+{:else}
+  <div class="app-container">
+    <!-- Top Bar -->
+    <Header bind:activeTab />
 
-  <!-- Main Content Area -->
-  <main class="content">
-    {#if activeTab === "search"}
-      <SearchComponent bind:activeTab bind:isRemove />
-    {:else if activeTab === "searchSkinny"}
-      <div class="grid">
-        <SearchSkinnyComponent bind:activeTab bind:isRemove />
+    <!-- Main Content Area -->
+    <main class="content">
+      {#if activeTab === "metadata"}
+        <MetadataComponent bind:activeTab bind:isRemove />
+      {:else if activeTab === "register"}
+        <RegisterOnlyComponent bind:isRegistered />
+      {:else if splitView || (searchView && resultsView)}
+        <div class="grid">
+          <SearchSkinnyComponent
+            bind:activeTab
+            bind:isRemove
+            bind:searchView
+            bind:resultsView
+          />
+          {#if isRegistered}
+            <ResultsSkinnyComponent bind:isRemove bind:activeTab />
+          {:else}
+            <RegisterComponent bind:isRegistered />
+          {/if}
+        </div>
+      {:else if searchView}
+        <SearchComponent bind:activeTab bind:isRemove />
+      {:else if resultsView}
         {#if isRegistered}
-          <ResultsSkinnyComponent bind:isRemove bind:activeTab />
+          <ResultsComponent
+            {isRemove}
+            bind:activeTab
+            bind:searchView
+            bind:resultsView
+            selectedDb={$databaseStore?.path || null}
+          />
         {:else}
           <RegisterComponent bind:isRegistered />
         {/if}
-      </div>
-    {:else if activeTab === "results" || activeTab === "resultsSkinny"}
-      {#if isRegistered}
-        {#if activeTab === "results"}
-          <ResultsComponent bind:isRemove bind:activeTab />
-        {:else}
-          <ResultsSkinnyComponent bind:isRemove bind:activeTab />
-        {/if}
-      {:else}
-        <RegisterComponent bind:isRegistered />
       {/if}
-    {:else if activeTab === "metadata"}
-      <MetadataComponent bind:activeTab bind:isRemove />
-    {:else if activeTab === "register"}
-      <RegisterOnlyComponent bind:isRegistered />
-    {/if}
-  </main>
-</div>
+    </main>
+  </div>
+{/if}
 
 <style>
   .loading-screen,

@@ -4,6 +4,7 @@ import { get } from 'svelte/store';
 import { invoke } from '@tauri-apps/api/core';
 import { preferencesStore } from './preferences';
 import { createLocalStore, createSessionStore } from './utils';
+import { clearResults } from './results';
 import type { Database } from './types';
 import { open } from "@tauri-apps/plugin-dialog";
 
@@ -41,6 +42,7 @@ export async function setDatabase(path: string | null, is_compare: boolean) {
         
         databaseStore.set(db);
         addRecentDatabase({name: name, path: path});
+        clearResults();
         
     } catch (error) {
         console.error("Error setting database:", error);
@@ -185,3 +187,23 @@ function addRecentDatabase(db: {name: string, path: string}) {
         return updatedList;
     });
 }
+
+  export async function getCompareDb() {
+    try {
+      let compareDb = await openSqliteFile();
+      if (compareDb) {
+        preferencesStore.update((prefs) => ({
+          ...prefs,
+          algorithms: prefs.algorithms.map((algo) => {
+            if (algo.id === "dbcompare") {
+              console.log("Updating dbcompare:", algo, "New DB:", compareDb);
+              return { ...algo, enabled: true, db: compareDb };
+            }
+            return algo;
+          }),
+        }));
+      }
+    } catch (error) {
+      console.error("Error selecting file:", error);
+    }
+  }

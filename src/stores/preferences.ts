@@ -24,6 +24,7 @@ export const defaultPreferences: Preferences = {
     store_waveforms: true,
     fetch_waveforms: true,
     firstOpen: true,
+    showToolbars: true,
     algorithms: defaultAlgorithms,
     preservation_order: [
         {
