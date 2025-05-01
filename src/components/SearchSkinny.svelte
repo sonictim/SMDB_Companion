@@ -459,10 +459,20 @@
 
   :global(.checkbox.checked) {
     color: var(--accent-color);
+    min-width: 20px;
+    min-height: 20px;
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
   }
 
   :global(.checkbox.inactive) {
     color: var(--inactive-color);
+    min-width: 20px;
+    min-height: 20px;
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
   }
 
   .block {

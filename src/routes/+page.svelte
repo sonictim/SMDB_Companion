@@ -40,6 +40,7 @@
   $: resultsView = $viewStore.resultsView;
   $: splitView = $viewStore.splitView;
   $: noFrillsView = $viewStore.noFrillsView;
+  $: registrationView = $viewStore.registrationView;
 
   // Initialize all on mount
   onMount(async () => {
@@ -156,7 +157,7 @@
     <main class="content">
       {#if activeTab === "metadata"}
         <MetadataComponent bind:activeTab bind:isRemove />
-      {:else if activeTab === "register"}
+      {:else if registrationView}
         <RegisterOnlyComponent bind:isRegistered />
       {:else if splitView || (searchView && resultsView)}
         <div class="grid">

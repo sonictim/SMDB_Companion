@@ -533,6 +533,14 @@ const algoMenu = await Submenu.new({
         text: "Settings...",
         action: togglePreferencesWindow,
       },
+             separator,
+        {
+          id: "registration",
+          text: "Registration",
+          action: () => {
+            showRegistrationView();
+          },
+        },
       separator,
       services,
       separator,
@@ -580,9 +588,9 @@ const algoMenu = await Submenu.new({
     ],
   });
 
-  const editMenu = await Submenu.new({
-    text: "Edit",
-    id: "edit",
+const selectionMenu = await Submenu.new({
+    text: "Selection",
+    id: "selection",
     items: [
       {
         id: "checkSelected",
@@ -611,8 +619,54 @@ const algoMenu = await Submenu.new({
         action: () => {clearSelected()}
 
       },
-      // separator,
-      // undo, redo, separator, cut, copy, paste, separator, select_all
+    
+    ]});
+
+
+
+      
+
+  const textEditMenu = await Submenu.new({
+    text: "Text",
+    id: "text",
+    items: [
+      undo, redo, separator, cut, copy, paste, separator, select_all
+    ],
+  });
+  const editMenu = await Submenu.new({
+    text: "Edit",
+    id: "edit",
+    items: [
+       {
+        id: "checkSelected",
+        text: "Check Selected",
+        action: () => {checkSelected()}
+      },
+      {
+        id: "uncheckSelected",
+        text: "Uncheck Selected",
+        action: () => {uncheckSelected()}
+      },
+      {
+        id: "toggleSelected",
+        text: "Toggle Selected",
+        action: () => {toggleChecksSelected()}
+      },
+      separator,
+      {
+        id: "invertSelected",
+        text: "Invert Selection",
+        action: () => {invertSelected()}
+      },
+      {
+        id: "clearSelected",
+        text: "Clear Selection",
+        action: () => {clearSelected()}
+
+      },
+      separator,
+     
+      textEditMenu,
     ],
   });
 
@@ -700,6 +754,7 @@ export const viewStore = writable({
   resultsView: false,
   splitView: true,
   noFrillsView: false,
+  registrationView: false,
 });
 
 // View state management function
@@ -710,6 +765,7 @@ export function showSearchView() {
     resultsView: false,
     splitView: false,
     noFrillsView: false,
+    registrationView: false,
   }));
   // Force menu refresh
   setupMenu();
@@ -722,6 +778,7 @@ export function showResultsView() {
     resultsView: true,
     splitView: false,
     noFrillsView: false,
+    registrationView: false,
   }));
   // Force menu refresh
   setupMenu();
@@ -734,6 +791,7 @@ export function showSplitView() {
     resultsView: false,
     splitView: true,
     noFrillsView: false,
+    registrationView: false,
   }));
   // Force menu refresh
   setupMenu();
@@ -746,6 +804,19 @@ export function showNoFrillsView() {
     resultsView: false,
     splitView: false,
     noFrillsView: true,
+    registrationView: false,
+  }));
+  // Force menu refresh
+  setupMenu();
+}
+export function showRegistrationView() {
+  viewStore.update(state => ({
+    ...state,
+    searchView: false,
+    resultsView: false,
+    splitView: false,
+    noFrillsView: false,
+    registrationView: true,
   }));
   // Force menu refresh
   setupMenu();

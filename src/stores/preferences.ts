@@ -272,7 +272,7 @@ export const TJFPreferences: Preferences = {
 }
 
 
-const storedPreferences = localStorage.getItem('preferences');
+const storedPreferences = localStorage.getItem('preferencesinfo');
 let initialPreferences: Preferences;
 try {
     const parsedPreferences = storedPreferences ? JSON.parse(storedPreferences) : null;
@@ -292,7 +292,7 @@ try {
     initialPreferences = defaultPreferences;
 }
 
-export const preferencesStore = createLocalStore<Preferences>('preferences', initialPreferences);
+export const preferencesStore = createLocalStore<Preferences>('preferencesinfo', initialPreferences);
 
 export function resetPreferences() {
     preferencesStore.set({ ...defaultPreferences });

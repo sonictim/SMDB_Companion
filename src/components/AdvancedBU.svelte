@@ -107,6 +107,13 @@
   $: totalWidth =
     columnWidths.reduce((acc, width) => acc + width, 0) + 100 + "px";
 
+  // Set CSS custom property when totalWidth changes
+  $: {
+    if (typeof document !== "undefined") {
+      document.documentElement.style.setProperty("--total-width", totalWidth);
+    }
+  }
+
   let containerElement: HTMLElement;
   let containerWidth = 0;
 
@@ -625,6 +632,9 @@
             >{$databaseStore.size} total records</span
           >
         {/if}
+        {#if selectedItems.size > 0}
+          <span style="font-size: 14px;">({selectedItems.size} selected)</span>
+        {/if}
       </span>
     </button>
   </div>
@@ -667,8 +677,7 @@
   </div>
 </div>
 
-<div class="block">
-  <!-- <div class="header">
+<!-- <div class="header">
     {#if isRemove}
       <span>Filter by: </span>
       <select
@@ -742,7 +751,7 @@
     </div>
   </div> -->
 
-  <!-- <div class="bar" style="margin-top: 10px; margin-bottom: 20px; padding: 0px;">
+<!-- <div class="bar" style="margin-top: 10px; margin-bottom: 20px; padding: 0px;">
     {#if enableSelections}
       <button class="small-button" on:click={toggleChecksSelected}
         >Toggle Selected</button
@@ -818,7 +827,7 @@
       {/if}
     </div>
   </div> -->
-
+<div class="block">
   {#if loading}
     <p class="ellipsis">Loading data...</p>
   {:else if processing}
@@ -1060,8 +1069,11 @@
               <span class="clickable" on:click={getCompareDb}>{filename}</span>
             {/await}
           {:else}
-            <button type="button" class="small-button" on:click={getCompareDb}
-              >Select DB</button
+            <button
+              type="button"
+              class="small-button"
+              style="border-color: var(--secondary-bg)"
+              on:click={getCompareDb}>Select DB</button
             >
           {/if}
         {/if}
@@ -1168,22 +1180,24 @@
   }
 
   .virtual-table-header {
+    width: var(--total-width);
     position: sticky;
     top: 0;
     z-index: 10;
-    background-color: var(--secondary-bg);
+    background-color: var(--primary-bg);
     box-shadow: 0 1px 0 rgba(0, 0, 0, 0.1);
   }
 
   .virtual-table-body {
     position: relative;
+    width: var(--total-width);
   }
 
   .virtual-row {
     position: absolute;
     top: 0;
     left: 0;
-    width: 100%;
+    width: var(--total-width);
   }
 
   .resizer-container {
@@ -1236,17 +1250,17 @@
   }
 
   .rheader {
-    /* text-align: center;
-    align-content: center;
-    align-items: center;
-    justify-content: center; */
-    /* display: flex; */
     font-weight: bold;
     font-size: 16px;
     color: var(--accent-color);
     background-color: var(--secondary-bg);
     border-bottom: 1px solid var(--inactive-color);
     margin-left: 0px;
+    margin-top: 0px;
+    height: 45px;
+    text-align: bottom;
+    align-items: end;
+    width: var(--total-width);
   }
 
   .ellipsis {
@@ -1279,6 +1293,7 @@
     -webkit-user-select: none;
     -moz-user-select: none;
     -ms-user-select: none;
+    width: var(--total-width);
   }
 
   .algorithm-icons {
@@ -1357,7 +1372,7 @@
   /* font-weight: bold; */
   .block {
     background-color: var(--secondary-bg);
-    padding: 10px 15px;
+    padding: 0px 0px;
     /* padding-bottom: 20px; */
     border-radius: 8px;
     flex: 1;

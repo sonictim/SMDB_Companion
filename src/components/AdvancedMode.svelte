@@ -2,22 +2,14 @@
   import { invoke } from "@tauri-apps/api/core";
   import { onMount, onDestroy } from "svelte";
   import { listen } from "@tauri-apps/api/event";
-  import {
-    Database,
-    Search as SearchIcon,
-    FilesIcon,
-    Settings2,
-    X,
-  } from "lucide-svelte";
+  import { Database, Search as SearchIcon, X } from "lucide-svelte";
   import { basename, extname } from "@tauri-apps/api/path";
-  import { get } from "svelte/store";
   import {
     databaseStore,
     openDatabase,
     getCompareDb,
     setDatabase,
   } from "../stores/database";
-  import { togglePreferencesWindow } from "../stores/menu";
   import type { FileRecord } from "../stores/types";
   import { preferencesStore } from "../stores/preferences";
   import { toggleAlgorithm, getAlgorithmTooltip } from "../stores/algorithms";
@@ -25,32 +17,20 @@
     resultsStore,
     filteredItemsStore,
     selectedItemsStore,
-    currentFilterStore,
     enableSelectionsStore,
-    toggleEnableSelections,
-    clearSelected,
-    invertSelected,
     toggleSelect,
     toggleChecked,
-    checkSelected,
-    uncheckSelected,
-    toggleChecksSelected,
     totalChecksStore,
     selectedChecksStore, // Import the new store
-    updateCurrentFilter,
-    manualFiltersStore, // Import the new manualFiltersStore
-    filtersStore, // Import the derived filtersStore
     clearResults,
   } from "../stores/results";
   import {
     searchProgressStore,
     isSearching,
     initializeSearchListeners,
-    resetSearchProgress,
     toggleSearch,
   } from "../stores/status";
 
-  import { showSearchView } from "../stores/menu";
   import { metadataStore } from "../stores/metadata";
   import { ask, message } from "@tauri-apps/plugin-dialog";
   import { createVirtualizer } from "@tanstack/svelte-virtual";
@@ -58,11 +38,8 @@
   export let selectedDb: string | null = null;
 
   $: pref = $preferencesStore;
-  $: results = $resultsStore;
-  $: metadata = $metadataStore;
   $: filteredItems = $filteredItemsStore;
   $: selectedItems = $selectedItemsStore;
-  $: currentFilter = $currentFilterStore;
   $: enableSelections = $enableSelectionsStore;
   $: totalChecks = $totalChecksStore;
   $: selectedChecks = $selectedChecksStore; // Create a reactive reference to selected checks
@@ -76,18 +53,6 @@
   let filesToRemove: string[] = [];
   let dualMono: { id: number; path: string }[] = [];
   let lastPlayed = "Timbo";
-
-  // Function to update UI after store changes
-  function updateUI() {
-    // Force reactivity by causing an update
-    results = [...results];
-  }
-
-  // Handle filter change
-  function handleFilterChange(event: Event) {
-    const select = event.target as HTMLSelectElement;
-    updateCurrentFilter(select.value);
-  }
 
   let columnConfigs = [
     { minWidth: 10, width: 30, name: "checkbox", header: "✔" },
@@ -106,6 +71,13 @@
 
   $: totalWidth =
     columnWidths.reduce((acc, width) => acc + width, 0) + 100 + "px";
+
+  // Set CSS custom property when totalWidth changes
+  $: {
+    if (typeof document !== "undefined") {
+      document.documentElement.style.setProperty("--total-width", totalWidth);
+    }
+  }
 
   let containerElement: HTMLElement;
   let containerWidth = 0;
@@ -136,28 +108,6 @@
 
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
-  }
-
-  function addCheck(item: FileRecord) {
-    if (!item.algorithm.includes("Keep")) {
-      const updatedItem = {
-        ...item,
-        algorithm: [...item.algorithm, "Keep"],
-      };
-
-      results = results.map((r) => (r.id === item.id ? updatedItem : r));
-    }
-  }
-
-  function removeCheck(item: FileRecord) {
-    if (item.algorithm.includes("Keep")) {
-      const updatedItem = {
-        ...item,
-        algorithm: item.algorithm.filter((algo) => algo !== "Keep"),
-      };
-
-      results = results.map((r) => (r.id === item.id ? updatedItem : r));
-    }
   }
 
   function updateVirtualizer() {
@@ -192,30 +142,6 @@
       }
       updateVirtualizer();
     });
-  }
-
-  async function replaceMetadata() {
-    const confirmed = await ask("Are you sure? This is NOT undoable", {
-      title: "⚠️ Confirm Replace",
-      kind: "warning",
-      okLabel: "Yes",
-      cancelLabel: "Cancel",
-    });
-
-    if (confirmed && metadata.find && metadata.replace) {
-      await invoke("replace_metadata", {
-        data: metadata,
-      })
-        .then(() => {
-          console.log("Successfully replaced metadata");
-          metadata.find = "";
-          metadata.replace = "";
-          results = [];
-        })
-        .catch((error) => {
-          console.error("Error replacing metadata:", error);
-        });
-    }
   }
 
   async function fetchData() {
@@ -412,28 +338,6 @@
       });
   }
 
-  function toggleStripMono(event: Event) {
-    const select = event.target as HTMLSelectElement;
-    preferencesStore.update((p) => {
-      p.strip_dual_mono = select.value === "true";
-      return p;
-    });
-  }
-  function handleFileEraseChange(event: Event) {
-    const select = event.target as HTMLSelectElement;
-    preferencesStore.update((p) => {
-      p.erase_files = select.value;
-      return p;
-    });
-  }
-
-  function toggleMarkDirty() {
-    metadataStore.update((p) => ({
-      ...p,
-      mark_dirty: !p.mark_dirty,
-    }));
-  }
-
   let removeProgress = 0;
   let removeMessage = "Initializing...";
   let removeStage = "";
@@ -463,43 +367,23 @@
     if (unlistenRemoveFn) unlistenRemoveFn();
   });
 
-  function item(value: FileRecord, index: number, array: FileRecord[]): void {
-    throw new Error("Function not implemented.");
-  }
   import {
     CheckSquare,
     Square,
     SquareEqual,
-    NotebookPenIcon,
     OctagonX,
-    Volume2,
     Volume,
-    TriangleAlert,
     Loader,
-    Play,
     Copy,
     FileX2,
-    EqualApproximately,
     Tag,
-    Tags,
     AudioWaveform,
     Clock,
     GitCompareArrowsIcon,
-    Music,
-    AudioLines,
-    CheckCircle,
     Hash,
     ShieldCheck,
     Search,
     Activity,
-    Asterisk,
-    CopyCheck,
-    CopyPlus,
-    CopyMinus,
-    CopySlash,
-    ScanText,
-    TextSearch,
-    SearchCheck,
     ArrowLeftRight,
   } from "lucide-svelte";
   function getAlgorithmIcon(algoName: string) {
@@ -578,24 +462,7 @@
     console.log("Grid Template Columns:", gridTemplateColumns);
   }
 
-  function algoEnabled(algo: string): boolean {
-    const algorithm = pref.algorithms.find((option) => option.id === algo);
-    return algorithm?.enabled || false;
-  }
-
   let processingBatch = false;
-
-  async function checkSelectedWithIndicator() {
-    processingBatch = true;
-    // Use setTimeout to allow UI to update before heavy processing
-    setTimeout(() => {
-      try {
-        checkSelected();
-      } finally {
-        processingBatch = false;
-      }
-    }, 10);
-  }
 
   function getAlgoClass(algo: { id: string }, algorithms: any[]) {
     if (
@@ -670,485 +537,276 @@
   </div>
 </div>
 
-<!-- <div class="header">
-    {#if isRemove}
-      <span>Filter by: </span>
-      <select
-        class="select-field"
-        bind:value={currentFilter}
-        on:change={handleFilterChange}
-      >
-        {#each filters as option}
-          {#if option.enabled}
-            {#if option.id === "spacer"}
-              <option disabled>{option.name}</option>
-            {:else}
-              <option value={option.id}>{option.name}</option>
-            {/if}
-          {/if}
-        {/each}
-      </select>
-    {:else}
-      <button
-        type="button"
-        class="grid item"
-        style="margin-left: 120px"
-        on:click={toggleMarkDirty}
-      >
-        {#if $metadataStore.mark_dirty}
-          <CheckSquare
-            size={20}
-            class="checkbox checked {metadata.column == 'FilePath' ||
-            metadata.column == 'Filename' ||
-            metadata.column == 'Pathname'
-              ? 'inactive'
-              : ''}"
-          />
-        {:else}
-          <Square size={20} class="checkbox" />
-        {/if}
-        <span
-          class={metadata.column == "FilePath" ||
-          metadata.column == "Filename" ||
-          metadata.column == "Pathname"
-            ? "inactive"
-            : ""}>Mark Records as Dirty</span
-        >
-      </button>
-    {/if}
-
-    <div style="margin-left: auto; display: flex; gap: 20px;">
-      {#if isRemove}
-        {#if selectedItems.size > 0}
-          <button class="cta-button cancel" on:click={removeSelectedRecords}>
-            <OctagonX size="18" />
-            Remove {selectedChecks} Selected Records
-          </button>
-          <button class="cta-button cancel" on:click={removeRecords}>
-            <OctagonX size="18" />
-            Remove all {totalChecks} Records
-          </button>
-        {:else}
-          <button class="cta-button cancel" on:click={removeRecords}>
-            <OctagonX size="18" />
-            Remove {totalChecks} Records
-          </button>
-        {/if}
-      {:else}
-        <button class="cta-button cancel" on:click={replaceMetadata}>
-          <NotebookPenIcon size="18" />
-          <span>Replace '{metadata.find}' with '{metadata?.replace || ""}'</span
-          >
-        </button>
-      {/if}
-    </div>
-  </div> -->
-
-<!-- <div class="bar" style="margin-top: 10px; margin-bottom: 20px; padding: 0px;">
-    {#if enableSelections}
-      <button class="small-button" on:click={toggleChecksSelected}
-        >Toggle Selected</button
-      >
-      <button class="small-button" on:click={checkSelectedWithIndicator}
-        >Check Selected</button
-      >
-      <button class="small-button" on:click={uncheckSelected}
-        >Uncheck Selected</button
-      >
-      <button class="small-button" on:click={invertSelected}
-        >Invert Selections</button
-      >
-      <button class="small-button" on:click={clearSelected}
-        >Clear Selections</button
-      >
-      {#if selectedItems.size > 0}
-        <p style="margin-left: 10px">({selectedItems.size} selected)</p>
-      {/if}
-      {#if processingBatch}
-        <div class="batch-processing">
-          <Loader size={24} class="spinner" />
-          <span>Processing {selectedItems.size} items...</span>
-        </div>
-      {/if}
-    {/if}
-
-    <div class="filter-container">
-      {#if isRemove}
-        <span>Filter by: </span>
-        <select
-          class="select-field"
-          bind:value={currentFilter}
-          on:change={handleFilterChange}
-        >
-          {#each filters as option}
-            {#if option.enabled}
-              {#if option.id === "spacer"}
-                <option disabled>{option.name}</option>
-              {:else}
-                <option value={option.id}>{option.name}</option>
-              {/if}
-            {/if}
-          {/each}
-        </select>
-      {:else}
-        <button
-          type="button"
-          class="grid item"
-          style="margin-left: 120px"
-          on:click={toggleMarkDirty}
-        >
-          {#if $metadataStore.mark_dirty}
-            <CheckSquare
-              size={20}
-              class="checkbox checked {metadata.column == 'FilePath' ||
-              metadata.column == 'Filename' ||
-              metadata.column == 'Pathname'
-                ? 'inactive'
-                : ''}"
-            />
-          {:else}
-            <Square size={20} class="checkbox" />
-          {/if}
-          <span
-            class={metadata.column == "FilePath" ||
-            metadata.column == "Filename" ||
-            metadata.column == "Pathname"
-              ? "inactive"
-              : ""}>Mark Records as Dirty</span
-          >
-        </button>
-      {/if}
-    </div>
-  </div> -->
-
-{#if loading}
-  <p class="ellipsis">Loading data...</p>
-{:else if processing}
-  <div class="block inner">
-    <span>
-      <Loader
-        size={24}
-        class="spinner ml-2"
-        style="color: var(--accent-color)"
-      />
-      {removeMessage}
-    </span>
-    <div class="progress-container">
-      <div class="progress-bar" style="width: {removeProgress}%"></div>
-    </div>
-  </div>
-{:else if $resultsStore.length > 0}
-  <div class="virtual-table-container" bind:this={containerElement}>
-    <div bind:this={parentRef} class="virtual-table-viewport">
-      <div class="virtual-table-header" style="width: {totalWidth};">
-        <div
-          class="grid-container rheader"
-          style="grid-template-columns: {gridTemplateColumns};"
-        >
-          {#each columnConfigs as key, i}
-            <div class="grid-item header {i === 0 ? 'sticky-column' : ''}">
-              {key.header}
-            </div>
-          {/each}
-        </div>
-
-        <div
-          class="resizer-container"
-          style="grid-template-columns: {gridTemplateColumns}; display: grid; width: {totalWidth};"
-        >
-          {#each columnConfigs as column, i}
-            <div class="resizer-cell">
-              {#if i > 0 && i < 5}
-                <div
-                  class="resizer"
-                  on:mousedown={(event) => startResize(i, event)}
-                ></div>
-              {:else}
-                <div></div>
-              {/if}
-            </div>
-          {/each}
-        </div>
+<div class="block">
+  {#if loading}
+    <p class="ellipsis">Loading data...</p>
+  {:else if processing}
+    <div class="block inner">
+      <span>
+        <Loader
+          size={24}
+          class="spinner ml-2"
+          style="color: var(--accent-color)"
+        />
+        {removeMessage}
+      </span>
+      <div class="progress-container">
+        <div class="progress-bar" style="width: {removeProgress}%"></div>
       </div>
-
-      <div
-        class="virtual-table-body"
-        style="height: {$rowVirtualizer.getTotalSize()}px; width: {totalWidth};"
-      >
-        {#each $rowVirtualizer.getVirtualItems() as virtualRow (virtualRow.index)}
+    </div>
+  {:else if $resultsStore.length > 0}
+    <div class="virtual-table-container" bind:this={containerElement}>
+      <div bind:this={parentRef} class="virtual-table-viewport">
+        <div class="virtual-table-header" style="width: {totalWidth};">
           <div
-            class="virtual-row"
-            style="transform: translateY({virtualRow.start}px); height: {virtualRow.size}px; width: {totalWidth};"
+            class="grid-container rheader"
+            style="grid-template-columns: {gridTemplateColumns};"
           >
+            {#each columnConfigs as key, i}
+              <div class="grid-item header {i === 0 ? 'sticky-column' : ''}">
+                {key.header}
+              </div>
+            {/each}
+          </div>
+
+          <div
+            class="resizer-container"
+            style="grid-template-columns: {gridTemplateColumns}; display: grid; width: {totalWidth};"
+          >
+            {#each columnConfigs as column, i}
+              <div class="resizer-cell">
+                {#if i > 0 && i < 5}
+                  <div
+                    class="resizer"
+                    on:mousedown={(event) => startResize(i, event)}
+                  ></div>
+                {:else}
+                  <div></div>
+                {/if}
+              </div>
+            {/each}
+          </div>
+        </div>
+
+        <div
+          class="virtual-table-body"
+          style="height: {$rowVirtualizer.getTotalSize()}px; width: {totalWidth};"
+        >
+          {#each $rowVirtualizer.getVirtualItems() as virtualRow (virtualRow.index)}
             <div
-              class="list-item {filteredItems[
-                virtualRow.index
-              ].algorithm.includes('Keep')
-                ? 'unselected-item'
-                : 'checked-item'}"
+              class="virtual-row"
+              style="transform: translateY({virtualRow.start}px); height: {virtualRow.size}px; width: {totalWidth};"
             >
               <div
-                class="grid-container"
-                style="{selectedItems.has(filteredItems[virtualRow.index].id) &&
-                enableSelections
-                  ? 'background-color: var(--accent-color)'
-                  : ''};
-                    grid-template-columns: {gridTemplateColumns};"
+                class="list-item {filteredItems[
+                  virtualRow.index
+                ].algorithm.includes('Keep')
+                  ? 'unselected-item'
+                  : 'checked-item'}"
               >
-                {#each columnConfigs as column, i}
-                  {#if column.name === "audio"}
-                    <!-- Audio Column with sticky positioning if it's the first column -->
-                    <div
-                      class="grid-item {i === 0
-                        ? 'sticky-column'
-                        : i === 9
-                          ? 'sticky-column-right'
-                          : ''}
+                <div
+                  class="grid-container"
+                  style="{selectedItems.has(
+                    filteredItems[virtualRow.index].id
+                  ) && enableSelections
+                    ? 'background-color: var(--accent-color)'
+                    : ''};
+                    grid-template-columns: {gridTemplateColumns};"
+                >
+                  {#each columnConfigs as column, i}
+                    {#if column.name === "audio"}
+                      <!-- Audio Column with sticky positioning if it's the first column -->
+                      <div
+                        class="grid-item {i === 0
+                          ? 'sticky-column'
+                          : i === 9
+                            ? 'sticky-column-right'
+                            : ''}
                               {selectedItems.has(
-                        filteredItems[virtualRow.index].id
-                      ) && enableSelections
-                        ? 'selected'
-                        : ''}"
-                      on:click={() =>
-                        playAudioFile(filteredItems[virtualRow.index])}
-                    >
-                      <Volume size={18} />
-                    </div>
-                  {:else if column.name === "checkbox"}
-                    <!-- Checkbox Column with sticky positioning if it's the first column -->
-                    <div
-                      class="grid-item {i === 0
-                        ? 'sticky-column'
-                        : i === 9
-                          ? 'sticky-column-right'
-                          : ''}
-                              {selectedItems.has(
-                        filteredItems[virtualRow.index].id
-                      ) && enableSelections
-                        ? 'selected'
-                        : ''}"
-                      on:click={() =>
-                        toggleChecked(filteredItems[virtualRow.index])}
-                    >
-                      {#if !filteredItems[virtualRow.index].algorithm.includes("Keep")}
-                        <CheckSquare size={18} />
-                      {:else}
-                        <Square size={18} />
-                      {/if}
-                    </div>
-                  {:else if column.name === "algorithm"}
-                    <!-- Algorithm Column -->
-                    <div
-                      class="grid-item"
-                      on:click={(event) =>
-                        enableSelections
-                          ? toggleSelect(filteredItems[virtualRow.index], event)
-                          : toggleChecked(filteredItems[virtualRow.index])}
-                    >
-                      <div class="algorithm-icons">
-                        {#each filteredItems[virtualRow.index].algorithm.filter((algo: string) => algo !== "Keep" || filteredItems[virtualRow.index].algorithm.length === 1) as algo}
-                          {@const iconData = getAlgorithmIcon(algo)}
-                          <span class="icon-wrapper" title={iconData.tooltip}>
-                            <svelte:component
-                              this={iconData.component}
-                              size={20}
-                              style={iconData.color
-                                ? `color: ${iconData.color};`
-                                : ""}
-                            />
-                          </span>
-                        {/each}
+                          filteredItems[virtualRow.index].id
+                        ) && enableSelections
+                          ? 'selected'
+                          : ''}"
+                        on:click={() =>
+                          playAudioFile(filteredItems[virtualRow.index])}
+                      >
+                        <Volume size={18} />
                       </div>
-                    </div>
-                  {:else}
-                    <div
-                      class="grid-item {column.name === 'filename'
-                        ? 'bold'
-                        : ''}"
-                      on:click={(event) =>
-                        enableSelections
-                          ? toggleSelect(filteredItems[virtualRow.index], event)
-                          : toggleChecked(filteredItems[virtualRow.index])}
-                    >
-                      {filteredItems[virtualRow.index][
-                        column.name as keyof FileRecord
-                      ] || ""}
-                    </div>
-                  {/if}
-                {/each}
+                    {:else if column.name === "checkbox"}
+                      <!-- Checkbox Column with sticky positioning if it's the first column -->
+                      <div
+                        class="grid-item {i === 0
+                          ? 'sticky-column'
+                          : i === 9
+                            ? 'sticky-column-right'
+                            : ''}
+                              {selectedItems.has(
+                          filteredItems[virtualRow.index].id
+                        ) && enableSelections
+                          ? 'selected'
+                          : ''}"
+                        on:click={() =>
+                          toggleChecked(filteredItems[virtualRow.index])}
+                      >
+                        {#if !filteredItems[virtualRow.index].algorithm.includes("Keep")}
+                          <CheckSquare size={18} />
+                        {:else}
+                          <Square size={18} />
+                        {/if}
+                      </div>
+                    {:else if column.name === "algorithm"}
+                      <!-- Algorithm Column -->
+                      <div
+                        class="grid-item"
+                        on:click={(event) =>
+                          enableSelections
+                            ? toggleSelect(
+                                filteredItems[virtualRow.index],
+                                event
+                              )
+                            : toggleChecked(filteredItems[virtualRow.index])}
+                      >
+                        <div class="algorithm-icons">
+                          {#each filteredItems[virtualRow.index].algorithm.filter((algo: string) => algo !== "Keep" || filteredItems[virtualRow.index].algorithm.length === 1) as algo}
+                            {@const iconData = getAlgorithmIcon(algo)}
+                            <span class="icon-wrapper" title={iconData.tooltip}>
+                              <svelte:component
+                                this={iconData.component}
+                                size={20}
+                                style={iconData.color
+                                  ? `color: ${iconData.color};`
+                                  : ""}
+                              />
+                            </span>
+                          {/each}
+                        </div>
+                      </div>
+                    {:else}
+                      <div
+                        class="grid-item {column.name === 'filename'
+                          ? 'bold'
+                          : ''}"
+                        on:click={(event) =>
+                          enableSelections
+                            ? toggleSelect(
+                                filteredItems[virtualRow.index],
+                                event
+                              )
+                            : toggleChecked(filteredItems[virtualRow.index])}
+                      >
+                        {filteredItems[virtualRow.index][
+                          column.name as keyof FileRecord
+                        ] || ""}
+                      </div>
+                    {/if}
+                  {/each}
+                </div>
               </div>
             </div>
-          </div>
-        {/each}
+          {/each}
+        </div>
       </div>
     </div>
-  </div>
-{:else if $isSearching}
-  <div class="block inner">
-    <span>
-      <Loader
-        size={24}
-        class="spinner ml-2"
-        style="color: var(--accent-color)"
-      />
-      {$searchProgressStore.searchMessage}
-    </span>
-    <div class="progress-container">
-      <div
-        class="progress-bar"
-        style="width: {$searchProgressStore.searchProgress}%"
-      ></div>
+  {:else if $isSearching}
+    <div class="block inner">
+      <span>
+        <Loader
+          size={24}
+          class="spinner ml-2"
+          style="color: var(--accent-color)"
+        />
+        {$searchProgressStore.searchMessage}
+      </span>
+      <div class="progress-container">
+        <div
+          class="progress-bar"
+          style="width: {$searchProgressStore.searchProgress}%"
+        ></div>
+      </div>
+      <span>
+        {$searchProgressStore.subsearchMessage}
+      </span>
+      <div class="progress-container">
+        <div
+          class="progress-bar"
+          style="width: {$searchProgressStore.subsearchProgress}%"
+        ></div>
+      </div>
     </div>
-    <span>
-      {$searchProgressStore.subsearchMessage}
-    </span>
-    <div class="progress-container">
-      <div
-        class="progress-bar"
-        style="width: {$searchProgressStore.subsearchProgress}%"
-      ></div>
-    </div>
-  </div>
-{:else}
-  <!-- <div class="grid"> -->
-  {#each $preferencesStore.algorithms as algo}
-    <div class="grid item {getAlgoClass(algo, $preferencesStore.algorithms)}">
-      <button
-        type="button"
-        class="grid item"
-        on:click={() => toggleAlgorithm(algo.id)}
-      >
-        {#if algo.id === "audiosuite" || algo.id === "filename"}
-          <span style="margin-right: 20px;"></span>
-        {/if}
-
-        {#if algo.enabled}
-          <CheckSquare
-            size={20}
-            class="checkbox {(algo.id === 'audiosuite' ||
-              algo.id === 'filename') &&
-            !isBasicEnabled
-              ? 'inactive'
-              : 'checked'}"
-          />
-        {:else}
-          <Square size={20} class="checkbox inactive" />
-        {/if}
-
-        <span
-          class="tooltip-trigger {(algo.id === 'audiosuite' ||
-            algo.id === 'filename') &&
-          !isBasicEnabled
-            ? 'inactive'
-            : ''}"
+  {:else}
+    <div class="grid">
+      {#each $preferencesStore.algorithms as algo}
+        <div
+          class="grid item {getAlgoClass(algo, $preferencesStore.algorithms)}"
         >
-          {algo.name}
-          <span class="tooltip-text">{getAlgorithmTooltip(algo.id)} </span>
-        </span>
-      </button>
-
-      {#if algo.id === "dbcompare"}
-        {#if algo.db !== null && algo.db !== undefined}
-          {#await getFilenameWithoutExtension(algo.db) then filename}
-            <!-- svelte-ignore a11y_click_events_have_key_events -->
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <span class="clickable" on:click={getCompareDb}>{filename}</span>
-          {/await}
-        {:else}
           <button
             type="button"
-            class="small-button"
-            style="border-color: var(--secondary-bg)"
-            on:click={getCompareDb}>Select DB</button
+            class="grid item"
+            on:click={() => toggleAlgorithm(algo.id)}
           >
-        {/if}
-      {/if}
+            {#if algo.id === "audiosuite" || algo.id === "filename"}
+              <span style="margin-right: 20px;"></span>
+            {/if}
 
-      {#if algo.id === "duration"}
-        <input
-          type="number"
-          min="0"
-          step="0.1"
-          bind:value={algo.min_dur}
-          class="duration-input"
-          style="width: 55px; background-color: var(--primary-bg)"
-        />
-        s
-      {/if}
-    </div>
-  {/each}
-  <!-- </div> -->
-{/if}
+            {#if algo.enabled}
+              <CheckSquare
+                size={20}
+                class="checkbox {(algo.id === 'audiosuite' ||
+                  algo.id === 'filename') &&
+                !isBasicEnabled
+                  ? 'inactive'
+                  : 'checked'}"
+              />
+            {:else}
+              <Square size={20} class="checkbox inactive" />
+            {/if}
 
-<!-- <div class="header" style="margin-bottom: 0px; margin-top: 0px;">
-    {#if isRemove}
-      <span>
-        Remove Records from:
-        <select
-          class="select-field"
-          bind:value={pref.safety_db}
-          on:change={() => preferencesStore.set(pref)}
-        >
-          {#each [{ bool: true, text: "Safety Database Copy" }, { bool: false, text: "Current Database" }] as option}
-            <option value={option.bool}>{option.text}</option>
-          {/each}
-        </select>
-        {#if pref.safety_db}
-          with tag:
-          <input
-            class="input-field"
-            placeholder="thinned"
-            type="text"
-            id="new_db_tag"
-            bind:value={pref.safety_db_tag}
-            on:change={() => preferencesStore.set(pref)}
-          />
-        {:else}
-          <TriangleAlert
-            size="30"
-            class="blinking"
-            style="color: var(--warning-hover); margin-bottom: -10px"
-          />
-        {/if}
-      </span>
-      {#if algoEnabled("dual_mono")}
-        <span>
-          Dual Mono Files:
-          <select
-            class="select-field"
-            bind:value={pref.strip_dual_mono}
-            on:change={() => preferencesStore.set(pref)}
-          >
-            {#each [{ id: false, text: "Preserve" }, { id: true, text: "Strip" }] as option}
-              <option value={option.id}>{option.text}</option>
-            {/each}
-          </select>
-          {#if pref.strip_dual_mono}
-            <TriangleAlert
-              size="30"
-              class="blinking"
-              style="color: var(--warning-hover); margin-bottom: -10px"
-            />
+            <span
+              class="tooltip-trigger {(algo.id === 'audiosuite' ||
+                algo.id === 'filename') &&
+              !isBasicEnabled
+                ? 'inactive'
+                : ''}"
+            >
+              {algo.name}
+              <span class="tooltip-text">{getAlgorithmTooltip(algo.id)} </span>
+            </span>
+          </button>
+
+          {#if algo.id === "dbcompare"}
+            {#if algo.db !== null && algo.db !== undefined}
+              {#await getFilenameWithoutExtension(algo.db) then filename}
+                <!-- svelte-ignore a11y_click_events_have_key_events -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <span class="clickable" on:click={getCompareDb}>{filename}</span
+                >
+              {/await}
+            {:else}
+              <button
+                type="button"
+                class="small-button"
+                style="border-color: var(--secondary-bg)"
+                on:click={getCompareDb}>Select DB</button
+              >
+            {/if}
           {/if}
-        </span>
-      {/if}
-      <span>
-        Checked Files:
-        <select class="select-field" bind:value={$preferencesStore.erase_files}>
-          {#each [{ id: "Keep", text: "Keep on Disk" }, { id: "Trash", text: "Move To Trash" }, { id: "Delete", text: "Permanently Delete" }] as option}
-            <option value={option.id}>{option.text}</option>
-          {/each}
-        </select>
-        {#if pref.erase_files !== "Keep"}
-          <TriangleAlert
-            size="30"
-            class={pref.erase_files == "Delete" ? "blinking" : ""}
-            style="color: var(--warning-hover); margin-bottom: -10px"
-          />
-        {/if}
-      </span>
-    {/if}
-  </div> -->
+
+          {#if algo.id === "duration"}
+            <input
+              type="number"
+              min="0"
+              step="0.1"
+              bind:value={algo.min_dur}
+              class="duration-input"
+              style="width: 55px; background-color: var(--primary-bg)"
+            />
+            s
+          {/if}
+        </div>
+      {/each}
+    </div>
+  {/if}
+</div>
 
 <style>
   .virtual-table-container {
@@ -1165,7 +823,7 @@
   }
 
   .virtual-table-header {
-    width: 100vw;
+    width: max(var(--total-width), 100vw);
     position: sticky;
     top: 0;
     z-index: 10;
@@ -1175,14 +833,14 @@
 
   .virtual-table-body {
     position: relative;
-    width: 100vw;
+    width: var(--total-width);
   }
 
   .virtual-row {
     position: absolute;
     top: 0;
     left: 0;
-    width: 100vw;
+    width: var(--total-width);
   }
 
   .resizer-container {
@@ -1245,7 +903,7 @@
     height: 45px;
     text-align: bottom;
     align-items: end;
-    width: 100vw;
+    width: max(var(--total-width), 100vw);
   }
 
   .ellipsis {
@@ -1278,7 +936,7 @@
     -webkit-user-select: none;
     -moz-user-select: none;
     -ms-user-select: none;
-    width: 100vw;
+    width: max(var(--total-width), 100vw);
   }
 
   .algorithm-icons {
@@ -1357,7 +1015,7 @@
   /* font-weight: bold; */
   .block {
     background-color: var(--secondary-bg);
-    padding: 10px 15px;
+    padding: 0px 0px;
     /* padding-bottom: 20px; */
     border-radius: 8px;
     flex: 1;
