@@ -10,7 +10,7 @@ const defaultReg: Registration = { name: '', email: '', license: ''};
 
 
 
-export const registrationStore = createLocalStore<Registration>('registrationinfo', defaultReg);
+export const registrationStore = createLocalStore<Registration>('registrationInfo', defaultReg);
 
 
 export async function checkRegistered() {

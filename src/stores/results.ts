@@ -6,7 +6,11 @@ import { writable, derived, get } from 'svelte/store';
 import { preferencesStore } from './preferences';
 
 // Main results store
-export const resultsStore = createSessionStore<FileRecord[]>('results', []);
+// Change from using createSessionStore
+// export const resultsStore = createSessionStore<FileRecord[]>('results', []);
+
+// To using a regular writable store
+export const resultsStore = writable<FileRecord[]>([]);
 
 // Selection-related stores
 export const selectedItemsStore = writable<Set<number>>(new Set());

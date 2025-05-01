@@ -62,11 +62,12 @@ export async function initializeSearchListeners(): Promise<void> {
                 isSearching.set(true);
             } else if (status.stage === "complete" || status.stage === "cancelled") {
                 isSearching.set(false);
+                
             }
             
-            console.log(
-                `Search status: ${status.stage} - ${status.progress}% - ${status.message}`
-            );
+            // console.log(
+            //     `Search status: ${status.stage} - ${status.progress}% - ${status.message}`
+            // );
         });
 
         await listen<{
@@ -81,9 +82,9 @@ export async function initializeSearchListeners(): Promise<void> {
                 subsearchMessage: status.message,
                 subsearchStage: status.stage,
             }));
-            console.log(
-                `Search sub-status: ${status.stage} - ${status.progress}% - ${status.message}`
-            );
+            // console.log(
+            //     `Search sub-status: ${status.stage} - ${status.progress}% - ${status.message}`
+            // );
         });
 
         listenersInitialized = true;
@@ -175,6 +176,7 @@ export async function search(): Promise<boolean> {
         
         // Set isSearching to false now that the search is complete
         isSearching.set(false);
+
         // If we have results, we'll navigate to the results page
         if (result && result.length > 0) {
            

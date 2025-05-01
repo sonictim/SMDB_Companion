@@ -191,11 +191,12 @@
         <button
           class="cta-button {$isSearching ? 'cancel' : ''}"
           on:click={async () => {
-            const result = await toggleSearch();
+            let result = await toggleSearch();
             if (result) {
               activeTab = "results";
               // Use the showResultsView function from the menu store
               showResultsView();
+              resultsView = true;
               console.log(
                 "searchView:",
                 searchView,

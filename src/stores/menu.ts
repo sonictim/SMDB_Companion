@@ -565,7 +565,7 @@ const algoMenu = await Submenu.new({
       { id: "close", text: "Close Database", action: () => closeDatabase() },
       
       await Submenu.new({
-        text: "Recent Databases",
+        text: "Open Recent",
         items: recentdb
           .filter(db => db.name !== null && db.path !== null  && db.name !== "Select Database")
           .map((db) => {

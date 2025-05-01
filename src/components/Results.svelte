@@ -22,9 +22,9 @@
     totalChecksStore,
     selectedChecksStore,
     updateCurrentFilter,
-    manualFiltersStore, // Import the new manualFiltersStore
+    manualFiltersStore,
     filtersStore,
-    clearResults, // Import the derived filtersStore
+    clearResults,
   } from "../stores/results";
   import { metadataStore } from "../stores/metadata";
   import { databaseStore, setDatabase } from "../stores/database";
@@ -33,7 +33,7 @@
   import { createVirtualizer } from "@tanstack/svelte-virtual";
 
   export let isRemove: boolean;
-  export let activeTab: string; // This prop is now bindable
+  export let activeTab: string;
   export let selectedDb: string | null = null;
   export let searchView = false;
   export let resultsView = true;
@@ -46,7 +46,7 @@
   $: currentFilter = $currentFilterStore;
   $: enableSelections = $enableSelectionsStore;
   $: totalChecks = $totalChecksStore;
-  $: selectedChecks = $selectedChecksStore; // Create a reactive reference to selected checks
+  $: selectedChecks = $selectedChecksStore;
 
   let processing = false;
   let loading = true;
@@ -55,13 +55,14 @@
   let dualMono: { id: number; path: string }[] = [];
   let lastPlayed = "Timbo";
 
-  // Function to update UI after store changes
+  let processingBatch = false;
+  let loadingResults = true;
+  let showLoadingOverlay = true;
+
   function updateUI() {
-    // Force reactivity by causing an update
     results = [...results];
   }
 
-  // Handle filter change
   function handleFilterChange(event: Event) {
     const select = event.target as HTMLSelectElement;
     updateCurrentFilter(select.value);
@@ -101,7 +102,6 @@
         startWidth + diff
       );
 
-      // Just update this single column's width
       const newConfigs = [...columnConfigs];
       newConfigs[index] = { ...newConfigs[index], width: newWidth };
       columnConfigs = newConfigs;
@@ -160,7 +160,6 @@
   }
 
   $: {
-    // This reactive statement watches for filter changes
     const scrollElement = parentRef;
     const scrollTop = scrollElement?.scrollTop;
 
@@ -208,7 +207,6 @@
   }
 
   onMount(() => {
-    // Delay setting loading to false to ensure UI renders the loading state first
     setTimeout(() => {
       loading = false;
     }, 100);
@@ -216,6 +214,8 @@
     if (containerElement) {
       containerWidth = containerElement.clientWidth;
     }
+
+    activateResultsTab();
   });
 
   $: filters = $filtersStore;
@@ -260,15 +260,15 @@
 
   async function removeRecords() {
     idsToRemove = filteredItems
-      .filter((item) => !item.algorithm.includes("Keep")) // Only keep items without "Keep"
-      .map((item) => item.id); // Extract the ids
+      .filter((item) => !item.algorithm.includes("Keep"))
+      .map((item) => item.id);
     filesToRemove = filteredItems
-      .filter((item) => !item.algorithm.includes("Keep")) // Only keep items without "Keep"
-      .map((item) => item.path + "/" + item.filename); // Extract the ids
+      .filter((item) => !item.algorithm.includes("Keep"))
+      .map((item) => item.path + "/" + item.filename);
 
     dualMono = filteredItems
-      .filter((item) => item.algorithm.includes("DualMono")) // Only keep items with "Dual Mono"
-      .map((item) => ({ id: item.id, path: item.path + "/" + item.filename })); // Extract the ids
+      .filter((item) => item.algorithm.includes("DualMono"))
+      .map((item) => ({ id: item.id, path: item.path + "/" + item.filename }));
 
     if (idsToRemove.length > 0 || dualMono.length > 0) {
       if (!(await confirmDialog())) return;
@@ -290,7 +290,6 @@
           }
           console.log("Successfully removed records with IDs:", idsToRemove);
           processing = false;
-          // clearResults();
           setDatabase(updatedDb, false);
           showSearchView();
         })
@@ -303,24 +302,25 @@
       await message("No records to remove!");
     }
   }
+
   async function removeSelectedRecords() {
     idsToRemove = filteredItems
       .filter(
         (item) => !item.algorithm.includes("Keep") && selectedItems.has(item.id)
-      ) // Only keep items without "Keep"
-      .map((item) => item.id); // Extract the ids
+      )
+      .map((item) => item.id);
     filesToRemove = filteredItems
       .filter(
         (item) => !item.algorithm.includes("Keep") && selectedItems.has(item.id)
-      ) // Only keep items without "Keep"
-      .map((item) => item.path + "/" + item.filename); // Extract the ids
+      )
+      .map((item) => item.path + "/" + item.filename);
 
     dualMono = filteredItems
       .filter(
         (item) =>
           item.algorithm.includes("DualMono") && selectedItems.has(item.id)
-      ) // Only keep items with "Dual Mono"
-      .map((item) => ({ id: item.id, path: item.path + "/" + item.filename })); // Extract the ids
+      )
+      .map((item) => ({ id: item.id, path: item.path + "/" + item.filename }));
 
     if (idsToRemove.length > 0 || dualMono.length > 0) {
       if (!(await confirmDialog())) return;
@@ -516,7 +516,6 @@
   export let estimatedItemSize = 40;
   export let overscan = 5;
 
-  // Create vertical virtualizer for rows
   $: rowVirtualizer = createVirtualizer({
     count: filteredItems.length,
     estimateSize: () => estimatedItemSize,
@@ -544,7 +543,6 @@
     };
   });
 
-  // Replace static grid-template-columns with dynamic version
   $: gridTemplateColumns = columnWidths.map((width) => `${width}px`).join(" ");
 
   $: {
@@ -556,11 +554,8 @@
     return algorithm?.enabled || false;
   }
 
-  let processingBatch = false;
-
   async function checkSelectedWithIndicator() {
     processingBatch = true;
-    // Use setTimeout to allow UI to update before heavy processing
     setTimeout(() => {
       try {
         checkSelected();
@@ -568,6 +563,29 @@
         processingBatch = false;
       }
     }, 10);
+  }
+
+  function activateResultsTab() {
+    loadingResults = true;
+    showLoadingOverlay = true;
+
+    setTimeout(() => {
+      const timer = setTimeout(() => {
+        loadingResults = false;
+        showLoadingOverlay = false;
+      }, 500);
+
+      return () => clearTimeout(timer);
+    }, 100);
+  }
+
+  $: {
+    if (filteredItems && filteredItems.length > 0 && loadingResults) {
+      setTimeout(() => {
+        loadingResults = false;
+        showLoadingOverlay = false;
+      }, 500);
+    }
   }
 </script>
 
@@ -712,6 +730,14 @@
       </div>
     {:else}
       <div class="virtual-table-container" style="height: 80vh; width: 100%;">
+        {#if showLoadingOverlay}
+          <div class="loading-overlay">
+            <Loader size={48} class="spinner" />
+            <p class="loading-text">
+              Preparing {filteredItems.length} results...
+            </p>
+          </div>
+        {/if}
         <div bind:this={parentRef} class="virtual-table-viewport">
           <div class="virtual-table-header" style="width: {totalWidth};">
             <div
@@ -771,7 +797,6 @@
                   >
                     {#each columnConfigs as column, i}
                       {#if column.name === "audio"}
-                        <!-- Audio Column with sticky positioning if it's the first column -->
                         <div
                           class="grid-item {i === 0
                             ? 'sticky-column'
@@ -789,7 +814,6 @@
                           <Volume size={18} />
                         </div>
                       {:else if column.name === "checkbox"}
-                        <!-- Checkbox Column with sticky positioning if it's the first column -->
                         <div
                           class="grid-item {i === 0
                             ? 'sticky-column'
@@ -811,7 +835,6 @@
                           {/if}
                         </div>
                       {:else if column.name === "algorithm"}
-                        <!-- Algorithm Column -->
                         <div
                           class="grid-item"
                           on:click={(event) =>
@@ -995,8 +1018,8 @@
     height: 60px;
     background-color: var(--inactive-color);
     position: absolute;
-    right: -18px; /* Change from -20px to 0 */
-    transform: translateX(50%); /* Center on the boundary */
+    right: -18px;
+    transform: translateX(50%);
     top: -60px;
     cursor: col-resize;
     z-index: 20;
@@ -1027,11 +1050,6 @@
   }
 
   .rheader {
-    /* text-align: center;
-    align-content: center;
-    align-items: center;
-    justify-content: center; */
-    /* display: flex; */
     font-weight: bold;
     font-size: 16px;
     color: var(--accent-color);
@@ -1105,37 +1123,60 @@
     transform: translateX(-50%);
   }
 
-  /* Make BOTH header and cells sticky */
   .sticky-column {
     position: sticky !important;
     left: 0;
     z-index: 15;
-    background-color: var(
-      --primary-bg
-    ); /* Background prevents content behind from showing through */
-    box-shadow: 1px 0 3px rgba(0, 0, 0, 0.1); /* Optional shadow for depth */
+    background-color: var(--primary-bg);
+    box-shadow: 1px 0 3px rgba(0, 0, 0, 0.1);
   }
   .sticky-column-right {
     position: sticky !important;
     right: 0;
     z-index: 15;
-    background-color: var(
-      --primary-bg
-    ); /* Background prevents content behind from showing through */
-    box-shadow: 1px 0 3px rgba(0, 0, 0, 0.1); /* Optional shadow for depth */
+    background-color: var(--primary-bg);
+    box-shadow: 1px 0 3px rgba(0, 0, 0, 0.1);
     text-align: right;
   }
 
-  /* Add these styles to preserve highlighting on sticky columns */
   .grid-item.sticky-column.selected,
   .grid-item.sticky-column-right.selected {
     background-color: var(--accent-color) !important;
   }
 
-  /* For checked items (not just selected) */
   .checked-item .grid-item.sticky-column,
   .checked-item .grid-item.sticky-column-right {
-    /* If you need different styling for checked vs unchecked */
-    /* background-color: var(--checked-bg-color); */
+  }
+
+  .loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    background-color: rgba(0, 0, 0, 0.7);
+    z-index: 100;
+    border-radius: 6px;
+  }
+
+  .loading-text {
+    color: var(--text-color);
+    margin-top: 16px;
+    font-size: 18px;
+  }
+
+  .spinner {
+    animation: spin 1.5s linear infinite;
+    color: var(--accent-color);
+  }
+
+  @keyframes spin {
+    100% {
+      transform: rotate(360deg);
+    }
   }
 </style>

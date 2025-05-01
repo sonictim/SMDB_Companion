@@ -51,7 +51,16 @@ export function createSessionStore<T>(key: string, initialValue: T) {
   
   // Subscribe to save changes to sessionStorage
   store.subscribe(value => {
-    sessionStorage.setItem(key, JSON.stringify(value));
+    try {
+      sessionStorage.setItem(key, JSON.stringify(value));
+    } catch (e) {
+      if (e instanceof Error && e.name === 'QuotaExceededError') {
+        console.warn(`Storage quota exceeded for ${key}. Data will not be persisted.`);
+        // Optionally implement fallback behavior here
+      } else {
+        console.error(`Error saving ${key} to sessionStorage:`, e);
+      }
+    }
   });
   
   return store;
