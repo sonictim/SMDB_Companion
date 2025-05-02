@@ -245,7 +245,7 @@ impl Database {
 
                         app.substatus(
                             "dual_mono",
-                            new_completed * 100 / total,
+                            new_completed % batch_size * 100 / batch_size,
                             &format!("Dual Mono Search: {}/{}", new_completed, total),
                         );
                         let is_identical = audio::decode::are_channels_identical(&record.path);
