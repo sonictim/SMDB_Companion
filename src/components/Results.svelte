@@ -26,6 +26,7 @@
   import { metadataStore } from "../stores/metadata";
   import { databaseStore, setDatabase } from "../stores/database";
   import { viewStore, showSearchView } from "../stores/menu";
+  import { isSearching } from "../stores/status";
   import { ask, message } from "@tauri-apps/plugin-dialog";
   import { createVirtualizer } from "@tanstack/svelte-virtual";
 
@@ -723,7 +724,7 @@
       </div>
     {:else}
       <div class="virtual-table-container" style="height: 80vh; width: 100%;">
-        {#if showLoadingOverlay}
+        {#if $isSearching}
           <div class="loading-overlay">
             <Loader size={48} class="spinner" />
             <p class="loading-text">

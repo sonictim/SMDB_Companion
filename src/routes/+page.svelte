@@ -23,7 +23,7 @@
   import { databaseStore } from "../stores/database";
   import { checkForUpdates } from "../stores/utils";
   import { checkRegistered } from "../stores/registration";
-  import { initializeMenu, viewStore } from "../stores/menu";
+  import { initializeMenu, viewStore, showSearchView } from "../stores/menu";
   import { applyPreset } from "../stores/presets";
   import type { Preset } from "../stores/types";
 
@@ -115,6 +115,7 @@
   // Clean up on component destruction
   onDestroy(() => {
     if (presetChangedListener) presetChangedListener();
+    if (view === "results") showSearchView;
   });
 </script>
 

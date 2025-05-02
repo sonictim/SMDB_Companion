@@ -29,6 +29,7 @@
   import { ask, message } from "@tauri-apps/plugin-dialog";
   import { createVirtualizer } from "@tanstack/svelte-virtual";
   import { databaseStore, setDatabase } from "../stores/database";
+  import { isSearching, searchProgressStore } from "../stores/status";
 
   export let isRemove: boolean;
   export let selectedDb: string | null = null;
@@ -726,7 +727,33 @@
     bind:this={containerElement}
     style="margin-bottom: 15px;"
   >
-    {#if loading}
+    {#if $isSearching}
+      <div class="block inner">
+        <span>
+          <Loader
+            size={24}
+            class="spinner ml-2"
+            style="color: var(--accent-color)"
+          />
+          {$searchProgressStore.searchMessage}
+        </span>
+        <div class="progress-container">
+          <div
+            class="progress-bar"
+            style="width: {$searchProgressStore.searchProgress}%"
+          ></div>
+        </div>
+        <span>
+          {$searchProgressStore.subsearchMessage}
+        </span>
+        <div class="progress-container">
+          <div
+            class="progress-bar"
+            style="width: {$searchProgressStore.subsearchProgress}%"
+          ></div>
+        </div>
+      </div>
+    {:else if loading}
       <p class="ellipsis">Loading data...</p>
     {:else if processing}
       <div class="block inner">

@@ -7,6 +7,7 @@ import { createLocalStore, createSessionStore } from './utils';
 import { clearResults } from './results';
 import type { Database } from './types';
 import { open } from "@tauri-apps/plugin-dialog";
+import { viewStore, showSearchView } from './menu';
 
 
 
@@ -67,6 +68,9 @@ export async function openDatabase(is_compare: boolean){
     let path = await openSqliteFile();
     if (path) {
         setDatabase(path, is_compare);
+        if (get(viewStore) === "results") {
+            showSearchView();
+        }
 
     }
     

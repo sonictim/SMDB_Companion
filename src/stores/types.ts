@@ -86,6 +86,7 @@ export type Preferences = {
   fetch_waveforms: boolean;
   colors: Colors;
   algorithms: Algorithm[];
+  version?: number; // Add version field to track preference structure changes
 };
 
 export type Preset = { 

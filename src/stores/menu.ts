@@ -6,6 +6,7 @@ import {
   Submenu,
   CheckMenuItem,
 } from "@tauri-apps/api/menu";
+import { createLocalStore } from "./utils";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { writable, get } from 'svelte/store';
 import { preferencesStore, toggle_ignore_filetype, toggle_remove_records_from, } from './preferences';
@@ -749,7 +750,21 @@ const selectionMenu = await Submenu.new({
 }
 
 // View state store
-export const viewStore = writable("search");
+// export const viewStore = writable("search");
+// Modified to check for and reset "results" to "search" on initialization
+const initialView = (() => {
+  try {
+    const storedView = localStorage.getItem("view");
+    const parsedView = storedView ? JSON.parse(storedView) : "search";
+    // If the stored view is "results", reset to "search"
+    return parsedView === "results" ? "search" : parsedView;
+  } catch (e) {
+    console.error("Error loading view state:", e);
+    return "search";
+  }
+})();
+
+export const viewStore = createLocalStore<string>("view", initialView);
 
 // View state management function
 export function showSearchView() {

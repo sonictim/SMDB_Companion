@@ -187,6 +187,7 @@
       {:else}
         <button
           class="cta-button {$isSearching ? 'cancel' : ''}"
+          style="width: 100vw;"
           on:click={toggleSearch}
         >
           <div class="flex items-center gap-2">
@@ -201,7 +202,7 @@
         </button>
       {/if}
     </div>
-    {#if $isSearching}
+    <!-- {#if $isSearching}
       <div class="block inner">
         <span>
           <Loader
@@ -227,60 +228,58 @@
           ></div>
         </div>
       </div>
-    {:else}
-      <div class="grid">
-        {#each $preferencesStore.algorithms as algo}
-          <div
-            class="grid item {getAlgoClass(algo, $preferencesStore.algorithms)}"
+    {:else} -->
+    <div class="grid">
+      {#each $preferencesStore.algorithms as algo}
+        <div
+          class="grid item {getAlgoClass(algo, $preferencesStore.algorithms)}"
+        >
+          <button
+            type="button"
+            class="grid item"
+            on:click={() => toggleAlgorithm(algo.id)}
           >
-            <button
-              type="button"
-              class="grid item"
-              on:click={() => toggleAlgorithm(algo.id)}
-            >
-              {#if algo.id === "audiosuite" || algo.id === "filename"}
-                <span style="margin-right: 20px;"></span>
-              {/if}
+            {#if algo.id === "audiosuite" || algo.id === "filename"}
+              <span style="margin-right: 20px;"></span>
+            {/if}
 
-              {#if algo.enabled}
-                <CheckSquare
-                  size={20}
-                  class="checkbox {(algo.id === 'audiosuite' ||
-                    algo.id === 'filename') &&
-                  !isBasicEnabled
-                    ? 'inactive'
-                    : 'checked'}"
-                />
-              {:else}
-                <Square size={20} class="checkbox inactive" />
-              {/if}
-
-              <span
-                class="tooltip-trigger {(algo.id === 'audiosuite' ||
+            {#if algo.enabled}
+              <CheckSquare
+                size={20}
+                class="checkbox {(algo.id === 'audiosuite' ||
                   algo.id === 'filename') &&
                 !isBasicEnabled
                   ? 'inactive'
-                  : ''}"
-              >
-                {algo.name}
-                <span class="tooltip-text"
-                  >{getAlgorithmTooltip(algo.id)}
-                </span>
-              </span>
-            </button>
-
-            {#if algo.id === "duration"}
-              <input
-                type="number"
-                min="0"
-                step="0.1"
-                bind:value={algo.min_dur}
-                class="duration-input"
-                style="width: 55px; background-color: var(--primary-bg)"
+                  : 'checked'}"
               />
-              s
+            {:else}
+              <Square size={20} class="checkbox inactive" />
             {/if}
-            <!-- {#if algo.id === "waveform"}
+
+            <span
+              class="tooltip-trigger {(algo.id === 'audiosuite' ||
+                algo.id === 'filename') &&
+              !isBasicEnabled
+                ? 'inactive'
+                : ''}"
+            >
+              {algo.name}
+              <span class="tooltip-text">{getAlgorithmTooltip(algo.id)} </span>
+            </span>
+          </button>
+
+          {#if algo.id === "duration"}
+            <input
+              type="number"
+              min="0"
+              step="0.1"
+              bind:value={algo.min_dur}
+              class="duration-input"
+              style="width: 55px; background-color: var(--primary-bg)"
+            />
+            s
+          {/if}
+          <!-- {#if algo.id === "waveform"}
                             <select
                                 class="select-field"
                                 style="width: 150px"
@@ -291,31 +290,29 @@
                                 {/each}
                             </select>
                         {/if} -->
-          </div>
-          {#if algo.id === "dbcompare"}
-            {#if algo.db !== null && algo.db !== undefined}
-              {#await getFilenameWithoutExtension(algo.db) then filename}
-                <!-- svelte-ignore a11y_click_events_have_key_events -->
-                <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <span
-                  class="clickable"
-                  style="margin-left: 40px"
-                  on:click={openSqliteFile}>{filename}</span
-                >
-              {/await}
-            {:else}
-              <button
-                type="button"
-                class="small-button"
-                on:click={openSqliteFile}>Select DB</button
+        </div>
+        {#if algo.id === "dbcompare"}
+          {#if algo.db !== null && algo.db !== undefined}
+            {#await getFilenameWithoutExtension(algo.db) then filename}
+              <!-- svelte-ignore a11y_click_events_have_key_events -->
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <span
+                class="clickable"
+                style="margin-left: 40px"
+                on:click={openSqliteFile}>{filename}</span
               >
-            {/if}
+            {/await}
+          {:else}
+            <button type="button" class="small-button" on:click={openSqliteFile}
+              >Select DB</button
+            >
           {/if}
-        {/each}
-      </div>
+        {/if}
+      {/each}
+    </div>
 
-      <span style="margin-left: 255px">
-        <!-- {#if waveform_match == false}
+    <span style="margin-left: 255px">
+      <!-- {#if waveform_match == false}
                     <span>
                         Threshold:
                         <input
@@ -326,8 +323,8 @@
                         />
                     </span>
                 {/if} -->
-      </span>
-    {/if}
+    </span>
+    <!-- {/if} -->
 
     <!-- </div> -->
   </div>
