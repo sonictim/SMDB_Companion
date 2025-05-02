@@ -9,7 +9,6 @@
     NotebookPenIcon,
   } from "lucide-svelte";
 
-  export let activeTab: string; // This prop is now bindable
   export let isRemove: boolean;
 
   import type { Preferences } from "../stores/types";
@@ -17,7 +16,9 @@
   import { get } from "svelte/store";
   let pref: Preferences = get(preferencesStore);
   import { databaseStore } from "../stores/database";
+  import { viewStore } from "../stores/menu";
   $: database = $databaseStore;
+  $: view = $viewStore;
 
   let findText = "";
   let replaceText = "";
@@ -40,7 +41,7 @@
       })
       .catch((error) => console.error(error));
 
-    activeTab = "results";
+    view = "results";
   }
 
   function toggleCaseSensitivity() {

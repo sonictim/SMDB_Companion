@@ -31,7 +31,6 @@
   import { databaseStore, setDatabase } from "../stores/database";
 
   export let isRemove: boolean;
-  export let activeTab: string; // This prop is now bindable
   export let selectedDb: string | null = null;
 
   $: pref = $preferencesStore;
@@ -185,7 +184,6 @@
           metadata.find = "";
           metadata.replace = "";
           results = [];
-          activeTab = "search";
         })
         .catch((error) => {
           console.error("Error replacing metadata:", error);
@@ -420,7 +418,6 @@
       if (status.stage === "complete") {
         processing = false;
         fetchData();
-        activeTab = "search";
       }
     });
   });

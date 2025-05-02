@@ -7,6 +7,7 @@ import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { preferencesStore } from './preferences';
 import { resultsStore } from './results';
+import { viewStore, showResultsView } from './menu';
 
 
 export const isSearching = writable(false);
@@ -15,9 +16,6 @@ export const virtualizerStore = writable(null);
 export const scrollPositionStore = writable(0);
 
 
-  export let activeTab: string;
-  export let searchView = true;
-  export let resultsView = false;
 
 // Create a store for search progress with persistence
 export const searchProgressStore = writable<SearchProgressState>({
@@ -58,12 +56,12 @@ export async function initializeSearchListeners(): Promise<void> {
             
             // Set isSearching to true whenever we get a search status update
             // This ensures the UI stays in "searching" mode while the backend is working
-            if (status.stage !== "complete" && status.stage !== "cancelled") {
-                isSearching.set(true);
-            } else if (status.stage === "complete" || status.stage === "cancelled") {
-                isSearching.set(false);
+            // if (status.stage !== "complete" && status.stage !== "cancelled") {
+            //     isSearching.set(true);
+            // } else if (status.stage === "complete" || status.stage === "cancelled") {
+            //     isSearching.set(false);
                 
-            }
+            // }
             
             // console.log(
             //     `Search status: ${status.stage} - ${status.progress}% - ${status.message}`
@@ -100,7 +98,6 @@ export async function initializeSearchListeners(): Promise<void> {
 export async function toggleSearch(): Promise<boolean> {
     console.log("Toggle Search");
     const currentSearching = get(isSearching);
-    isSearching.set(!currentSearching);
     
     if (!currentSearching) {
        return await search();
@@ -172,21 +169,21 @@ export async function search(): Promise<boolean> {
         });
         
         console.log("Search Results:", result);
-        resultsStore.set(result);
         
-        // Set isSearching to false now that the search is complete
-        isSearching.set(false);
-
+        
         // If we have results, we'll navigate to the results page
         if (result && result.length > 0) {
-           
+            if (get(viewStore) === "search") showResultsView();
+            resultsStore.set(result);
+            isSearching.set(false);
+            
             return true;
         }
     } catch (error) {
         console.error("Search error:", error);
         isSearching.set(false); // Make sure to reset on error
     }
-    
+    isSearching.set(false); // Make sure to reset on error
     return false;
 }
 
@@ -194,15 +191,17 @@ export async function search(): Promise<boolean> {
  * Cancel an ongoing search operation
  */
 export async function cancelSearch(): Promise<void> {
+    isSearching.set(false);
     await invoke("cancel_search")
         .then(() => {
             console.log("Search cancellation requested");
-            isSearching.set(false);
-
+            
             // Reset progress in store
             resetSearchProgress();
         })
-        .catch((error) => console.error("Error cancelling search:", error));
+        .catch((error) => {
+            console.error("Error cancelling search:", error);
+        });
 }
 
 /**

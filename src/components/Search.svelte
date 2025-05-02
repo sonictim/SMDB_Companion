@@ -14,19 +14,10 @@
   import { onMount, onDestroy } from "svelte";
   import { databaseStore, openSqliteFile } from "../stores/database";
   $: database = $databaseStore;
-  import { listen } from "@tauri-apps/api/event";
 
-  // Define props
-  // export let dbSize: number;
-  export let activeTab: string; // This prop is now bindable
   export let isRemove: boolean;
 
-  // Import viewStore and view control functions
   import { viewStore, showResultsView } from "../stores/menu";
-
-  // Bind to the viewStore values instead of using local props
-  $: searchView = $viewStore.searchView;
-  $: resultsView = $viewStore.resultsView;
 
   let isFinding = false;
 
@@ -39,11 +30,8 @@
     searchProgressStore,
     initializeSearchListeners,
     toggleSearch, // Import the moved functions
-    search,
-    cancelSearch,
   } from "../stores/status";
   import { get } from "svelte/store";
-  import { open } from "@tauri-apps/plugin-dialog";
   import { basename, extname } from "@tauri-apps/api/path";
 
   async function getFilenameWithoutExtension(fullPath: string) {
@@ -73,9 +61,6 @@
   }
 
   $: metadata = metadataStore;
-
-  // let pref: Preferences = get(preferencesStore);
-
   $: isBasicEnabled =
     $preferencesStore?.algorithms?.find((a) => a.id === "basic")?.enabled ||
     false;
@@ -110,7 +95,7 @@
       })
       .catch((error) => console.error(error));
     isFinding = false;
-    activeTab = "results";
+    showResultsView();
   }
   function toggleCaseSensitivity() {
     metadataStore.update((meta) => ({
@@ -129,12 +114,12 @@
   }
 
   // Handle search tab navigation after search completion
-  $: {
-    // When search completes and returns results, navigate to results tab
-    if (!$isSearching && $resultsStore.length > 0) {
-      activeTab = "results";
-    }
-  }
+  // $: {
+  //   // When search completes and returns results, navigate to results tab
+  //   if (!$isSearching && $resultsStore.length > 0) {
+  //     showResultsView();
+  //   }
+  // }
 
   // Setup event listener when component mounts
   onMount(() => {
@@ -192,18 +177,6 @@
           class="cta-button {$isSearching ? 'cancel' : ''}"
           on:click={async () => {
             let result = await toggleSearch();
-            if (result) {
-              activeTab = "results";
-              // Use the showResultsView function from the menu store
-              showResultsView();
-              resultsView = true;
-              console.log(
-                "searchView:",
-                searchView,
-                "resultsView:",
-                resultsView
-              );
-            }
           }}
         >
           <div class="flex items-center gap-2">

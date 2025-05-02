@@ -28,7 +28,6 @@
   import type { Preset } from "../stores/types";
 
   // Component state
-  export let activeTab = "search";
   export let isRemove = true;
   export let isRegistered = false;
   let appInitialized = false;
@@ -36,11 +35,7 @@
   let presetChangedListener: (() => void) | null = null;
 
   // Use the viewStore instead of local variables
-  $: searchView = $viewStore.searchView;
-  $: resultsView = $viewStore.resultsView;
-  $: splitView = $viewStore.splitView;
-  $: noFrillsView = $viewStore.noFrillsView;
-  $: registrationView = $viewStore.registrationView;
+  $: view = $viewStore;
 
   // Initialize all on mount
   onMount(async () => {
@@ -146,42 +141,34 @@
   </div>
 {/if}
 
-{#if noFrillsView}
+{#if view === "nofrills"}
   <AdvancedComponent />
 {:else}
   <div class="app-container">
     <!-- Top Bar -->
-    <Header bind:activeTab />
+    <Header />
 
     <!-- Main Content Area -->
     <main class="content">
-      {#if activeTab === "metadata"}
-        <MetadataComponent bind:activeTab bind:isRemove />
-      {:else if registrationView}
+      {#if view === "metadata"}
+        <MetadataComponent bind:isRemove />
+      {:else if view === "registration"}
         <RegisterOnlyComponent bind:isRegistered />
-      {:else if splitView || (searchView && resultsView)}
+      {:else if view === "split"}
         <div class="grid">
-          <SearchSkinnyComponent
-            bind:activeTab
-            bind:isRemove
-            bind:searchView
-            bind:resultsView
-          />
+          <SearchSkinnyComponent bind:isRemove />
           {#if isRegistered}
-            <ResultsSkinnyComponent bind:isRemove bind:activeTab />
+            <ResultsSkinnyComponent bind:isRemove />
           {:else}
             <RegisterComponent bind:isRegistered />
           {/if}
         </div>
-      {:else if searchView}
-        <SearchComponent bind:activeTab bind:isRemove />
-      {:else if resultsView}
+      {:else if view === "search"}
+        <SearchComponent bind:isRemove />
+      {:else if view === "results"}
         {#if isRegistered}
           <ResultsComponent
             {isRemove}
-            bind:activeTab
-            bind:searchView
-            bind:resultsView
             selectedDb={$databaseStore?.path || null}
           />
         {:else}

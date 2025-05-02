@@ -16,7 +16,6 @@
   import { listen } from "@tauri-apps/api/event";
 
   // Define props
-  export let activeTab: string; // This prop is now bindable
   export let isRemove: boolean;
 
   let isFinding = false;
@@ -40,9 +39,6 @@
   import { get } from "svelte/store";
   import { open } from "@tauri-apps/plugin-dialog";
   import { basename, extname } from "@tauri-apps/api/path";
-
-  export let searchView = true;
-  export let resultsView = false;
 
   async function getFilenameWithoutExtension(fullPath: string) {
     const name = await basename(fullPath); // Extracts filename with extension
@@ -118,7 +114,6 @@
       })
       .catch((error) => console.error(error));
     isFinding = false;
-    activeTab = "results";
   }
   function toggleCaseSensitivity() {
     metadataStore.update((meta) => ({
@@ -137,12 +132,6 @@
   }
 
   // Handle search tab navigation after search completion
-  $: {
-    // When search completes and returns results, navigate to results tab
-    if (!$isSearching && $resultsStore.length > 0) {
-      activeTab = "results";
-    }
-  }
 
   // Setup event listener when component mounts
   onMount(() => {

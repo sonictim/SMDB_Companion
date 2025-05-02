@@ -684,25 +684,25 @@ const selectionMenu = await Submenu.new({
       await CheckMenuItem.new({
         id: "search-view",
         text: "Search",
-        checked: viewState.searchView,
+        checked: viewState === "search",
         action: showSearchView,
       }),
       await CheckMenuItem.new({
         id: "results-view",
         text: "Results",
-        checked: viewState.resultsView,
+        checked: viewState === "results",
         action: showResultsView,
       }),
       await CheckMenuItem.new({
         id: "split-view",
         text: "Split",
-        checked: viewState.splitView,
+        checked: viewState === "split",
         action: showSplitView,
       }),
       await CheckMenuItem.new({
         id: "nofrills-view",
         text: "No Frills",
-        checked: viewState.noFrillsView,
+        checked: viewState === "nofrills",
         action: showNoFrillsView,
       }),
 
@@ -749,110 +749,69 @@ const selectionMenu = await Submenu.new({
 }
 
 // View state store
-export const viewStore = writable({
-  searchView: false,
-  resultsView: false,
-  splitView: true,
-  noFrillsView: false,
-  registrationView: false,
-});
+export const viewStore = writable("search");
 
 // View state management function
 export function showSearchView() {
-  viewStore.update(state => ({
-    ...state,
-    searchView: true,
-    resultsView: false,
-    splitView: false,
-    noFrillsView: false,
-    registrationView: false,
-  }));
+  viewStore.set("search");
   // Force menu refresh
   setupMenu();
 }
 
 export function showResultsView() {
-  viewStore.update(state => ({
-    ...state,
-    searchView: false,
-    resultsView: true,
-    splitView: false,
-    noFrillsView: false,
-    registrationView: false,
-  }));
+  viewStore.set("results");
   // Force menu refresh
   setupMenu();
 }
 
 export function showSplitView() {
-  viewStore.update(state => ({
-    ...state,
-    searchView: false,
-    resultsView: false,
-    splitView: true,
-    noFrillsView: false,
-    registrationView: false,
-  }));
+  viewStore.set("split");
   // Force menu refresh
   setupMenu();
 }
 
 export function showNoFrillsView() {
-  viewStore.update(state => ({
-    ...state,
-    searchView: false,
-    resultsView: false,
-    splitView: false,
-    noFrillsView: true,
-    registrationView: false,
-  }));
+  viewStore.set("nofrills");
   // Force menu refresh
   setupMenu();
 }
 export function showRegistrationView() {
-  viewStore.update(state => ({
-    ...state,
-    searchView: false,
-    resultsView: false,
-    splitView: false,
-    noFrillsView: false,
-    registrationView: true,
-  }));
+  viewStore.set("registration");
   // Force menu refresh
   setupMenu();
 }
 
 
-export function toggleNoFrillsView() {
-  viewStore.update(state => ({
-    ...state,
-    noFrillsView: !state.noFrillsView
-  }));
-}
+// export function toggleNoFrillsView() {
+//   viewStore.update(state => ({
+//     ...state,
+//     noFrillsView: !state.noFrillsView
+//   }));
+// }
 
 
-export function toggleSearchView() {
+// export function toggleSearchView() {
 
  
 
-  viewStore.update(state => ({
-    ...state,
-    searchView: state.resultsView ? !state.searchView : true,
-    splitView: false,
-  }));
-}
+//   viewStore.update(state => ({
+//     ...state,
+//     searchView: state.resultsView ? !state.searchView : true,
+//     splitView: false,
+//   }));
+// }
 
-export function toggleResultsView() {
-  viewStore.update(state => ({
-    ...state,
-    resultsView: state.searchView ? !state.resultsView : true,
-    splitView: false,
-  }));
-}
+// export function toggleResultsView() {
+//   viewStore.update(state => ({
+//     ...state,
+//     resultsView: state.searchView ? !state.resultsView : true,
+//     splitView: false,
+//   }));
+// }
 
-export function toggleSplitView() {
-  viewStore.update(state => ({
-    ...state,
-    splitView: !state.splitView
-  }));
-}
+// export function toggleSplitView() {
+//   viewStore.update(state => ({
+//     ...state,
+//     splitView: !state.splitView
+//   }));
+// }

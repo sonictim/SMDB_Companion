@@ -9,19 +9,13 @@
   import {
     togglePreferencesWindow,
     viewStore,
-    toggleSearchView,
-    toggleResultsView,
     showSearchView,
     showResultsView,
     showSplitView,
   } from "../stores/menu";
 
-  export let activeTab: string;
-
   // Bind the local variables to viewStore
-  $: searchView = $viewStore.searchView;
-  $: resultsView = $viewStore.resultsView;
-  $: splitView = $viewStore.splitView;
+  $: view = $viewStore;
 </script>
 
 <div class="top-bar">
@@ -40,7 +34,7 @@
   </div>
   <div class="top-bar-right">
     <button
-      class="nav-link {searchView || splitView ? 'active' : ''}"
+      class="nav-link {view === 'search' || view === 'split' ? 'active' : ''}"
       on:click={(action) => {
         if (action.metaKey) {
           // Toggle results view on/off while keeping search view on
@@ -49,8 +43,8 @@
           // Just show search view
           showSearchView();
         }
-        activeTab = "search";
-        console.log("Search tab clicked", activeTab);
+        view = "search";
+        console.log("Search tab clicked", view);
       }}
       title="Hold CMD to toggle split view"
     >
@@ -60,7 +54,7 @@
       </div>
     </button>
     <button
-      class="nav-link {resultsView || splitView ? 'active' : ''}"
+      class="nav-link {view === 'results' || view === 'split' ? 'active' : ''}"
       on:click={(action) => {
         if (action.metaKey) {
           // Toggle search view on/off while keeping results view on
@@ -69,8 +63,8 @@
           // Just show results view
           showResultsView();
         }
-        activeTab = "results";
-        console.log("Results tab clicked", activeTab);
+        view = "results";
+        console.log("Results tab clicked", view);
       }}
       title="Hold CMD to toggle split view"
     >

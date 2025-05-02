@@ -11,7 +11,6 @@
     selectedItemsStore,
     currentFilterStore,
     enableSelectionsStore,
-    toggleEnableSelections,
     clearSelected,
     invertSelected,
     toggleSelect,
@@ -22,21 +21,16 @@
     totalChecksStore,
     selectedChecksStore,
     updateCurrentFilter,
-    manualFiltersStore,
     filtersStore,
-    clearResults,
   } from "../stores/results";
   import { metadataStore } from "../stores/metadata";
   import { databaseStore, setDatabase } from "../stores/database";
-  import { viewStore, showSearchView, showResultsView } from "../stores/menu";
+  import { viewStore, showSearchView } from "../stores/menu";
   import { ask, message } from "@tauri-apps/plugin-dialog";
   import { createVirtualizer } from "@tanstack/svelte-virtual";
 
   export let isRemove: boolean;
-  export let activeTab: string;
   export let selectedDb: string | null = null;
-  export let searchView = false;
-  export let resultsView = true;
 
   $: pref = $preferencesStore;
   $: results = $resultsStore;
@@ -188,7 +182,7 @@
           metadata.find = "";
           metadata.replace = "";
           results = [];
-          activeTab = "search";
+          showSearchView;
         })
         .catch((error) => {
           console.error("Error replacing metadata:", error);
@@ -427,7 +421,6 @@
       if (status.stage === "complete") {
         processing = false;
         fetchData();
-        activeTab = "search";
       }
     });
   });
