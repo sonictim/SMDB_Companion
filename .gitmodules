@@ -1,0 +1,3 @@
+[submodule "src-tauri/vendor/chromaprint"]
+	path = src-tauri/vendor/chromaprint
+	url = https://github.com/acoustid/chromaprint.git
