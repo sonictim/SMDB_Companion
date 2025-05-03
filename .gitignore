@@ -8,7 +8,6 @@ dist
 target
 target_ra
 target_wasm
-vendor
 
 
 pnpm-lock.yaml
@@ -33,5 +32,3 @@ waveform_log.txt
 src-tauri/resources/chromaprint
 src-tauri/resources/chromaprint
 /src-tauri/resources/sox
-/src-tauri/vendor
-/src-tauri/vendor

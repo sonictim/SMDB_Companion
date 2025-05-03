@@ -7,7 +7,7 @@ use bit_set::BitSet;
 
 impl FileRecord {
     pub fn get_chromaprint_fingerprint(&mut self) -> Option<String> {
-        // let samples = audio::decode::decode_and_resample_for_fingerprint(&self.path);
+        // return ffcodex_lib::get_fingerprint(self.get_filepath()).ok();
 
         let pcm_data = match self.get_raw_pcm() {
             Ok(data) => data,
