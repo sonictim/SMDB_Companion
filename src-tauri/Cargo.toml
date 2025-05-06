@@ -1,6 +1,6 @@
 [package]
 name = "SMDB_Companion"
-version = "1.1.7"
+version = "1.1.9"
 description = "Soundminer Database Cleanup Tool"
 authors = ["Tim Farrell"]
 edition = "2024"
@@ -59,7 +59,7 @@ byteorder = "1.5.0"
 flacenc = "0.4.0"
 memmap2 = "0.9.5"
 metaflac = "0.2.8"
-FFcodex = { path = "/Users/tfarrell/Documents/CODE/FFcodex" }
+FFcodex = { path = "../../FFcodex" }
 # lame = "0.1.3"
 
 

@@ -54,12 +54,12 @@ check_file() {
   fi
 }
 
-# Check source files
-check_file "./resources/libchromaprint.a"
+# # Check source files
+# check_file "./resources/libchromaprint.a"
 
-# Add this to your build script before compiling
-echo "Checking library architecture:"
-lipo -info ./resources/libchromaprint.a
+# # Add this to your build script before compiling
+# echo "Checking library architecture:"
+# lipo -info ./resources/libchromaprint.a
 
 # # Sign FFmpeg binaries
 # echo "Signing FFmpeg binaries..."

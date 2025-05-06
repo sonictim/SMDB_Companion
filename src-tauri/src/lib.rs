@@ -222,20 +222,21 @@ pub struct DualMono {
     pub path: String,
 }
 
+// Change visibility of `FileRecord` fields to private where possible
 #[derive(Default, Debug, Serialize, Clone)]
 pub struct FileRecord {
     pub id: usize,
-    pub path: std::path::PathBuf,
-    pub root: Arc<str>,
-    pub duration: Arc<str>,
-    pub samplerate: u32,
-    pub bitdepth: u32,
-    pub channels: u32,
-    pub description: Arc<str>,
-    pub data: HashMap<Arc<str>, Arc<str>>,
-    pub fingerprint: Option<Arc<str>>,
-    pub dual_mono: Option<bool>,
-    pub algorithm: HashSet<Algorithm>,
+    path: std::path::PathBuf,          // Made private
+    root: Arc<str>,                    // Made private
+    duration: Arc<str>,                // Made private
+    samplerate: u32,                   // Made private
+    bitdepth: u32,                     // Made private
+    channels: u32,                     // Made private
+    description: Arc<str>,             // Made private
+    data: HashMap<Arc<str>, Arc<str>>, // Made private
+    fingerprint: Option<Arc<str>>,     // Made private
+    dual_mono: Option<bool>,           // Made private
+    algorithm: HashSet<Algorithm>,     // Made private
 }
 impl Hash for FileRecord {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -478,6 +479,7 @@ pub struct Database {
     abort: Arc<AtomicBool>,
 }
 
+// Change visibility of `Database` methods to private where possible
 impl Database {
     pub async fn new(path: &str, is_compare: bool) -> Self {
         let mut d = Database::default();
