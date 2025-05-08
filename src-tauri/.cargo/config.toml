@@ -1,11 +1,12 @@
 [build]
 jobs = 8
-rustc-wrapper = "sccache"
+# rustc-wrapper = "sccache"  # Commented out to avoid sccache dependency
 
 [env]
-SCCACHE_CACHE_SIZE = "10G"
-SCCACHE_DIR = "/Users/tfarrell/.cache/sccache"
-RUSTC_WRAPPER = "sccache"
+# Sccache configuration commented out for GitHub Actions compatibility
+# SCCACHE_CACHE_SIZE = "10G"
+# SCCACHE_DIR = "/Users/tfarrell/.cache/sccache"
+# RUSTC_WRAPPER = "sccache"
 
 [profile.dev]
 incremental = true

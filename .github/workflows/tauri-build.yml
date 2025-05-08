@@ -41,8 +41,8 @@ jobs:
       - name: install Rust target
         run: rustup target add ${{ matrix.args }}
 
-      - name: install sccache
-        run: cargo install sccache
+      # - name: install sccache
+      #   run: cargo install sccache
 
       - name: install Tauri CLI
         run: cargo install tauri-cli
