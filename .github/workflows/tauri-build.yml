@@ -27,6 +27,12 @@ jobs:
         with:
           submodules: recursive # This ensures submodules are checked out
 
+      - name: Update submodules to latest version
+        run: |
+          git submodule update --remote --recursive
+          # Check what version of FFCodex we're using (for debugging)
+          cd src-tauri/submodules/FFCodex && git rev-parse HEAD && cd ../../..
+
       - name: setup node
         uses: actions/setup-node@v4
         with:
