@@ -22,6 +22,7 @@
   import type { Preset } from "../../stores/types";
 
   let presetChangedListener: (() => void) | null = null;
+  let preferencesChangedListener: (() => void) | null = null;
   let newPreset: string = "";
   let selectedPreset: string = "";
   export let activeTab = "matchCriteria";
@@ -61,12 +62,33 @@
           console.error("Invalid preset data received:", event.payload);
         }
       });
+      preferencesChangedListener = await listen(
+        "preference-change",
+        async () => {
+          console.log("Preference change detected, reloading preferences");
+
+          // Load the latest preferences from localStorage
+          const storedPrefs = localStorage.getItem("preferences");
+          if (storedPrefs) {
+            try {
+              const latestPrefs = JSON.parse(storedPrefs);
+              preferencesStore.set(latestPrefs);
+
+              // Update any UI elements that depend on preferences
+              // e.g., CSS variables
+            } catch (error) {
+              console.error("Error parsing stored preferences:", error);
+            }
+          }
+        }
+      );
     } catch (error) {
-      console.error("Error setting up preset listener:", error);
+      console.error("Error setting up listeners:", error);
     }
   });
 
   onDestroy(() => {
+    if (preferencesChangedListener) preferencesChangedListener();
     if (presetChangedListener) presetChangedListener();
   });
 

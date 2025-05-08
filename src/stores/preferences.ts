@@ -6,6 +6,8 @@ import { defaultAlgorithms } from './algorithms';
 import { createLocalStore } from './utils';
 import { get } from "svelte/store";
 import { invoke } from "@tauri-apps/api/core";
+import { emit } from '@tauri-apps/api/event';
+import type { PreservationLogic } from './types';
 
 // Add version identifier - increment this when you change algorithm order
 const PREFERENCES_VERSION = 2;
@@ -332,40 +334,184 @@ export function resetPreferences() {
     preferencesStore.set({ ...defaultPreferences });
 }
 
-export function toggle_ignore_filetype() {
-    preferencesStore.update(currentPreferences => ({
-        ...currentPreferences,
-        ignore_filetype: !currentPreferences.ignore_filetype
-    }));
-}
-export function toggle_remove_records_from() {
-    preferencesStore.update(currentPreferences => ({
-        ...currentPreferences,
-        safety_db: !currentPreferences.safety_db
-    }));
-}
-export function toggle_strip_dual_mono() {
-    preferencesStore.update(currentPreferences => ({
-        ...currentPreferences,
-        strip_dual_mono: !currentPreferences.strip_dual_mono
-    }));
+export async function notifyPreferenceChange() {
+  try {
+    // Emit an event that all windows can listen for
+    await emit('preference-change', {
+      timestamp: Date.now(),
+    });
+    console.log('Emitted preference change event');
+  } catch (err) {
+    console.error('Failed to emit preference change event:', err);
+  }
 }
 
-export function set_keep_audio_files() {
-    preferencesStore.update(currentPreferences => ({
-        ...currentPreferences,
-        erase_files: "Keep"
-    }));
+export async function updatePreference(key: string, value: any) {
+  preferencesStore.update(p => {
+    const updated = { ...p, [key]: value };
+    
+    localStorage.setItem('preferences', JSON.stringify(updated));
+    
+    return updated;
+  });
+  
+  // Notify other windows
+  await notifyPreferenceChange();
 }
-export function set_trash_audio_files() {
-    preferencesStore.update(currentPreferences => ({
-        ...currentPreferences,
-        erase_files: "Trash"
-    }));
+
+
+export async function toggle_ignore_filetype() {
+    await updatePreference('ignore_filetype', !get(preferencesStore).ignore_filetype);
 }
-export function set_remove_audio_files() {
-    preferencesStore.update(currentPreferences => ({
-        ...currentPreferences,
-        erase_files: "Remove"
-    }));
+export async function toggle_remove_records_from() {
+    await updatePreference('safety_db', !get(preferencesStore).safety_db);
+}
+export async function toggle_strip_dual_mono() {
+    await updatePreference('strip_dual_mono', !get(preferencesStore).strip_dual_mono);
+}
+
+// export function set_keep_audio_files() {
+//     updatePreference('erase_files', "Keep");
+// }
+// export function set_trash_audio_files() {
+//     updatePreference('erase_files', "Trash");
+// }
+// export function set_remove_audio_files() {
+//     updatePreference('erase_files', "Delete");
+// }
+
+export async function updateEraseFiles(value: string) {
+  await updatePreference('erase_files', value);
+}
+export async function updateWaveformSearchType(value: string) {
+  await updatePreference('waveform_search_type', value);
+}
+
+ export async function updateSimilarityThreshold(value: number) {
+    await updatePreference('similarity_threshold', value);
+  }
+
+  export async function toggle_store_waveforms() {
+    await updatePreference('store_waveforms', !get(preferencesStore).store_waveforms);
+}
+  export async function toggle_fetch_waveforms() {
+    await updatePreference('fetch_waveforms', !get(preferencesStore).fetch_waveforms);
+}
+
+export async function audiosuite_tag_add(value: string) {
+    const currentPrefs = get(preferencesStore);
+    
+    if (value && !currentPrefs.tags.includes(value)) {
+        const updatedTags = [...currentPrefs.tags, value];
+        updatedTags.sort();
+        await updatePreference('tags', updatedTags);
+    }
+}
+
+export async function filename_tag_add(value: string) {
+    const currentPrefs = get(preferencesStore);
+    
+    if (value && !currentPrefs.autoselects.includes(value)) {
+        const updatedAutoselects = [...currentPrefs.autoselects, value];
+        updatedAutoselects.sort();
+        await updatePreference('autoselects', updatedAutoselects);
+    }
+}
+
+
+export async function match_criteria_add(value: string) {
+    const currentPrefs = get(preferencesStore);
+    
+    if (value && !currentPrefs.match_criteria.includes(value)) {
+        await updatePreference('match_criteria', [...currentPrefs.match_criteria, value]);
+    }
+  
+}
+
+export async function match_criteria_remove(value: string) {
+    const currentPrefs = get(preferencesStore);
+    
+    if (currentPrefs.match_criteria.includes(value)) {
+        await updatePreference('match_criteria', currentPrefs.match_criteria.filter(item => item !== value));
+    }
+}
+
+export async function audiosuite_tag_remove(value: string) {
+    const currentPrefs = get(preferencesStore);
+    
+    if (currentPrefs.tags.includes(value)) {
+        await updatePreference('tags', currentPrefs.tags.filter(item => item !== value));
+    }
+}
+export async function filename_tag_remove(value: string) {
+    const currentPrefs = get(preferencesStore);
+    
+    if (currentPrefs.autoselects.includes(value)) {
+        await updatePreference('autoselects', currentPrefs.autoselects.filter(item => item !== value));
+    }
+}
+
+export async function preservation_order_remove_selected(list: PreservationLogic[]) {
+
+    const currentPrefs = get(preferencesStore);
+    
+    if (currentPrefs.preservation_order.length > 0) {
+        const updatedPreservationOrder = currentPrefs.preservation_order.filter(item => !list.includes(item));
+        await updatePreference('preservation_order', updatedPreservationOrder);
+    }
+}
+
+
+
+export async function selected_filename_to_audiosuite_tags(tags: Set<string>, is_move: boolean) {
+    tags.forEach(async tag => {
+        await audiosuite_tag_add(tag);
+        if (is_move) { 
+            await filename_tag_remove(tag);
+        }
+    })
+}
+
+export async function selected_audiosuite_to_filename_tags(tags: Set<string>, is_move: boolean) {
+    tags.forEach(async tag => {
+        await filename_tag_add(tag);
+        if (is_move) { 
+            await audiosuite_tag_remove(tag);
+        }
+    })
+}
+
+export async function filename_to_audiosuite_tags(is_move: boolean) {
+    const currentPrefs = get(preferencesStore);
+    const newTags = currentPrefs.autoselects.filter(tag => !currentPrefs.tags.includes(tag));
+    
+    if (newTags.length > 0) {
+        await updatePreference('tags', [...currentPrefs.tags, ...newTags]);
+    }
+    if (is_move) {  
+        await updatePreference('autoselects', []);
+    }
+}
+
+export async function audiosuite_to_filename_tags(is_move: boolean) {
+    const currentPrefs = get(preferencesStore);
+    const newAutoselects = currentPrefs.tags.filter(tag => !currentPrefs.autoselects.includes(tag));
+    
+    if (newAutoselects.length > 0) {
+        await updatePreference('autoselects', [...currentPrefs.autoselects, ...newAutoselects]);
+    }
+    if (is_move) {  
+        await updatePreference('tags', []);
+    }
+}
+
+
+export async function preservation_order_add(value: PreservationLogic) {
+    const currentPrefs = get(preferencesStore);
+    
+    if (value && !currentPrefs.preservation_order.includes(value)) {
+        await updatePreference('preservation_order', [...currentPrefs.preservation_order, value]);
+        return true;
+    }
+    return false;
 }

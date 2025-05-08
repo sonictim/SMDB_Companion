@@ -36,6 +36,7 @@
     "targets": "all",
     "icon": [
       "icons/icon.icns",
+      "icons/icon.ico",
       "icons/icon.png"
     ],
     "macOS": {
@@ -43,8 +44,21 @@
       "hardenedRuntime": true,
       "minimumSystemVersion": "12.0",
       "frameworks": []
+    },
+    "windows": {
+      "wix": {
+        "language": "en-US"
+      },
+      "nsis": {
+        "languages": ["English"]
+      },
+      "webviewInstallMode": {
+        "type": "embedBootstrapper"
+      },
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": null
     }
-
   },
   "mainBinaryName": "SMDB Companion"
 }

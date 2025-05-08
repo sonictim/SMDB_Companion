@@ -2,7 +2,11 @@
   import { invoke } from "@tauri-apps/api/core";
   import { Square, CheckSquare, OctagonX, GripVertical } from "lucide-svelte";
 
-  import { preferencesStore } from "../../stores/preferences";
+  import {
+    preferencesStore,
+    preservation_order_remove_selected,
+    preservation_order_add,
+  } from "../../stores/preferences";
   import { get } from "svelte/store";
   import type { PreservationLogic } from "../../stores/types";
   import { onMount } from "svelte";
@@ -44,12 +48,7 @@
   }
 
   function removeSelected(list: PreservationLogic[]) {
-    preferencesStore.update((pref) => ({
-      ...pref,
-      preservation_order: pref.preservation_order.filter(
-        (item) => !list.includes(item)
-      ),
-    }));
+    preservation_order_remove_selected(list);
     clearSelected();
   }
 
@@ -66,26 +65,14 @@
     currentColumn = (event.target as HTMLSelectElement).value;
   }
 
-  function addOrder() {
+  async function addOrder() {
     if (
-      !pref.preservation_order.some(
-        (item) =>
-          item.column === currentColumn &&
-          item.operator === currentOperator && // Using operator.id here
-          item.variable === newOption
-      )
+      await preservation_order_add({
+        column: currentColumn,
+        operator: currentOperator,
+        variable: newOption,
+      })
     ) {
-      preferencesStore.update((pref) => ({
-        ...pref,
-        preservation_order: [
-          {
-            column: currentColumn,
-            operator: currentOperator,
-            variable: newOption,
-          },
-          ...pref.preservation_order,
-        ],
-      }));
       newOption = "";
     }
   }

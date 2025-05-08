@@ -33,6 +33,7 @@
   let appInitialized = false;
   let initError: unknown = null;
   let presetChangedListener: (() => void) | null = null;
+  let preferencesChangedListener: (() => void) | null = null;
 
   // Use the viewStore instead of local variables
   $: view = $viewStore;
@@ -83,6 +84,27 @@
         }
       });
 
+      preferencesChangedListener = await listen(
+        "preference-change",
+        async () => {
+          console.log("Preference change detected, reloading preferences");
+
+          // Load the latest preferences from localStorage
+          const storedPrefs = localStorage.getItem("preferences");
+          if (storedPrefs) {
+            try {
+              const latestPrefs = JSON.parse(storedPrefs);
+              preferencesStore.set(latestPrefs);
+
+              // Update any UI elements that depend on preferences
+              // e.g., CSS variables
+            } catch (error) {
+              console.error("Error parsing stored preferences:", error);
+            }
+          }
+        }
+      );
+
       // Check for updates (non-blocking)
       const updateCheck = await checkForUpdates().catch((err) => {
         console.error("Update check failed:", err);
@@ -114,8 +136,9 @@
 
   // Clean up on component destruction
   onDestroy(() => {
-    if (presetChangedListener) presetChangedListener();
     if (view === "results") showSearchView;
+    if (presetChangedListener) presetChangedListener();
+    if (preferencesChangedListener) preferencesChangedListener();
   });
 </script>
 

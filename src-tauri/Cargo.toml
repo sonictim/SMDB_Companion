@@ -39,7 +39,7 @@ lazy_static = "1.5.0"
 lru = "0.13.0"
 num_cpus = "1.16"
 trash = "5.2.2"
-chromaprint = "0.2.0"
+# chromaprint = "0.2.0"
 base64 = "0.22.1"
 futures = "0.3.31"
 symphonia = { version = "0.5.4", features = ["all-codecs"] }

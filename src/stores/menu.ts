@@ -9,7 +9,7 @@ import {
 import { createLocalStore } from "./utils";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { writable, get } from 'svelte/store';
-import { preferencesStore, toggle_ignore_filetype, toggle_remove_records_from, } from './preferences';
+import { preferencesStore, toggle_ignore_filetype, toggle_remove_records_from, updateEraseFiles, toggle_fetch_waveforms, toggle_store_waveforms, toggle_strip_dual_mono, updateWaveformSearchType } from './preferences';
 import { presetsStore } from './presets';
 import { openDatabase, closeDatabase, recentDbStore, setDatabase } from './database';
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -353,7 +353,7 @@ async function setupMenu() {
         id: "ignore-filetypes",
         text: "Ignore File Types",
         checked: get(preferencesStore).ignore_filetype,
-        action: () => {toggle_ignore_filetype()},
+        action: async () => {await toggle_ignore_filetype()},
 
       }),
       separator,
@@ -361,7 +361,7 @@ async function setupMenu() {
         id: "safety-database",
         text: "Create Safety Database",
         checked: get(preferencesStore).safety_db,
-        action: () => {toggle_remove_records_from()},
+        action: async () => {await toggle_remove_records_from()},
 
       }),
       await Submenu.new({
@@ -371,34 +371,21 @@ async function setupMenu() {
             id: "keep-audio-files",
             text: "Keep on Disk",
             checked: get(preferencesStore).erase_files === "Keep",
-            action: () => {
-              preferencesStore.update(currentPreferences => ({
-                ...currentPreferences,
-                erase_files: "Keep"
-              }));
+            action: async () => {await 
+              updateEraseFiles("Keep");
             },
           }),
           await CheckMenuItem.new({
             id: "trash-audio-files",
             text: "Move to Trash",
             checked: get(preferencesStore).erase_files === "Trash",
-            action: () => {
-              preferencesStore.update(currentPreferences => ({
-                ...currentPreferences,
-                erase_files: "Trash"
-              }));
-            },
+            action: async () => {await updateEraseFiles("Trash")},
           }),
           await CheckMenuItem.new({
             id: "remove-audio-files",
             text: "Permanently Delete",
             checked: get(preferencesStore).erase_files === "Delete",
-            action: () => {
-              preferencesStore.update(currentPreferences => ({
-                ...currentPreferences,
-                erase_files: "Delete"
-              }));
-            },
+            action: async () => {await updateEraseFiles("Delete")}, 
           }),
         ]
 
@@ -410,37 +397,45 @@ async function setupMenu() {
         id: "strip-dual-mono",
         text: "Strip Dual Mono",
         checked: get(preferencesStore).strip_dual_mono,
-        action: () => {preferencesStore.update(prefs => ({
-          ...prefs,
-          strip_dual_mono: !prefs.strip_dual_mono
-        }))},
+        action: async () => {await toggle_strip_dual_mono()},
 
       }),
       separator,
-          await Submenu.new({
+      await Submenu.new({
+        text: "Audio Content Comparison",
+        items: [
+          await CheckMenuItem.new({
+            id: "exact",
+            text: "Exact Match",
+            checked: get(preferencesStore).waveform_search_type=== "Exact",
+            action: async () => {await updateWaveformSearchType("Exact")},
+          }),
+          await CheckMenuItem.new({
+            id: "similarity",
+            text: `Relative Match: ${get(preferencesStore).similarity_threshold}%`,
+            checked: get(preferencesStore).waveform_search_type === "Similar",
+            action: async () => {await updateWaveformSearchType("Similar")},
+          }),
+
+        ]
+
+
+
+      }),
+      await Submenu.new({
         text: "Audio Fingerprints",
         items: [
           await CheckMenuItem.new({
             id: "save-audio-fingerprints",
             text: "Save to Database",
             checked: get(preferencesStore).store_waveforms,
-            action: () => {
-              preferencesStore.update(currentPreferences => ({
-                ...currentPreferences,
-                store_waveforms: !currentPreferences.store_waveforms
-              }));
-            },
+            action: async () => {await toggle_store_waveforms()},
           }),
           await CheckMenuItem.new({
             id: "fetch-audio-fingerprints",
             text: "Fetch from Database",
             checked: get(preferencesStore).fetch_waveforms,
-            action: () => {
-              preferencesStore.update(currentPreferences => ({
-                ...currentPreferences,
-                fetch_waveforms: !currentPreferences.fetch_waveforms
-              }));
-            },
+            action: async () => {await toggle_fetch_waveforms()},
           }),
 
         ]

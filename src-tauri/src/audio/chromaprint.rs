@@ -1,87 +1,97 @@
 use crate::prelude::*;
 use crate::*;
-use ::chromaprint::Chromaprint;
+// use ::chromaprint::Chromaprint;
 use anyhow::Result;
 use base64::{Engine as _, engine::general_purpose};
 use bit_set::BitSet;
 
 impl FileRecord {
     pub fn get_chromaprint_fingerprint(&mut self) -> Option<String> {
-        // return ffcodex_lib::get_fingerprint(self.get_filepath()).ok();
-
-        let pcm_data = match self.get_raw_pcm() {
-            Ok(data) => data,
-            Err(e) => {
-                eprintln!("Failed to convert audio to PCM: {}", e);
-                return None;
+        let fp = ffcodex_lib::get_fingerprint(self.get_filepath()).ok();
+        if let Some(fingerprint) = fp {
+            if !fingerprint.is_empty() && fingerprint != "FAILED" {
+                self.fingerprint = Some(Arc::from(fingerprint.as_str()));
+                return Some(fingerprint);
             }
-        };
-
-        let samples: Vec<i16> = pcm_data
-            .chunks(4)
-            .filter_map(|chunk| {
-                if chunk.len() == 4 {
-                    let bytes = [chunk[0], chunk[1], chunk[2], chunk[3]];
-                    let float = f32::from_le_bytes(bytes);
-                    Some((float * 32767.0) as i16)
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        const MIN_SAMPLES: usize = 48000; // 1 second minimum at 48kHz
-
-        // Check if we have enough samples for Chromaprint
-        if samples.len() >= MIN_SAMPLES {
-            // Try Chromaprint fingerprinting
-            let mut c = Chromaprint::new();
-            c.start(48000, 1);
-            c.feed(&samples);
-            c.finish();
-
-            if let Some(fingerprint) = c.raw_fingerprint() {
-                println!(
-                    "Generated raw fingerprint for: {} size; {}",
-                    self.get_filename(),
-                    fingerprint.len()
-                );
-                // Convert Vec<i32> to bytes before encoding
-                let bytes: Vec<u8> = fingerprint.iter().flat_map(|&x| x.to_le_bytes()).collect();
-                let encoded = general_purpose::STANDARD.encode(&bytes);
-                if !encoded.is_empty() {
-                    self.fingerprint = Some(Arc::from(encoded.as_str()));
-                    return Some(encoded);
-                }
-            }
-
-            eprintln!("Chromaprint failed despite sufficient samples");
         }
-
-        // Fallback to PCM hash if:
-        // 1. File is too short for Chromaprint, or
-        // 2. Chromaprint failed to generate a fingerprint
-        if !samples.is_empty() {
-            use sha2::{Digest, Sha256};
-
-            let mut hasher = Sha256::new();
-            for sample in &samples {
-                hasher.update(sample.to_le_bytes());
-            }
-
-            let hash = hasher.finalize();
-            println!("Generated PCM hash for: {}", self.get_filename());
-            let fingerprint = format!("PCM:{}", general_purpose::STANDARD.encode(hash));
-            self.fingerprint = Some(Arc::from(fingerprint.as_str()));
-            return Some(fingerprint);
-        }
-
-        eprintln!(
-            "Failed to generate any fingerprint for: {}",
-            self.get_filepath()
-        );
         None
     }
+
+    // pub fn get_chromaprint_fingerprint(&mut self) -> Option<String> {
+
+    //     let pcm_data = match self.get_raw_pcm() {
+    //         Ok(data) => data,
+    //         Err(e) => {
+    //             eprintln!("Failed to convert audio to PCM: {}", e);
+    //             return None;
+    //         }
+    //     };
+
+    //     let samples: Vec<i16> = pcm_data
+    //         .chunks(4)
+    //         .filter_map(|chunk| {
+    //             if chunk.len() == 4 {
+    //                 let bytes = [chunk[0], chunk[1], chunk[2], chunk[3]];
+    //                 let float = f32::from_le_bytes(bytes);
+    //                 Some((float * 32767.0) as i16)
+    //             } else {
+    //                 None
+    //             }
+    //         })
+    //         .collect();
+
+    //     const MIN_SAMPLES: usize = 48000; // 1 second minimum at 48kHz
+
+    //     // Check if we have enough samples for Chromaprint
+    //     if samples.len() >= MIN_SAMPLES {
+    //         // Try Chromaprint fingerprinting
+    //         let mut c = Chromaprint::new();
+    //         c.start(48000, 1);
+    //         c.feed(&samples);
+    //         c.finish();
+
+    //         if let Some(fingerprint) = c.raw_fingerprint() {
+    //             println!(
+    //                 "Generated raw fingerprint for: {} size; {}",
+    //                 self.get_filename(),
+    //                 fingerprint.len()
+    //             );
+    //             // Convert Vec<i32> to bytes before encoding
+    //             let bytes: Vec<u8> = fingerprint.iter().flat_map(|&x| x.to_le_bytes()).collect();
+    //             let encoded = general_purpose::STANDARD.encode(&bytes);
+    //             if !encoded.is_empty() {
+    //                 self.fingerprint = Some(Arc::from(encoded.as_str()));
+    //                 return Some(encoded);
+    //             }
+    //         }
+
+    //         eprintln!("Chromaprint failed despite sufficient samples");
+    //     }
+
+    //     // Fallback to PCM hash if:
+    //     // 1. File is too short for Chromaprint, or
+    //     // 2. Chromaprint failed to generate a fingerprint
+    //     if !samples.is_empty() {
+    //         use sha2::{Digest, Sha256};
+
+    //         let mut hasher = Sha256::new();
+    //         for sample in &samples {
+    //             hasher.update(sample.to_le_bytes());
+    //         }
+
+    //         let hash = hasher.finalize();
+    //         println!("Generated PCM hash for: {}", self.get_filename());
+    //         let fingerprint = format!("PCM:{}", general_purpose::STANDARD.encode(hash));
+    //         self.fingerprint = Some(Arc::from(fingerprint.as_str()));
+    //         return Some(fingerprint);
+    //     }
+
+    //     eprintln!(
+    //         "Failed to generate any fingerprint for: {}",
+    //         self.get_filepath()
+    //     );
+    //     None
+    // }
 }
 
 impl Database {
@@ -95,12 +105,15 @@ impl Database {
 
         match pref.waveform_search_type {
             WaveformMatchType::Subset => {
+                println!("Subset Match selected");
                 self.subset_match(pref, app).await?;
             }
             WaveformMatchType::Exact => {
+                println!("Exact Match selected");
                 self.exact_match(pref, app).await?;
             }
             WaveformMatchType::Similar => {
+                println!("Similar Match selected");
                 self.similar_match(pref, app).await?;
             }
         }
@@ -112,8 +125,12 @@ impl Database {
         pref: &Preferences,
         app: &AppHandle,
     ) -> Result<(), String> {
-        let mut batch_size: usize = 1000;
+        let mut batch_size: usize = 200;
         let total_records = self.records.len();
+        if total_records == 0 {
+            println!("No records available for fingerprinting.");
+            return Err("No records available for fingerprinting.".to_string());
+        }
         if batch_size > total_records {
             batch_size = total_records;
         }
@@ -121,6 +138,11 @@ impl Database {
         const STORE_MIN_INTERVAL: usize = 200;
 
         let pool = self.get_pool().await;
+
+        let Some(pool) = pool else {
+            println!("No database connection pool available, skipping fingerprint storage.");
+            return Err("Database connection pool not available".to_string());
+        };
 
         let mut record_ids_to_store: Vec<(usize, String)> = Vec::with_capacity(batch_size);
 
@@ -133,7 +155,6 @@ impl Database {
                 .par_iter_mut()
                 .filter_map(|record| {
                     let path = PathBuf::from(record.get_filepath());
-                    let new_completed = completed.fetch_add(1, Ordering::SeqCst) + 1;
                     if !path.exists()
                         || !path.is_file()
                         || record.fingerprint.is_some()
@@ -141,6 +162,15 @@ impl Database {
                     {
                         return None;
                     }
+                    let new_completed = completed.fetch_add(1, Ordering::SeqCst) + 1;
+                    app.substatus(
+                        "fingerprinting",
+                        (new_completed % batch_size) * 100 / batch_size,
+                        record.get_filename(),
+                    );
+                    let fingerprint_result = record.get_chromaprint_fingerprint();
+
+                    let fingerprint = fingerprint_result.unwrap_or("FAILED".to_string());
                     app.status(
                         "fingerprinting",
                         new_completed * 100 / total_records,
@@ -149,15 +179,6 @@ impl Database {
                             new_completed, total_records
                         ),
                     );
-                    app.substatus(
-                        "fingerprinting",
-                        (new_completed % batch_size) * 100 / batch_size,
-                        record.get_filename(),
-                    );
-
-                    let fingerprint_result = record.get_chromaprint_fingerprint();
-
-                    let fingerprint = fingerprint_result.unwrap_or("FAILED".to_string());
 
                     Some((record.id, fingerprint))
                 })
@@ -167,18 +188,14 @@ impl Database {
 
             if pref.store_waveforms && record_ids_to_store.len() >= STORE_MIN_INTERVAL {
                 // Store fingerprints in batches to avoid memory issues
-                if let Some(pool) = &pool {
-                    store_fingerprints_batch_optimized(pool, &record_ids_to_store, app).await;
-                }
+                store_fingerprints_batch_optimized(&pool, &record_ids_to_store, app).await;
                 record_ids_to_store.clear(); // Clear after storing
             }
         }
 
         if pref.store_waveforms {
             // Store fingerprints in batches to avoid memory issues
-            if let Some(pool) = &pool {
-                store_fingerprints_batch_optimized(pool, &record_ids_to_store, app).await;
-            }
+            store_fingerprints_batch_optimized(&pool, &record_ids_to_store, app).await;
             record_ids_to_store.clear(); // Clear after storing
         }
 
@@ -685,6 +702,7 @@ impl Database {
     // }
 
     async fn exact_match(&mut self, pref: &Preferences, app: &AppHandle) -> Result<(), String> {
+        println!("Starting Exact Audio fingerprint analysis");
         app.substatus("grouping", 0, "Grouping identical audio fingerprints...");
 
         let records_without_fingerprints: Vec<FileRecord> = self
@@ -764,6 +782,7 @@ impl Database {
     }
 
     async fn similar_match(&mut self, pref: &Preferences, app: &AppHandle) -> Result<(), String> {
+        println!("Starting Similar Audio fingerprint analysis");
         let threshold = pref.similarity_threshold / 100.0;
         app.substatus("similarity", 0, "Starting similarity analysis...");
 
@@ -1073,8 +1092,21 @@ fn decode_chromaprint(raw_fp: &str) -> Result<Vec<u32>, &'static str> {
         return Err("Not a Chromaprint fingerprint");
     }
 
+    // Add debugging
+    println!(
+        "Decoding fingerprint: {} (len: {})",
+        if raw_fp.len() > 20 {
+            &raw_fp[0..20]
+        } else {
+            raw_fp
+        },
+        raw_fp.len()
+    );
+
     match general_purpose::STANDARD.decode(raw_fp) {
         Ok(fp_bytes) => {
+            println!("Successfully base64 decoded {} bytes", fp_bytes.len());
+
             let mut fp = Vec::with_capacity(fp_bytes.len() / 4);
             for chunk in fp_bytes.chunks_exact(4) {
                 if chunk.len() == 4 {
@@ -1083,9 +1115,13 @@ fn decode_chromaprint(raw_fp: &str) -> Result<Vec<u32>, &'static str> {
                     fp.push(u32::from_le_bytes(array));
                 }
             }
+            println!("Converted to {} u32 values", fp.len());
             Ok(fp)
         }
-        Err(_) => Err("Failed to decode fingerprint"),
+        Err(e) => {
+            println!("Failed to decode fingerprint: {}", e);
+            Err("Failed to decode fingerprint")
+        }
     }
 }
 

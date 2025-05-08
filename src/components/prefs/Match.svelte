@@ -2,9 +2,14 @@
   import VirtualList from "svelte-virtual-list";
   import { Square, CheckSquare, OctagonX } from "lucide-svelte";
   // Import from main store instead
-  import { preferencesStore } from "../../stores/preferences";
+  import {
+    preferencesStore,
+    updateSimilarityThreshold,
+    updateWaveformSearchType,
+    match_criteria_add,
+    match_criteria_remove,
+  } from "../../stores/preferences";
   import { invoke } from "@tauri-apps/api/core";
-  import { ask, confirm } from "@tauri-apps/plugin-dialog";
 
   // Use the store directly instead of assigning to `pref`
   let currentColumn = "";
@@ -48,15 +53,8 @@
   }
 
   function removeMatches(list: string[]) {
-    list.forEach((item) => removeMatch(item));
+    list.forEach((item) => match_criteria_remove(item));
     clearMatches();
-  }
-
-  function removeMatch(item: string) {
-    preferencesStore.update((p) => ({
-      ...p,
-      match_criteria: p.match_criteria.filter((i) => i !== item),
-    }));
   }
 
   function clearMatches() {
@@ -65,15 +63,7 @@
   }
 
   function addColumn() {
-    preferencesStore.update((p) => {
-      if (currentColumn && !p.match_criteria.includes(currentColumn)) {
-        return {
-          ...p,
-          match_criteria: [...p.match_criteria, currentColumn],
-        };
-      }
-      return p;
-    });
+    match_criteria_add(currentColumn);
     currentColumn = "";
   }
 
@@ -85,20 +75,6 @@
   $: filteredColumns = $preferencesStore.columns.filter(
     (col) => !$preferencesStore.match_criteria.includes(col)
   );
-
-  function updateWaveformSearchType(value: string) {
-    preferencesStore.update((p) => ({
-      ...p,
-      waveform_search_type: value,
-    }));
-  }
-
-  function updateSimilarityThreshold(value: number) {
-    preferencesStore.update((p) => ({
-      ...p,
-      similarity_threshold: value,
-    }));
-  }
 
   let confirmRemove = false;
 

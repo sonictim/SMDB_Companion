@@ -8,8 +8,18 @@
     ArrowBigRight,
   } from "lucide-svelte";
 
-  import { preferencesStore } from "../../stores/preferences";
-
+  import {
+    preferencesStore,
+    audiosuite_tag_add,
+    audiosuite_tag_remove,
+    audiosuite_to_filename_tags,
+    selected_audiosuite_to_filename_tags,
+    filename_tag_add,
+    filename_tag_remove,
+    filename_to_audiosuite_tags,
+    selected_filename_to_audiosuite_tags,
+  } from "../../stores/preferences";
+  import { writable, get } from "svelte/store";
   let newSelect: string;
   let newTag: string;
 
@@ -17,23 +27,96 @@
   let selectedItems = new Set<string>();
   let selectedTags = new Set<string>();
 
+  // Create separate stores for tracking the last selected indices
+  const lastItemIndex = writable<number>(-1);
+  const lastTagIndex = writable<number>(-1);
+
   let isMove: boolean = true;
 
-  function toggleSelected(item: string) {
-    if (selectedItems.has(item)) {
-      selectedItems.delete(item);
-    } else {
-      selectedItems.add(item);
+  function toggleSelected(item: string, index: number, event: MouseEvent) {
+    event.preventDefault();
+    console.log("toggleSelected called with index:", index);
+
+    const items = Array.from(pref.autoselects);
+
+    if (event.altKey) {
+      // Alt key: Select all or none
+      if (selectedItems.size > 0) {
+        selectedItems.clear();
+      } else {
+        items.forEach((item) => selectedItems.add(item));
+      }
+      selectedItems = new Set(selectedItems); // Trigger reactivity
+      return;
     }
-    selectedItems = new Set(selectedItems); // Ensure reactivity
+
+    // Shift key - range selection
+    if (event.shiftKey && $lastItemIndex !== -1) {
+      console.log("Shift key detected", index, $lastItemIndex);
+      const start = Math.min($lastItemIndex, index);
+      const end = Math.max($lastItemIndex, index);
+
+      // Add all items in the range
+      for (let i = start; i <= end; i++) {
+        if (i < items.length) {
+          selectedItems.add(items[i]);
+        }
+      }
+    } else {
+      // Regular selection
+      if (selectedItems.has(item)) {
+        selectedItems.delete(item);
+      } else {
+        selectedItems.add(item);
+        lastItemIndex.set(index); // Store the last selected index
+        console.log("Updated lastItemIndex to:", index);
+      }
+    }
+
+    selectedItems = new Set(selectedItems); // Trigger reactivity
   }
-  function toggleTags(item: string) {
-    if (selectedTags.has(item)) {
-      selectedTags.delete(item);
-    } else {
-      selectedTags.add(item);
+
+  function toggleTags(item: string, index: number, event: MouseEvent) {
+    event.preventDefault();
+    console.log("toggleTags called with index:", index);
+
+    const tags = Array.from(pref.tags);
+
+    if (event.altKey) {
+      // Alt key: Select all or none
+      if (selectedTags.size > 0) {
+        selectedTags.clear();
+      } else {
+        tags.forEach((tag) => selectedTags.add(tag));
+      }
+      selectedTags = new Set(selectedTags); // Trigger reactivity
+      return;
     }
-    selectedTags = new Set(selectedTags); // Ensure reactivity
+
+    // Shift key - range selection
+    if (event.shiftKey && $lastTagIndex !== -1) {
+      console.log("Shift key detected", index, $lastTagIndex);
+      const start = Math.min($lastTagIndex, index);
+      const end = Math.max($lastTagIndex, index);
+
+      // Add all items in the range
+      for (let i = start; i <= end; i++) {
+        if (i < tags.length) {
+          selectedTags.add(tags[i]);
+        }
+      }
+    } else {
+      // Regular selection
+      if (selectedTags.has(item)) {
+        selectedTags.delete(item);
+      } else {
+        selectedTags.add(item);
+        lastTagIndex.set(index); // Store the last selected index
+        console.log("Updated lastTagIndex to:", index);
+      }
+    }
+
+    selectedTags = new Set(selectedTags); // Trigger reactivity
   }
 
   function removeSelected(list: string[]) {
@@ -42,84 +125,46 @@
   }
 
   function removeSelect(item: string) {
-    preferencesStore.update((pref) => {
-      // Filter out the item to remove it
-      const updatedArray = pref.autoselects.filter((i) => i !== item);
-      return { ...pref, autoselects: updatedArray };
-    });
+    filename_tag_remove(item);
   }
 
   function clearSelected() {
     selectedItems.clear();
-    selectedItems = new Set(); // Ensure reactivity
+    selectedItems = new Set();
+    lastItemIndex.set(-1); // Reset index when clearing selection
   }
 
   function addSelected(item: string) {
-    if (!pref.autoselects.includes(item)) {
-      pref.autoselects = [...pref.autoselects, item];
-      pref.autoselects.sort();
-      preferencesStore.set(pref);
-      newSelect = "";
-    }
+    filename_tag_add(item);
+    pref.autoselects.sort();
+    preferencesStore.set(pref);
+    newSelect = "";
   }
 
   function moveToTags() {
-    preferencesStore.update((pref) => {
-      let newTags = new Set(pref.tags);
-      let newSelects = new Set(pref.autoselects);
-
-      if (selectedItems.size == 0 && selectedTags.size == 0) {
-        pref.autoselects.forEach((item) => newTags.add(item));
-        if (isMove) newSelects.clear();
-      } else {
-        selectedItems.forEach((item) => {
-          newTags.add(item);
-          if (isMove) newSelects.delete(item);
-        });
-      }
-
-      return {
-        ...pref,
-        tags: Array.from(newTags),
-        autoselects: Array.from(newSelects),
-      };
-    });
+    if (selectedItems.size == 0 && selectedTags.size == 0) {
+      filename_to_audiosuite_tags(isMove);
+    } else {
+      selected_filename_to_audiosuite_tags(selectedItems, isMove);
+    }
 
     clearSelected();
   }
 
   function moveToSelects() {
-    preferencesStore.update((pref) => {
-      let newSelects = new Set(pref.autoselects);
-      let newTags = new Set(pref.tags);
-
-      if (selectedItems.size == 0 && selectedTags.size == 0) {
-        pref.tags.forEach((item) => newSelects.add(item));
-        if (isMove) newTags.clear();
-      } else {
-        selectedTags.forEach((item) => {
-          newSelects.add(item);
-          if (isMove) newTags.delete(item);
-        });
-      }
-
-      return {
-        ...pref,
-        tags: Array.from(newTags),
-        autoselects: Array.from(newSelects),
-      };
-    });
-
+    if (selectedItems.size == 0 && selectedTags.size == 0) {
+      audiosuite_to_filename_tags(isMove);
+    } else {
+      selected_audiosuite_to_filename_tags(selectedTags, isMove);
+    }
     clearTags();
   }
 
   function addTag(item: string) {
-    if (!pref.tags.includes(item)) {
-      pref.tags = [...pref.tags, item];
-      pref.tags.sort();
-      preferencesStore.set(pref);
-      newTag = "";
-    }
+    audiosuite_tag_add(item);
+    pref.tags.sort();
+    preferencesStore.set(pref);
+    newTag = "";
   }
 
   function removeTags(list: string[]) {
@@ -129,15 +174,12 @@
 
   function clearTags() {
     selectedTags.clear();
-    selectedTags = new Set(); // Ensure reactivity
+    selectedTags = new Set();
+    lastTagIndex.set(-1); // Reset index when clearing selection
   }
 
   function removeTag(item: string) {
-    preferencesStore.update((pref) => {
-      // Filter out the item to remove it
-      const updatedArray = pref.tags.filter((i) => i !== item);
-      return { ...pref, tags: updatedArray };
-    });
+    audiosuite_tag_remove(item);
   }
 </script>
 
@@ -170,9 +212,9 @@
       </div>
 
       <div class="block inner">
-        <VirtualList items={Array.from(pref.tags)} let:item>
+        <VirtualList items={Array.from(pref.tags)} let:item let:index>
           <div
-            on:click={() => toggleTags(item)}
+            on:click={(event) => toggleTags(item, index, event)}
             class="list-item"
             class:selected-item={selectedTags.has(item)}
             class:unselected-item={!selectedTags.has(item)}
@@ -246,9 +288,9 @@
       </div>
 
       <div class="block inner">
-        <VirtualList items={Array.from(pref.autoselects)} let:item>
+        <VirtualList items={Array.from(pref.autoselects)} let:item let:index>
           <div
-            on:click={() => toggleSelected(item)}
+            on:click={(event) => toggleSelected(item, index, event)}
             class="list-item"
             class:selected-item={selectedItems.has(item)}
             class:unselected-item={!selectedItems.has(item)}
@@ -298,5 +340,12 @@
 
   .block {
     height: calc(100vh - 160px);
+  }
+
+  .list-item {
+    user-select: none; /* Prevents text selection */
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
   }
 </style>
