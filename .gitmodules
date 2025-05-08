@@ -1,0 +1,3 @@
+[submodule "src-tauri/submodules/FFCodex"]
+	path = src-tauri/submodules/FFCodex
+	url = https://github.com/sonictim/FFCodex
