@@ -556,7 +556,18 @@
     </div>
   {:else if $resultsStore.length > 0}
     <div class="virtual-table-container" bind:this={containerElement}>
-      <div bind:this={parentRef} class="virtual-table-viewport">
+      <div
+        bind:this={parentRef}
+        class="virtual-table-viewport"
+        on:wheel={(e) => {
+          // Prevent default behavior for wheel events
+          e.stopPropagation();
+          // Custom scroll handling
+          if (parentRef) {
+            parentRef.scrollTop += e.deltaY;
+          }
+        }}
+      >
         <div class="virtual-table-header" style="width: {totalWidth};">
           <div
             class="grid-container rheader"

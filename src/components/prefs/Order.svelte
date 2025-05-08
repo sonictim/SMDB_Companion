@@ -6,6 +6,7 @@
     preferencesStore,
     preservation_order_remove_selected,
     preservation_order_add,
+    update_preservation_order,
   } from "../../stores/preferences";
   import { get } from "svelte/store";
   import type { PreservationLogic } from "../../stores/types";
@@ -116,22 +117,21 @@
     event.preventDefault();
 
     if (dragSourceIndex !== null && dropTargetIndex !== null && draggedItem) {
-      preferencesStore.update((pref) => {
-        const newOrder = [...pref.preservation_order];
+      const newOrder = [...pref.preservation_order];
 
-        // First remove the item from its original position
-        newOrder.splice(dragSourceIndex!, 1);
+      // First remove the item from its original position
+      newOrder.splice(dragSourceIndex!, 1);
 
-        // Then insert it at the new position, adjusting for the removal
-        const adjustedTargetIndex =
-          dropTargetIndex! > dragSourceIndex!
-            ? dropTargetIndex! - 1
-            : dropTargetIndex!;
+      // Then insert it at the new position, adjusting for the removal
+      const adjustedTargetIndex =
+        dropTargetIndex! > dragSourceIndex!
+          ? dropTargetIndex! - 1
+          : dropTargetIndex!;
 
-        newOrder.splice(adjustedTargetIndex, 0, draggedItem!);
+      newOrder.splice(adjustedTargetIndex, 0, draggedItem!);
 
-        return { ...pref, preservation_order: newOrder };
-      });
+      // Use the new function to update the order
+      update_preservation_order(newOrder);
     }
 
     // Clean up

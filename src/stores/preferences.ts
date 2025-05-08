@@ -515,3 +515,7 @@ export async function preservation_order_add(value: PreservationLogic) {
     }
     return false;
 }
+
+export async function update_preservation_order(newOrder: PreservationLogic[]) {
+    await updatePreference('preservation_order', newOrder);
+}

@@ -270,12 +270,25 @@ impl FileRecord {
 
         let mut algorithm = HashSet::new();
         let mut keep = true;
-        if (enabled.invalidpath || enabled.dual_mono) && !path.exists() {
-            algorithm.insert(Algorithm::InvalidPath);
-            if enabled.invalidpath {
-                keep = false;
+        if (enabled.invalidpath || enabled.dual_mono) {
+            // Fix for Windows paths
+            #[cfg(target_os = "windows")]
+            let path_exists = {
+                // Normalize path separators
+                let normalized_path = path_str.replace('/', "\\");
+                let normalized_path_buf = PathBuf::from(normalized_path);
+                normalized_path_buf.exists()
+            };
+
+            #[cfg(not(target_os = "windows"))]
+            let path_exists = path.exists();
+
+            if !path_exists {
+                algorithm.insert(Algorithm::InvalidPath);
+                if enabled.invalidpath {
+                    keep = false;
+                }
             }
-            // keep = false;
         }
         if enabled.duration && checkduration(duration_str, enabled.min_dur) {
             algorithm.insert(Algorithm::Duration);
@@ -991,37 +1004,107 @@ impl Delete {
     pub fn delete_files(
         &self,
         files: Vec<&str>,
-        _app: &AppHandle,
+        app: &AppHandle,
     ) -> Result<(), Box<dyn std::error::Error>> {
         println!("Removing Files");
+        app.rsubstatus("remove", 0, "Preparing to remove files...");
 
         // Filter valid files directly and collect them into a Vec
         let valid_files: Vec<&str> = files
             .par_iter()
-            .filter(|&&file| Path::new(file).exists())
-            .cloned() // Convert &str to str for collection
+            .filter(|&&file| {
+                let exists = Path::new(file).exists();
+                if !exists {
+                    println!("File does not exist: {}", file);
+                }
+                exists
+            })
+            .cloned()
             .collect();
+
+        println!(
+            "Valid files to process: {}/{}",
+            valid_files.len(),
+            files.len()
+        );
+        app.rsubstatus(
+            "remove",
+            10,
+            &format!("Processing {} valid files", valid_files.len()),
+        );
+
+        if valid_files.is_empty() {
+            app.rsubstatus("remove", 100, "No valid files to process");
+            return Ok(());
+        }
 
         match self {
             Delete::Trash => {
-                if !valid_files.is_empty() {
-                    trash::delete_all(&valid_files).map_err(|e| {
-                        eprintln!("Move to Trash Failed: {}", e);
-                        e
-                    })?;
+                #[cfg(target_os = "windows")]
+                {
+                    // On Windows, process files individually for better error reporting
+                    let total = valid_files.len();
+                    for (i, file) in valid_files.iter().enumerate() {
+                        app.rsubstatus(
+                            "remove",
+                            10 + (i * 90 / total),
+                            &format!("Moving to trash: {}/{}", i + 1, total),
+                        );
+
+                        match trash::delete(file) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                // Log error but continue with other files
+                                println!("Failed to move to trash: {}: {}", file, e);
+                                app.rsubstatus(
+                                    "warning",
+                                    10 + (i * 90 / total),
+                                    &format!("Warning: Failed to trash: {}", file),
+                                );
+                            }
+                        }
+                    }
+                }
+
+                #[cfg(not(target_os = "windows"))]
+                {
+                    // macOS/Linux - use batch operation which is more efficient
+                    if !valid_files.is_empty() {
+                        app.rsubstatus("remove", 50, "Moving files to trash...");
+                        match trash::delete_all(&valid_files) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                app.rsubstatus("error", 100, &format!("Trash error: {}", e));
+                                eprintln!("Move to Trash Failed: {}", e);
+                                return Err(e.into());
+                            }
+                        }
+                    }
                 }
             }
             Delete::Delete => {
-                for file in valid_files {
-                    fs::remove_file(file).map_err(|e| {
+                let total = valid_files.len();
+                for (i, file) in valid_files.iter().enumerate() {
+                    app.rsubstatus(
+                        "remove",
+                        10 + (i * 90 / total),
+                        &format!("Permanently deleting: {}/{}", i + 1, total),
+                    );
+
+                    if let Err(e) = fs::remove_file(file) {
                         eprintln!("Failed to remove file {}: {}", file, e);
-                        e
-                    })?;
+                        app.rsubstatus(
+                            "warning",
+                            10 + (i * 90 / total),
+                            &format!("Warning: Failed to delete: {}", file),
+                        );
+                    }
                 }
             }
             _ => {}
         }
 
+        app.rsubstatus("remove", 100, "File removal complete");
         Ok(())
     }
 }
