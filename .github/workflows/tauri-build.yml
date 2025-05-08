@@ -22,7 +22,10 @@ jobs:
 
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive # This ensures submodules are checked out
 
       - name: setup node
         uses: actions/setup-node@v4
