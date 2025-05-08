@@ -32,3 +32,22 @@ waveform_log.txt
 src-tauri/resources/chromaprint
 src-tauri/resources/chromaprint
 /src-tauri/resources/sox
+
+# Ignore node_modules
+**/node_modules/
+
+# Rust target directory (per platform)
+target/
+
+# Tauri build outputs
+/src-tauri/target/
+src-tauri/.cargo/
+src-tauri/Cargo.lock
+
+# Optional: Vite/webpack build outputs (depends on your frontend toolchain)
+dist/
+build/
+
+# Package manager files
+.pnpm-store/
+.yarn/
