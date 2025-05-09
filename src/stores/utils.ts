@@ -1,6 +1,6 @@
 console.log('Loading module:', 'utils.ts');  // Add to each file
 
-  import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 import { getAllWindows, Window } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { writable } from 'svelte/store';
@@ -10,8 +10,7 @@ import { applyColors } from "./colors";
 import { preferencesStore } from "./preferences";
 import type { Colors } from "./types";
 import { get } from "svelte/store";
-  import { onMount, onDestroy } from "svelte";
-
+import { onMount, onDestroy } from "svelte";
 
 
 // For localStorage (persistent between sessions)
@@ -118,8 +117,13 @@ export async function checkForUpdates(): Promise<{
       console.log("Current version:", currentVersion);
 
       // Compare versions (you can use semver-parser in frontend)
+      // Fix: If compareVersions returns a negative number, it means latestVersion < currentVersion
       const needsUpdate =
         compareVersions(latestVersion.trim(), currentVersion as string) > 0;
+      
+      // Debug the comparison result
+      console.log("Version comparison result:", compareVersions(latestVersion.trim(), currentVersion as string));
+      console.log("Needs update:", needsUpdate);
 
       return {
         latest: latestVersion.trim(),

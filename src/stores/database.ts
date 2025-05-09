@@ -8,6 +8,11 @@ import { clearResults } from './results';
 import type { Database } from './types';
 import { open } from "@tauri-apps/plugin-dialog";
 import { viewStore, showSearchView } from './menu';
+import { platform } from '@tauri-apps/plugin-os';
+// when using `"withGlobalTauri": true`, you may use
+// const { platform } = window.__TAURI__.os;
+
+
 
 
 
@@ -154,10 +159,19 @@ export function getDatabasePath(): string | null {
 
  export async function openSqliteFile(): Promise<string | null> {
     try {
+        const currentPlatform = platform();
+        // console.log(currentPlatform);
+
+        let defaultPath = "~/Library/Application Support/SoundminerV6/Databases";
+        if (currentPlatform === "windows") {
+            defaultPath = "~\\AppData\\Roaming\\SoundminerV6\\Databases";
+            
+        }
+
       let db = await open({
         multiple: false,
         directory: false,
-        defaultPath: "~/Library/Application Support/SoundminerV6/Databases",
+        defaultPath: defaultPath,
         filters: [{ name: "SQLite Database", extensions: ["sqlite"] }],
       });
       if (Array.isArray(db)) {

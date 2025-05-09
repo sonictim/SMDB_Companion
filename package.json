@@ -17,6 +17,7 @@
     "@tauri-apps/api": "^2.4.1",
     "@tauri-apps/plugin-dialog": "^2.2.1",
     "@tauri-apps/plugin-opener": "^2.2.6",
+    "@tauri-apps/plugin-os": "~2",
     "lucide-svelte": "^0.487.0",
     "svelte-headless-table": "^0.18.3",
     "svelte-virtual-list": "^3.0.1"

@@ -143,8 +143,8 @@ jobs:
           Write-Host "Files prepared for deployment:"
           Get-ChildItem "./deployment/release/$APP_VERSION/" | Format-Table Name
 
-      - name: Deploy to website via SSH
-        if: success()
+      - name: Deploy to website via SSH (macOS)
+        if: matrix.platform == 'macos-latest' && success()
         uses: appleboy/scp-action@master
         with:
           host: ${{ secrets.SSH_HOST }}
@@ -155,6 +155,60 @@ jobs:
           source: "deployment/release/*"
           target: "${{ secrets.REMOTE_DEPLOY_PATH }}"
           strip_components: 1
+
+      - name: Set directory permissions for macOS deployment
+        if: matrix.platform == 'macos-latest' && success()
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          script: |
+            find ${{ secrets.REMOTE_DEPLOY_PATH }}/release -type d -exec chmod 755 {} \;
+
+      - name: Deploy to website via SSH (Windows)
+        if: matrix.platform == 'windows-latest' && success()
+        shell: pwsh
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
+          SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_PASSPHRASE: ${{ secrets.SSH_PASSPHRASE }}
+          SSH_PORT: ${{ secrets.SSH_PORT || 22 }}
+          REMOTE_PATH: ${{ secrets.REMOTE_DEPLOY_PATH }}
+        run: |
+          # Create SSH key file
+          $sshDir = "$env:USERPROFILE\.ssh"
+          New-Item -ItemType Directory -Path $sshDir -Force | Out-Null
+
+          # Save SSH key to file
+          $env:SSH_KEY | Out-File -FilePath "$sshDir\id_rsa" -Encoding utf8 -NoNewline
+
+          # Set proper permissions
+          # Note: In Windows, this is best-effort as Windows permissions differ from Unix
+
+          # Install scp for Windows if not available
+          if (!(Get-Command -Name "scp" -ErrorAction SilentlyContinue)) {
+              Write-Host "Installing OpenSSH Client..."
+              Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
+          }
+
+          # Set up known_hosts to avoid prompts
+          Write-Host "Adding host to known_hosts..."
+          ssh -o StrictHostKeyChecking=accept-new -p $env:SSH_PORT -i "$sshDir\id_rsa" $env:SSH_USERNAME@$env:SSH_HOST "echo Connection test" -v
+
+          # Copy files using scp
+          Write-Host "Copying files..."
+          scp -r -P $env:SSH_PORT -i "$sshDir\id_rsa" .\deployment\release\* "$env:SSH_USERNAME@$env:SSH_HOST`:$env:REMOTE_PATH/release/"
+
+          # Set directory permissions to 755
+          Write-Host "Setting directory permissions to 755..."
+          ssh -p $env:SSH_PORT -i "$sshDir\id_rsa" $env:SSH_USERNAME@$env:SSH_HOST "find $env:REMOTE_PATH/release -type d -exec chmod 755 {} \;"
+
+          # Clean up key file
+          Remove-Item -Path "$sshDir\id_rsa" -Force
 
       - name: Clean up old versions
         if: success() && matrix.platform == 'macos-latest'

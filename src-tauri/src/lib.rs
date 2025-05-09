@@ -23,6 +23,7 @@ pub fn run() {
     set_library_path();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let mut version = app.package_info().version.to_string();
@@ -273,7 +274,7 @@ impl FileRecord {
 
         let mut algorithm = HashSet::new();
         let mut keep = true;
-        if (enabled.invalidpath || enabled.dual_mono) {
+        if enabled.invalidpath || enabled.dual_mono {
             // Fix for Windows paths
             #[cfg(target_os = "windows")]
             let path_exists = {
