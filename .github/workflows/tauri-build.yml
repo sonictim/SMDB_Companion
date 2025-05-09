@@ -1,5 +1,6 @@
 name: "publish"
 
+# Updated workflow with code signing and credentials
 on:
   push:
     branches:
