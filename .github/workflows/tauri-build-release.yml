@@ -3,7 +3,7 @@ name: "publish"
 on:
   push:
     branches:
-      - beta
+      - release
 
 jobs:
   publish-tauri:
@@ -102,20 +102,20 @@ jobs:
             # macOS commands
             APP_VERSION=$(grep -o '"version": "[^"]*"' ./src-tauri/tauri.conf.json | cut -d'"' -f4)
             echo "App version: $APP_VERSION"
-            mkdir -p "deployment/beta/$APP_VERSION"
+            mkdir -p "deployment/release/$APP_VERSION"
             
             # Create latest_ver file with just the version number
-            echo "$APP_VERSION" > "deployment/beta/latest_ver"
+            echo "$APP_VERSION" > "deployment/release/latest_ver"
             
             # Copy DMG files
-            find ./src-tauri/target/universal-apple-darwin/release/bundle/dmg -name "*.dmg" -exec cp {} "deployment/beta/$APP_VERSION/" \;
+            find ./src-tauri/target/universal-apple-darwin/release/bundle/dmg -name "*.dmg" -exec cp {} "deployment/release/$APP_VERSION/" \;
             # Create a version.txt file for version tracking
-            echo "$APP_VERSION" > "deployment/beta/$APP_VERSION/version.txt"
-            echo "$(date '+%Y-%m-%d')" >> "deployment/beta/$APP_VERSION/version.txt"
+            echo "$APP_VERSION" > "deployment/release/$APP_VERSION/version.txt"
+            echo "$(date '+%Y-%m-%d')" >> "deployment/release/$APP_VERSION/version.txt"
             
             # List prepared files
             echo "Files prepared for deployment:"
-            ls -la "deployment/beta/$APP_VERSION/"
+            ls -la "deployment/release/$APP_VERSION/"
           else
             # Windows commands (using PowerShell)
             powershell -Command "
@@ -125,21 +125,21 @@ jobs:
               Write-Host \"App version: \$APP_VERSION\"
               
               # Create deployment directories
-              New-Item -ItemType Directory -Path \"./deployment/beta/\$APP_VERSION\" -Force
+              New-Item -ItemType Directory -Path \"./deployment/release/\$APP_VERSION\" -Force
               
               # Create latest_ver file with just the version number
-              Set-Content -Path \"./deployment/beta/latest_ver\" -Value \$APP_VERSION
+              Set-Content -Path \"./deployment/release/latest_ver\" -Value \$APP_VERSION
               
               # Copy installer files
-              Get-ChildItem -Path './src-tauri/target/release/bundle/msi/*.msi', './src-tauri/target/release/bundle/nsis/*.exe' -ErrorAction SilentlyContinue | Copy-Item -Destination \"./deployment/beta/\$APP_VERSION/\"
+              Get-ChildItem -Path './src-tauri/target/release/bundle/msi/*.msi', './src-tauri/target/release/bundle/nsis/*.exe' -ErrorAction SilentlyContinue | Copy-Item -Destination \"./deployment/release/\$APP_VERSION/\"
               
               # Create version.txt file
-              Set-Content -Path \"./deployment/beta/\$APP_VERSION/version.txt\" -Value \$APP_VERSION
-              Add-Content -Path \"./deployment/beta/\$APP_VERSION/version.txt\" -Value (Get-Date -Format 'yyyy-MM-dd')
+              Set-Content -Path \"./deployment/release/\$APP_VERSION/version.txt\" -Value \$APP_VERSION
+              Add-Content -Path \"./deployment/release/\$APP_VERSION/version.txt\" -Value (Get-Date -Format 'yyyy-MM-dd')
               
               # List prepared files
               Write-Host \"Files prepared for deployment:\"
-              Get-ChildItem \"./deployment/beta/\$APP_VERSION/\" | Format-Table Name
+              Get-ChildItem \"./deployment/release/\$APP_VERSION/\" | Format-Table Name
             "
           fi
 
@@ -152,7 +152,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           passphrase: ${{ secrets.SSH_PASSPHRASE }}
           port: ${{ secrets.SSH_PORT || 22 }}
-          source: "deployment/beta/*"
+          source: "deployment/release/*"
           target: "${{ secrets.REMOTE_DEPLOY_PATH }}"
           strip_components: 1
 
@@ -167,7 +167,7 @@ jobs:
           port: ${{ secrets.SSH_PORT || 22 }}
           script: |
             echo "Cleaning up old versions..."
-            cd ${{ secrets.REMOTE_DEPLOY_PATH }}/beta
+            cd ${{ secrets.REMOTE_DEPLOY_PATH }}/release
 
             # Create a list of versions sorted by modification time (newest first)
             VERSIONS=$(ls -t1)

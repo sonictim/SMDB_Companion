@@ -25,7 +25,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            let version = app.package_info().version.to_string();
+            let mut version = app.package_info().version.to_string();
+            if version.ends_with(".0") {
+                version = version.replace(".0", "");
+            }
             let _ = app
                 .webview_windows()
                 .get("main")
