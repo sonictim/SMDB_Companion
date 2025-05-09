@@ -92,56 +92,56 @@ jobs:
           prerelease: false
           args: ${{ matrix.args }}
 
-      - name: Prepare files for web deployment
-        if: success()
+      - name: Prepare files for web deployment (macOS)
+        if: matrix.platform == 'macos-latest' && success()
         run: |
-          echo "Preparing files for deployment to website..."
+          echo "Preparing files for deployment to website (macOS)..."
 
-          # Use different commands for macOS and Windows
-          if [[ "${{ matrix.platform }}" == "macos-latest" ]]; then
-            # macOS commands
-            APP_VERSION=$(grep -o '"version": "[^"]*"' ./src-tauri/tauri.conf.json | cut -d'"' -f4)
-            echo "App version: $APP_VERSION"
-            mkdir -p "deployment/beta/$APP_VERSION"
-            
-            # Create latest_ver file with just the version number
-            echo "$APP_VERSION" > "deployment/beta/latest_ver"
-            
-            # Copy DMG files
-            find ./src-tauri/target/universal-apple-darwin/release/bundle/dmg -name "*.dmg" -exec cp {} "deployment/beta/$APP_VERSION/" \;
-            # Create a version.txt file for version tracking
-            echo "$APP_VERSION" > "deployment/beta/$APP_VERSION/version.txt"
-            echo "$(date '+%Y-%m-%d')" >> "deployment/beta/$APP_VERSION/version.txt"
-            
-            # List prepared files
-            echo "Files prepared for deployment:"
-            ls -la "deployment/beta/$APP_VERSION/"
-          else
-            # Windows commands (using PowerShell)
-            powershell -Command "
-              # Get app version from tauri.conf.json
-              \$APP_VERSION = (Get-Content ./src-tauri/tauri.conf.json | ConvertFrom-Json).version
-              
-              Write-Host \"App version: \$APP_VERSION\"
-              
-              # Create deployment directories
-              New-Item -ItemType Directory -Path \"./deployment/beta/\$APP_VERSION\" -Force
-              
-              # Create latest_ver file with just the version number
-              Set-Content -Path \"./deployment/beta/latest_ver\" -Value \$APP_VERSION
-              
-              # Copy installer files
-              Get-ChildItem -Path './src-tauri/target/release/bundle/msi/*.msi', './src-tauri/target/release/bundle/nsis/*.exe' -ErrorAction SilentlyContinue | Copy-Item -Destination \"./deployment/beta/\$APP_VERSION/\"
-              
-              # Create version.txt file
-              Set-Content -Path \"./deployment/beta/\$APP_VERSION/version.txt\" -Value \$APP_VERSION
-              Add-Content -Path \"./deployment/beta/\$APP_VERSION/version.txt\" -Value (Get-Date -Format 'yyyy-MM-dd')
-              
-              # List prepared files
-              Write-Host \"Files prepared for deployment:\"
-              Get-ChildItem \"./deployment/beta/\$APP_VERSION/\" | Format-Table Name
-            "
-          fi
+          # macOS commands
+          APP_VERSION=$(grep -o '"version": "[^"]*"' ./src-tauri/tauri.conf.json | cut -d'"' -f4)
+          echo "App version: $APP_VERSION"
+          mkdir -p "deployment/beta/$APP_VERSION"
+
+          # Create latest_ver file with just the version number
+          echo "$APP_VERSION" > "deployment/beta/latest_ver"
+
+          # Copy DMG files
+          find ./src-tauri/target/universal-apple-darwin/release/bundle/dmg -name "*.dmg" -exec cp {} "deployment/beta/$APP_VERSION/" \;
+          # Create a version.txt file for version tracking
+          echo "$APP_VERSION" > "deployment/beta/$APP_VERSION/version.txt"
+          echo "$(date '+%Y-%m-%d')" >> "deployment/beta/$APP_VERSION/version.txt"
+
+          # List prepared files
+          echo "Files prepared for deployment:"
+          ls -la "deployment/beta/$APP_VERSION/"
+
+      - name: Prepare files for web deployment (Windows)
+        if: matrix.platform == 'windows-latest' && success()
+        shell: pwsh
+        run: |
+          Write-Host "Preparing files for deployment to website (Windows)..."
+
+          # Get app version from tauri.conf.json
+          $APP_VERSION = (Get-Content ./src-tauri/tauri.conf.json | ConvertFrom-Json).version
+
+          Write-Host "App version: $APP_VERSION"
+
+          # Create deployment directories
+          New-Item -ItemType Directory -Path "./deployment/beta/$APP_VERSION" -Force
+
+          # Create latest_ver file with just the version number
+          Set-Content -Path "./deployment/beta/latest_ver" -Value $APP_VERSION
+
+          # Copy installer files
+          Get-ChildItem -Path './src-tauri/target/release/bundle/msi/*.msi', './src-tauri/target/release/bundle/nsis/*.exe' -ErrorAction SilentlyContinue | Copy-Item -Destination "./deployment/beta/$APP_VERSION/"
+
+          # Create version.txt file
+          Set-Content -Path "./deployment/beta/$APP_VERSION/version.txt" -Value $APP_VERSION
+          Add-Content -Path "./deployment/beta/$APP_VERSION/version.txt" -Value (Get-Date -Format 'yyyy-MM-dd')
+
+          # List prepared files
+          Write-Host "Files prepared for deployment:"
+          Get-ChildItem "./deployment/beta/$APP_VERSION/" | Format-Table Name
 
       - name: Deploy to website via SSH
         if: success()
