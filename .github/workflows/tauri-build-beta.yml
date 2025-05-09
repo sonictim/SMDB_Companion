@@ -91,3 +91,81 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+
+      - name: Prepare files for web deployment
+        if: success()
+        run: |
+          echo "Preparing files for deployment to website..."
+
+          # Get app version from tauri.conf.json
+          if [[ "${{ matrix.platform }}" == "macos-latest" ]]; then
+            APP_VERSION=$(grep -o '"version": "[^"]*"' ./src-tauri/tauri.conf.json | cut -d'"' -f4)
+          else
+            APP_VERSION=$(powershell -Command "(Get-Content ./src-tauri/tauri.conf.json | ConvertFrom-Json).version")
+          fi
+
+          echo "App version: $APP_VERSION"
+          mkdir -p "deployment/beta/$APP_VERSION"
+
+          # For macOS builds (DMG and APP files)
+          if [[ "${{ matrix.platform }}" == "macos-latest" ]]; then
+            # Copy DMG files
+            find ./src-tauri/target/universal-apple-darwin/release/bundle/dmg -name "*.dmg" -exec cp {} "deployment/beta/$APP_VERSION/" \;
+            # Create a version.txt file for version tracking
+            echo "$APP_VERSION" > "deployment/beta/$APP_VERSION/version.txt"
+            echo "$(date '+%Y-%m-%d')" >> "deployment/beta/$APP_VERSION/version.txt"
+          fi
+
+          # For Windows builds (MSI and EXE installers)
+          if [[ "${{ matrix.platform }}" == "windows-latest" ]]; then
+            powershell -Command "New-Item -ItemType Directory -Path './deployment/beta/$APP_VERSION' -Force"
+            powershell -Command "Get-ChildItem -Path './src-tauri/target/release/bundle/msi/*.msi', './src-tauri/target/release/bundle/nsis/*.exe' -ErrorAction SilentlyContinue | Copy-Item -Destination './deployment/beta/$APP_VERSION/'"
+            # Create version.txt file on Windows
+            powershell -Command "Set-Content -Path './deployment/beta/$APP_VERSION/version.txt' -Value '$APP_VERSION'"
+            powershell -Command "Add-Content -Path './deployment/beta/$APP_VERSION/version.txt' -Value (Get-Date -Format 'yyyy-MM-dd')"
+          fi
+
+          # List prepared files
+          echo "Files prepared for deployment:"
+          ls -la "deployment/beta/$APP_VERSION/"
+
+      - name: Deploy to website via SSH
+        if: success()
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          source: "deployment/beta/*"
+          target: "${{ secrets.REMOTE_DEPLOY_PATH }}"
+          strip_components: 1
+
+      - name: Clean up old versions
+        if: success() && matrix.platform == 'macos-latest'
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          script: |
+            echo "Cleaning up old versions..."
+            cd ${{ secrets.REMOTE_DEPLOY_PATH }}/beta
+
+            # Create a list of versions sorted by modification time (newest first)
+            VERSIONS=$(ls -t1)
+
+            # Count the number of versions
+            VERSION_COUNT=$(echo "$VERSIONS" | wc -l)
+
+            # If we have more than 10 versions, remove the oldest ones
+            if [ "$VERSION_COUNT" -gt 10 ]; then
+              # Skip the first 10 (newest) versions and remove the rest
+              echo "$VERSIONS" | tail -n +11 | xargs -I {} rm -rf {}
+              echo "Removed $(($VERSION_COUNT - 10)) old versions. Keeping the 10 most recent."
+            else
+              echo "Found $VERSION_COUNT versions. No cleanup needed."
+            fi

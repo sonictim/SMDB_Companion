@@ -1,6 +1,6 @@
 name: "publish"
 
-# Updated workflow with code signing and credentials
+# Updated workflow with code signing, credentials, and deployment to website
 on:
   push:
     branches:
@@ -62,7 +62,7 @@ jobs:
         env:
           APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          KEYCHAIN_PASSWORD: keychainpassword
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
         run: |
           echo $APPLE_CERTIFICATE_BASE64 | base64 --decode > certificate.p12
           security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
@@ -100,7 +100,6 @@ jobs:
       - name: Build Windows
         if: matrix.platform == 'windows-latest'
         env:
-          # Add any necessary environment variables for Windows builds
           RUSTFLAGS: "-C link-args=/NODEFAULTLIB:libcmt"
         run: |
           cd src-tauri
@@ -121,6 +120,82 @@ jobs:
             --team-id "$APPLE_TEAM_ID" \
             --password "$APPLE_PASSWORD" \
             --wait
+
+      - name: Prepare files for website deployment
+        if: success()
+        run: |
+          echo "Preparing files for deployment to website..."
+
+          # Get app version from tauri.conf.json (OS-specific commands)
+          if [[ "${{ matrix.platform }}" == "macos-latest" ]]; then
+            APP_VERSION=$(grep -o '"version": "[^"]*"' ./src-tauri/tauri.conf.json | cut -d'"' -f4)
+          else
+            APP_VERSION=$(powershell -Command "(Get-Content ./src-tauri/tauri.conf.json | ConvertFrom-Json).version")
+          fi
+
+          echo "App version: $APP_VERSION"
+          mkdir -p "deployment/beta/$APP_VERSION"
+
+          # For macOS builds (DMG files)
+          if [[ "${{ matrix.platform }}" == "macos-latest" ]]; then
+            # Copy DMG files for arm64
+            if [[ "${{ matrix.args }}" == "aarch64-apple-darwin" ]]; then
+              find ./src-tauri/target/aarch64-apple-darwin/release/bundle/dmg -name "*.dmg" -exec cp {} "deployment/beta/$APP_VERSION/" \;
+              # Rename with architecture suffix
+              cd "deployment/beta/$APP_VERSION/"
+              for file in *.dmg; do
+                if [[ -f "$file" ]]; then
+                  base_name=$(basename "$file" .dmg)
+                  mv "$file" "${base_name}_arm64.dmg"
+                fi
+              done
+              cd ../../../
+            fi
+            
+            # Copy DMG files for x86_64
+            if [[ "${{ matrix.args }}" == "x86_64-apple-darwin" ]]; then
+              find ./src-tauri/target/x86_64-apple-darwin/release/bundle/dmg -name "*.dmg" -exec cp {} "deployment/beta/$APP_VERSION/" \;
+              # Rename with architecture suffix
+              cd "deployment/beta/$APP_VERSION/"
+              for file in *.dmg; do
+                if [[ -f "$file" ]]; then
+                  base_name=$(basename "$file" .dmg)
+                  mv "$file" "${base_name}_x86_64.dmg"
+                fi
+              done
+              cd ../../../
+            fi
+            
+            # Create version.txt file with date
+            echo "$APP_VERSION" > "deployment/beta/$APP_VERSION/version.txt"
+            echo "$(date '+%Y-%m-%d')" >> "deployment/beta/$APP_VERSION/version.txt"
+          fi
+
+          # For Windows builds (MSI and EXE installers)
+          if [[ "${{ matrix.platform }}" == "windows-latest" ]]; then
+            powershell -Command "New-Item -ItemType Directory -Path './deployment/beta/$APP_VERSION' -Force"
+            powershell -Command "Get-ChildItem -Path './src-tauri/target/release/bundle/msi/*.msi', './src-tauri/target/release/bundle/nsis/*.exe' -ErrorAction SilentlyContinue | Copy-Item -Destination './deployment/beta/$APP_VERSION/'"
+            # Create version.txt file on Windows
+            powershell -Command "Set-Content -Path './deployment/beta/$APP_VERSION/version.txt' -Value '$APP_VERSION'"
+            powershell -Command "Add-Content -Path './deployment/beta/$APP_VERSION/version.txt' -Value (Get-Date -Format 'yyyy-MM-dd')"
+          fi
+
+          # List prepared files
+          echo "Files prepared for deployment:"
+          ls -la "deployment/beta/$APP_VERSION/"
+
+      - name: Deploy to website via SSH
+        if: success()
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          source: "deployment/beta/*"
+          target: "${{ secrets.REMOTE_DEPLOY_PATH }}"
+          strip_components: 1
 
       - name: Create GitHub Release
         uses: tauri-apps/tauri-action@v0
