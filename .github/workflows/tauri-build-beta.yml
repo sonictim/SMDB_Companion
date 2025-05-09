@@ -49,6 +49,7 @@ jobs:
         run: pnpm install # change this to npm, pnpm or bun depending on which one you use.
 
       - name: import Apple Developer Certificate
+        if: matrix.platform == 'macos-latest'
         # Prevents keychain from locking automatically for 3600 seconds.
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
@@ -65,6 +66,7 @@ jobs:
           security find-identity -v -p codesigning build.keychain
 
       - name: verify certificate
+        if: matrix.platform == 'macos-latest'
         run: |
           CERT_INFO=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Application")
           CERT_ID=$(echo "$CERT_INFO" | awk -F'"' '{print $2}')
