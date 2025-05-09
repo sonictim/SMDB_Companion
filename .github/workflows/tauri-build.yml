@@ -85,9 +85,23 @@ jobs:
           cd src-tauri
           cargo tauri build --target ${{ matrix.args }}
 
-      # Build for Windows (no special signing)
+      # Setup Windows build environment
+      - name: Setup Windows build environment
+        if: matrix.platform == 'windows-latest'
+        run: |
+          echo "Setting up Windows build environment..."
+          # Ensure Visual C++ runtime libraries are available
+          # GitHub Actions windows runners should already have these installed
+          # but we can verify with a specific Visual Studio environment setup
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" || echo "Visual Studio environment setup already done"
+          echo "RUSTFLAGS=-C link-args=/NODEFAULTLIB:libcmt" >> $GITHUB_ENV
+
+      # Build for Windows with Visual C++ Runtime setup
       - name: Build Windows
         if: matrix.platform == 'windows-latest'
+        env:
+          # Add any necessary environment variables for Windows builds
+          RUSTFLAGS: "-C link-args=/NODEFAULTLIB:libcmt"
         run: |
           cd src-tauri
           cargo tauri build --target ${{ matrix.args }}
