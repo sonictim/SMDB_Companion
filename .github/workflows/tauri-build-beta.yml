@@ -22,9 +22,18 @@ jobs:
 
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive # This ensures submodules are checked out
 
-      - name: setup node
+      - name: Update submodules to latest version
+        run: |
+          git submodule update --remote --recursive
+          # Check what version of FFCodex we're using (for debugging)
+          cd src-tauri/submodules/FFCodex && git rev-parse HEAD && cd ../../..
+
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: lts/*
