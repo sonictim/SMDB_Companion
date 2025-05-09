@@ -156,6 +156,18 @@ jobs:
           target: "${{ secrets.REMOTE_DEPLOY_PATH }}"
           strip_components: 1
 
+      - name: Set directory permissions for macOS deployment
+        if: matrix.platform == 'macos-latest' && success()
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          script: |
+            find ${{ secrets.REMOTE_DEPLOY_PATH }}/beta -type d -exec chmod 755 {} \;
+
       - name: Deploy to website via SSH (Windows)
         if: matrix.platform == 'windows-latest' && success()
         shell: pwsh
@@ -190,6 +202,10 @@ jobs:
           # Copy files using scp
           Write-Host "Copying files..."
           scp -r -P $env:SSH_PORT -i "$sshDir\id_rsa" .\deployment\beta\* "$env:SSH_USERNAME@$env:SSH_HOST`:$env:REMOTE_PATH/beta/"
+
+          # Set directory permissions to 755
+          Write-Host "Setting directory permissions to 755..."
+          ssh -p $env:SSH_PORT -i "$sshDir\id_rsa" $env:SSH_USERNAME@$env:SSH_HOST "find $env:REMOTE_PATH/beta -type d -exec chmod 755 {} \;"
 
           # Clean up key file
           Remove-Item -Path "$sshDir\id_rsa" -Force
