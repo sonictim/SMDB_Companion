@@ -19,6 +19,8 @@ jobs:
           # for Universal macOS builds (arm64 and x86_64)
           - platform: "macos-latest"
             args: "--target universal-apple-darwin"
+          - platform: "windows-latest"
+            args: ""
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -84,8 +86,8 @@ jobs:
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         with:
-          tagName: app-v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version.
-          releaseName: "App v__VERSION__"
+          tagName: SMDBC-v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version.
+          releaseName: "SMDB Companion v__VERSION__"
           releaseBody: "See the assets to download this version and install."
           releaseDraft: true
           prerelease: false
