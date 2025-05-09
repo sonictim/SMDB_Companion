@@ -14,8 +14,8 @@ fn main() {
 
     #[cfg(target_os = "windows")]
     {
-        println!("cargo:rustc-link-lib=dylib=msvrct");
-        println!("cargo:rustc-link-lib=dylib=libvcruntime");
+        println!("cargo:rustc-link-lib=dylib=msvcrt");
+        println!("cargo:rustc-link-lib=dylib=vcruntime");
     }
 
     // Link against Accelerate framework (for vDSP functions)
