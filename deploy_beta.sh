@@ -1,5 +1,7 @@
 #!/bin/bash
 
+./update_cargo.toml.sh
+
 # 1. Extract version from tauri.conf.json
 if command -v jq &> /dev/null; then
   # Using jq if available

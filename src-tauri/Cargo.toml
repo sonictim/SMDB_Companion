@@ -1,6 +1,6 @@
 [package]
 name = "SMDB_Companion"
-version = "1.1.11"
+version = "1.1.14"
 description = "Soundminer Database Cleanup Tool"
 authors = ["Tim Farrell"]
 edition = "2024"
@@ -16,16 +16,16 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 cmake = "0.1.54"
-tauri-build = { version = "2.2.0", features = [] }
+tauri-build = { version = "1.1.14", features = [] }
 
 [dependencies]
-tauri = { version = "2.5.1", features = [] }
+tauri = { version = "1.1.14", features = [] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rfd = "0.15.2"
 tauri-plugin-store = "2.2.0"
-sqlx = { version = "0.8.4", features = ["runtime-tokio", "sqlite"] }
+sqlx = { version = "1.1.14", features = ["runtime-tokio", "sqlite"] }
 rayon = "1.10.0"
 hex = "0.4.3"
 sha2 = "0.10.8"
@@ -42,7 +42,7 @@ trash = "5.2.2"
 # chromaprint = "0.2.0"
 base64 = "0.22.1"
 futures = "0.3.31"
-symphonia = { version = "0.5.4", features = ["all-codecs"] }
+symphonia = { version = "1.1.14", features = ["all-codecs"] }
 dirs = "6.0.0"
 rodio = "0.20.1"
 bit-set = "0.8.0"
