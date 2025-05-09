@@ -17,23 +17,20 @@ if [[ $(git status --porcelain) ]]; then
   git commit -m "$msg"
 fi
 
-# Switch to release and merge
-if [ "$current_branch" != "release" ]; then
-    echo "Switching to release branch and merging from $current_branch..."
-    git checkout release || { echo "Failed to switch to release branch"; exit 1; }
+# Switch to beta and merge
+if [ "$current_branch" != "beta" ]; then
+    echo "Switching to beta branch and merging from $current_branch..."
+    git checkout beta || { echo "Failed to switch to beta branch"; exit 1; }
     git merge "$current_branch" || { echo "Merge failed. Resolve conflicts and try again."; exit 1; }
     echo "Merge successful."
 fi
 
-# Push to release branch
-echo "Pushing to release branch..."
-git push origin release
+# Push to beta branch
+echo "Pushing to beta branch..."
+git push origin beta
 
-
-# Return to the original branch
+# Return to original branch
 echo "Returning to $current_branch branch..."
 git checkout "$current_branch"
 
-echo "Release deployment complete!"
-
-
+echo "Beta deployment complete!"
