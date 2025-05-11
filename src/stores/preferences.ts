@@ -277,6 +277,12 @@ export const TJFPreferences: Preferences = {
 
 }
 
+export function cleanPreferences() {
+    addMissingPrefs();
+    updateAlgorithmOrder();
+}
+
+
 export function updateAlgorithmOrder() {
     let defAlgo = defaultAlgorithms;
     let userAlgo = get(preferencesStore).algorithms;
