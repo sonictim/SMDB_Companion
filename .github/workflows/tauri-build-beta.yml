@@ -1,0 +1,239 @@
+name: "publish"
+
+on:
+  push:
+    branches:
+      - beta
+
+jobs:
+  publish-tauri:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # for Universal macOS builds (arm64 and x86_64)
+          - platform: "macos-latest"
+            args: "--target universal-apple-darwin"
+          - platform: "windows-latest"
+            args: ""
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive # This ensures submodules are checked out
+
+      - name: Update submodules to latest version
+        run: |
+          git submodule update --remote --recursive
+          # Check what version of FFCodex we're using (for debugging)
+          cd src-tauri/submodules/FFCodex && git rev-parse HEAD && cd ../../..
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Install pnpm
+        run: npm install -g pnpm
+
+      - name: install frontend dependencies
+        run: pnpm install # change this to npm, pnpm or bun depending on which you use.
+
+      - name: import Apple Developer Certificate
+        if: matrix.platform == 'macos-latest'
+        # Prevents keychain from locking automatically for 3600 seconds.
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          echo $APPLE_CERTIFICATE | base64 --decode > certificate.p12
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security set-keychain-settings -t 3600 -u build.keychain
+          security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
+          security find-identity -v -p codesigning build.keychain
+
+      - name: verify certificate
+        if: matrix.platform == 'macos-latest'
+        run: |
+          CERT_INFO=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Application")
+          CERT_ID=$(echo "$CERT_INFO" | awk -F'"' '{print $2}')
+          echo "CERT_ID=$CERT_ID" >> $GITHUB_ENV
+          echo "Certificate imported."
+
+      - name: build and publish
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        with:
+          tagName: SMDBC-v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version.
+          releaseName: "SMDB Companion v__VERSION__"
+          releaseBody: "See the assets to download this version and install."
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
+
+      - name: Prepare files for web deployment (macOS)
+        if: matrix.platform == 'macos-latest' && success()
+        run: |
+          echo "Preparing files for deployment to website (macOS)..."
+
+          # macOS commands
+          APP_VERSION=$(grep -o '"version": "[^"]*"' ./src-tauri/tauri.conf.json | cut -d'"' -f4)
+          echo "App version: $APP_VERSION"
+          mkdir -p "deployment/beta/$APP_VERSION"
+
+          # Create latest_ver file with just the version number
+          echo "$APP_VERSION" > "deployment/beta/latest_ver"
+
+          # Copy DMG files
+          find ./src-tauri/target/universal-apple-darwin/release/bundle/dmg -name "*.dmg" -exec cp {} "deployment/beta/$APP_VERSION/" \;
+          # Create a version.txt file for version tracking
+          echo "$APP_VERSION" > "deployment/beta/$APP_VERSION/version.txt"
+          echo "$(date '+%Y-%m-%d')" >> "deployment/beta/$APP_VERSION/version.txt"
+
+          # List prepared files
+          echo "Files prepared for deployment:"
+          ls -la "deployment/beta/$APP_VERSION/"
+
+      - name: Prepare files for web deployment (Windows)
+        if: matrix.platform == 'windows-latest' && success()
+        shell: pwsh
+        run: |
+          Write-Host "Preparing files for deployment to website (Windows)..."
+
+          # Get app version from tauri.conf.json
+          $APP_VERSION = (Get-Content ./src-tauri/tauri.conf.json | ConvertFrom-Json).version
+
+          Write-Host "App version: $APP_VERSION"
+
+          # Create deployment directories
+          New-Item -ItemType Directory -Path "./deployment/beta/$APP_VERSION" -Force
+
+          # Create latest_ver file with just the version number
+          Set-Content -Path "./deployment/beta/latest_ver" -Value $APP_VERSION
+
+          # Copy installer files
+          Get-ChildItem -Path './src-tauri/target/release/bundle/msi/*.msi', './src-tauri/target/release/bundle/nsis/*.exe' -ErrorAction SilentlyContinue | Copy-Item -Destination "./deployment/beta/$APP_VERSION/"
+
+          # Create version.txt file
+          Set-Content -Path "./deployment/beta/$APP_VERSION/version.txt" -Value $APP_VERSION
+          Add-Content -Path "./deployment/beta/$APP_VERSION/version.txt" -Value (Get-Date -Format 'yyyy-MM-dd')
+
+          # List prepared files
+          Write-Host "Files prepared for deployment:"
+          Get-ChildItem "./deployment/beta/$APP_VERSION/" | Format-Table Name
+
+      - name: Deploy to website via SSH (macOS)
+        if: matrix.platform == 'macos-latest' && success()
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          source: "deployment/beta/*"
+          target: "${{ secrets.REMOTE_DEPLOY_PATH }}"
+          strip_components: 1
+
+      - name: Set directory permissions for macOS deployment
+        if: matrix.platform == 'macos-latest' && success()
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          script: |
+            find ${{ secrets.REMOTE_DEPLOY_PATH }}/beta -type d -exec chmod 755 {} \;
+
+      - name: Deploy to website via SSH (Windows)
+        if: matrix.platform == 'windows-latest' && success()
+        shell: pwsh
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
+          SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_PASSPHRASE: ${{ secrets.SSH_PASSPHRASE }}
+          SSH_PORT: ${{ secrets.SSH_PORT || 22 }}
+          REMOTE_PATH: ${{ secrets.REMOTE_DEPLOY_PATH }}
+        run: |
+          # Create SSH key file
+          $sshDir = "$env:USERPROFILE\.ssh"
+          New-Item -ItemType Directory -Path $sshDir -Force | Out-Null
+
+          # Save SSH key to file
+          $env:SSH_KEY | Out-File -FilePath "$sshDir\id_rsa" -Encoding utf8 -NoNewline
+
+          # Set proper permissions
+          # Note: In Windows, this is best-effort as Windows permissions differ from Unix
+
+          # Install scp for Windows if not available
+          if (!(Get-Command -Name "scp" -ErrorAction SilentlyContinue)) {
+              Write-Host "Installing OpenSSH Client..."
+              Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
+          }
+
+          # Set up known_hosts to avoid prompts
+          Write-Host "Adding host to known_hosts..."
+          ssh -o StrictHostKeyChecking=accept-new -p $env:SSH_PORT -i "$sshDir\id_rsa" $env:SSH_USERNAME@$env:SSH_HOST "echo Connection test" -v
+
+          # Copy files using scp
+          Write-Host "Copying files..."
+          scp -r -P $env:SSH_PORT -i "$sshDir\id_rsa" .\deployment\beta\* "$env:SSH_USERNAME@$env:SSH_HOST`:$env:REMOTE_PATH/beta/"
+
+          # Set directory permissions to 755
+          Write-Host "Setting directory permissions to 755..."
+          ssh -p $env:SSH_PORT -i "$sshDir\id_rsa" $env:SSH_USERNAME@$env:SSH_HOST "find $env:REMOTE_PATH/beta -type d -exec chmod 755 {} \;"
+
+          # Clean up key file
+          Remove-Item -Path "$sshDir\id_rsa" -Force
+
+      - name: Clean up old versions
+        if: success() && matrix.platform == 'macos-latest'
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          script: |
+            echo "Cleaning up old versions..."
+            cd ${{ secrets.REMOTE_DEPLOY_PATH }}/beta
+
+            # Create a list of versions sorted by modification time (newest first)
+            VERSIONS=$(ls -t1)
+
+            # Count the number of versions
+            VERSION_COUNT=$(echo "$VERSIONS" | wc -l)
+
+            # If we have more than 10 versions, remove the oldest ones
+            if [ "$VERSION_COUNT" -gt 10 ]; then
+              # Skip the first 10 (newest) versions and remove the rest
+              echo "$VERSIONS" | tail -n +11 | xargs -I {} rm -rf {}
+              echo "Removed $(($VERSION_COUNT - 10)) old versions. Keeping the 10 most recent."
+            else
+              echo "Found $VERSION_COUNT versions. No cleanup needed."
+            fi
