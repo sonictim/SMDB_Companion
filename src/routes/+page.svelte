@@ -19,7 +19,10 @@
   import AdvancedComponent from "../components/AdvancedMode.svelte";
 
   // Stores and utilities
-  import { preferencesStore } from "../stores/preferences";
+  import {
+    preferencesStore,
+    updateAlgorithmOrder,
+  } from "../stores/preferences";
   import { databaseStore } from "../stores/database";
   import { checkForUpdates } from "../stores/utils";
   import { checkRegistered } from "../stores/registration";
@@ -47,6 +50,7 @@
       isRegistered = await checkRegistered();
       appInitialized = true;
       console.log("App initialization complete");
+      updateAlgorithmOrder();
       const currentPrefs = get(preferencesStore);
 
       // Update CSS variables from current preferences

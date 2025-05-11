@@ -213,12 +213,12 @@ impl Database {
         println!("Starting Dual Mono Search");
         let total = self.records.len();
         let completed = AtomicUsize::new(0);
-        let batch_size = 2000;
+        // let batch_size = 2000;
         let mut chunks_completed = 0;
-        let mut records_batch = Vec::with_capacity(batch_size);
+        let mut records_batch = Vec::with_capacity(pref.batch_size);
 
         app.status("dual_mono", 0, "Starting Dual Mono Search");
-        for chunk in self.records.chunks_mut(batch_size) {
+        for chunk in self.records.chunks_mut(pref.batch_size) {
             if self.abort.load(Ordering::SeqCst) {
                 println!("Aborting dual mono search - early exit");
                 break;
@@ -245,7 +245,7 @@ impl Database {
 
                         app.substatus(
                             "dual_mono",
-                            new_completed % batch_size * 100 / batch_size,
+                            new_completed % pref.batch_size * 100 / pref.batch_size,
                             &format!("Dual Mono Search: {}/{}", new_completed, total),
                         );
                         let is_identical = audio::decode::are_channels_identical(&record.path);
@@ -262,7 +262,7 @@ impl Database {
 
             records_batch.extend(records_to_update);
 
-            if pref.store_waveforms && records_batch.len() >= batch_size {
+            if pref.store_waveforms && records_batch.len() >= pref.batch_size {
                 app.substatus("dual_mono", 0, "storing chunk to database");
                 let to_db: Vec<(usize, &str)> = records_batch
                     .iter()
@@ -272,7 +272,7 @@ impl Database {
                 crate::batch_store_data_optimized(&pool, &to_db, "_DualMono", app).await;
                 records_batch.clear();
             }
-            chunks_completed += batch_size;
+            chunks_completed += pref.batch_size;
             app.status(
                 "dual_mono",
                 100 * chunks_completed / total,

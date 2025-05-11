@@ -19,6 +19,7 @@ pub struct Preferences {
     pub store_waveforms: bool,
     pub fetch_waveforms: bool,
     pub similarity_threshold: f64,
+    pub batch_size: usize,
 }
 
 impl Preferences {

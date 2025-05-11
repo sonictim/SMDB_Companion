@@ -271,7 +271,7 @@ impl FileRecord {
 
         let mut algorithm = HashSet::new();
         let mut keep = true;
-        if (enabled.invalidpath || enabled.dual_mono) {
+        if enabled.invalidpath || enabled.dual_mono {
             // Fix for Windows paths
             #[cfg(target_os = "windows")]
             let path_exists = {

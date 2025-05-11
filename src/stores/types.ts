@@ -87,6 +87,7 @@ export type Preferences = {
   colors: Colors;
   algorithms: Algorithm[];
   version?: number; // Add version field to track preference structure changes
+  batch_size: number;
 };
 
 export type Preset = { 

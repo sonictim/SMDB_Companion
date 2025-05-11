@@ -10,10 +10,12 @@ import { emit } from '@tauri-apps/api/event';
 import type { PreservationLogic } from './types';
 
 // Add version identifier - increment this when you change algorithm order
-const PREFERENCES_VERSION = 2;
+const PREFERENCES_VERSION = 3;
 
 // Define default preferences
 export const defaultPreferences: Preferences = {
+    
+    version: PREFERENCES_VERSION, // Add version field
     display_all_records: true,
     match_criteria: ['Filename', 'Channels', 'Duration'],
     ignore_filetype: false,
@@ -29,6 +31,7 @@ export const defaultPreferences: Preferences = {
     firstOpen: true,
     showToolbars: true,
     algorithms: defaultAlgorithms,
+    batch_size: 1000,
     preservation_order: [
         {
             column: "Description",
@@ -137,7 +140,6 @@ export const defaultPreferences: Preferences = {
     columns: ["AudioFileType", "AuditionLevel", "BWDate", "BWDescription", "BWOriginator", "BWOriginatorRef", "BWTime", "BWTimeStamp", "BitDepth", "Brightness", "CatID", "Category", "CategoryFull", "Category_en", "ChannelLayout", "Channels", "CreationDate", "Description", "Description_en", "Designer", "DesignerInitials", "Duration", "EntryDate", "Era", "FXName", "FilePath", "Filename", "GPSAlt", "GPSLat", "GPSLon", "Index", "Keywords", "LibrarianOnly", "Library", "Location", "LongID", "Manufacturer", "MicPerspective", "Microphone", "ModificationDate", "Notes", "OpenTier", "Pathname", "Popularity", "Rating", "RecMedium", "RecType", "ReleaseDate", "SampleRate", "ScannedDate", "Scene", "ShortID", "Show", "ShowCategory", "ShowDescription", "ShowFXName", "ShowFilename", "ShowLongID", "ShowNotes", "ShowSubCategory", "SoundDesignerOnly", "Source", "SubCategory", "SubCategory_en", "Take", "Tape", "TotalFrames", "TouchedDate", "Track", "TrackTitle", "URL", "Ultrasonics", "UserCategory", "UserComments", "VendorCategory", "Volume", "ixmlCurrentSpeed", "ixmlFileUID", "ixmlMasterSpeed", "ixmlNote", "ixmlOriginalFilename", "ixmlParentFilename", "ixmlParentUID", "ixmlProject", "ixmlSpeedNote", "ixmlTimeCodeFlag", "ixmlTimeCodeRate", "ixmlTrackLayout", "recid"],
 
     colors: defaultColors,
-    version: PREFERENCES_VERSION, // Add version field
 };
 
 export const TJFPreferences: Preferences = {
@@ -275,34 +277,22 @@ export const TJFPreferences: Preferences = {
 
 }
 
-// Function to ensure algorithms are in the correct order
-function ensureCorrectAlgorithmOrder(userAlgorithms: any[]) {
-    // If no algorithms, return default
-    if (!Array.isArray(userAlgorithms) || userAlgorithms.length === 0) {
-        return [...defaultAlgorithms];
-    }
-    
-    // Create a map of user's algorithm settings by id
-    const userAlgoMap: Record<string, typeof defaultAlgorithms[0]> = {};
-    userAlgorithms.forEach(algo => {
-        userAlgoMap[algo.id] = algo;
-    });
-
-    // Create new array with default order but user settings
-    return defaultAlgorithms.map(defaultAlgo => {
-        // If user has this algorithm, preserve their settings
-        if (userAlgoMap[defaultAlgo.id]) {
-            return {
-                ...defaultAlgo,
-                ...userAlgoMap[defaultAlgo.id],
-                // Keep consistent properties from default like name
-                name: defaultAlgo.name
-            };
+export function updateAlgorithmOrder() {
+    let defAlgo = defaultAlgorithms;
+    let userAlgo = get(preferencesStore).algorithms;
+    defAlgo.forEach((algo) => {
+        const userAlgoIndex = userAlgo.findIndex((user) => user.id === algo.id);
+        if (userAlgoIndex !== -1) {
+            algo.enabled = userAlgo[userAlgoIndex].enabled;
+            algo.name = userAlgo[userAlgoIndex].name;
+            algo.db = userAlgo[userAlgoIndex].db;
+            algo.min_dur = userAlgo[userAlgoIndex].min_dur;
         }
-        // Otherwise use the default
-        return { ...defaultAlgo };
+
     });
+    updatePreference('algorithms', defAlgo);
 }
+
 
 const storedPreferences = localStorage.getItem('preferencesInfo');
 let initialPreferences: Preferences;
@@ -312,7 +302,7 @@ try {
     // Check if stored preferences exist and have version information
     if (parsedPreferences && Object.keys(parsedPreferences).length > 0) {
         // Ensure algorithms are in correct order
-        const orderedAlgorithms = ensureCorrectAlgorithmOrder(parsedPreferences.algorithms);
+        const orderedAlgorithms = updateAlgorithmOrder;
         
         initialPreferences = {
             ...defaultPreferences, // ensures all keys are present
@@ -518,4 +508,8 @@ export async function preservation_order_add(value: PreservationLogic) {
 
 export async function update_preservation_order(newOrder: PreservationLogic[]) {
     await updatePreference('preservation_order', newOrder);
+}
+
+export async function update_batch_size(value: number) {
+    await updatePreference('batch_size', value);
 }

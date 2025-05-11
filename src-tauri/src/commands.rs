@@ -151,8 +151,8 @@ async fn run_search(
 
     app.status("starting", counter * 100 / total, "Starting search...");
     app.substatus("starting", 0, "Gathering records from database...");
-
     counter += 1;
+
     let _ = db.fetch_all_filerecords(&enabled, &pref, &app).await;
     if db.abort.load(Ordering::SeqCst) {
         println!("Aborting fingerprint scan - early exit");
@@ -160,13 +160,13 @@ async fn run_search(
     }
 
     if enabled.dbcompare {
+        counter += 1;
         app.status(
             "compare",
             counter * 100 / total,
             &format!("Comparing records against {}", enabled.compare_db),
         );
 
-        counter += 1;
         db.compare_search(&enabled, &pref, &app).await;
     }
     if db.abort.load(Ordering::SeqCst) {
@@ -175,13 +175,13 @@ async fn run_search(
     }
 
     if enabled.basic {
+        counter += 1;
         app.status(
             "dupes",
             counter * 100 / total,
             "Performing Duplicate Search",
         );
 
-        counter += 1;
         db.dupe_search(&pref, &enabled, &app);
 
         app.substatus("starting", 10, "Sorting Records");
@@ -189,13 +189,13 @@ async fn run_search(
         db.records.sort_by(|a, b| a.root.cmp(&b.root));
     }
     if enabled.dual_mono {
+        counter += 1;
         app.status(
             "dualm",
             counter * 100 / total,
             "Performing Dual Mono Search",
         );
 
-        counter += 1;
         db.dual_mono_search(&pref, &app).await;
     }
     if db.abort.load(Ordering::SeqCst) {
@@ -203,13 +203,12 @@ async fn run_search(
         return Err("Aborted".to_string());
     }
     if enabled.waveform {
+        counter += 1;
         app.status(
             "waveform",
             counter * 100 / total,
             "Analyzing audio content for waveform analysis",
         );
-
-        counter += 1;
 
         let _ = db.wave_search_chromaprint(&pref, &app).await;
     }

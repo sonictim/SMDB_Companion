@@ -8,6 +8,7 @@
     updateWaveformSearchType,
     match_criteria_add,
     match_criteria_remove,
+    update_batch_size,
   } from "../../stores/preferences";
   import { invoke } from "@tauri-apps/api/core";
 
@@ -179,6 +180,25 @@
           {/if}
           <span>Store audio fingerprints in database</span>
         </button>
+        <span style="margin-left: 50px">
+          Every
+          <input
+            type="number"
+            class="input-field"
+            style="width: 80px"
+            placeholder="1000"
+            step="100"
+            min="0"
+            max="10000"
+            value={$preferencesStore.batch_size}
+            on:input={(e) =>
+              update_batch_size(
+                parseFloat((e.target as HTMLInputElement).value)
+              )}
+          />
+          records
+          <!-- <span class="inactive" style="margin-left: 5px"> 0-100%</span> -->
+        </span>
       </span>
       <span class="tooltip-trigger">
         Compare Algorithm:

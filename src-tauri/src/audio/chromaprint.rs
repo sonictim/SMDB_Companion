@@ -125,7 +125,8 @@ impl Database {
         pref: &Preferences,
         app: &AppHandle,
     ) -> Result<(), String> {
-        let mut batch_size: usize = 200;
+        let mut batch_size: usize = pref.batch_size;
+        println!("Batch size: {}", batch_size);
         let total_records = self.records.len();
         if total_records == 0 {
             println!("No records available for fingerprinting.");
