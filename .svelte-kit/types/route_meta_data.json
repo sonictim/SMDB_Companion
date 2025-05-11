@@ -5,8 +5,5 @@
 	],
 	"/preferences": [
 		"src/routes/+layout.js"
-	],
-	"/save": [
-		"src/routes/+layout.js"
 	]
 }
