@@ -50,4 +50,4 @@ build/
 
 # Package manager files
 .pnpm-store/
-.yarn/
+.yarn/.DS_Store
