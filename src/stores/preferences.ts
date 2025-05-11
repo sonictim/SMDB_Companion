@@ -304,6 +304,13 @@ function ensureCorrectAlgorithmOrder(userAlgorithms: any[]) {
     });
 }
 
+// Function to update algorithm order in preferences - can be called onMount
+export async function updateAlgorithmOrder() {
+    const currentPrefs = get(preferencesStore);
+    const orderedAlgorithms = ensureCorrectAlgorithmOrder(currentPrefs.algorithms);
+    await updatePreference('algorithms', orderedAlgorithms);
+}
+
 const storedPreferences = localStorage.getItem('preferencesInfo');
 let initialPreferences: Preferences;
 try {

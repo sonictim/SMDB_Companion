@@ -6,6 +6,7 @@
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { listen } from "@tauri-apps/api/event";
   import { message } from "@tauri-apps/plugin-dialog";
+  import { updateAlgorithmOrder } from "../stores/preferences";
 
   // Components
   import Header from "../components/Header.svelte";
@@ -59,6 +60,9 @@
           );
         });
       }
+
+      // Ensure algorithm order is correct
+      await updateAlgorithmOrder();
 
       // First open dialog and update checks
       if ($preferencesStore.firstOpen) {

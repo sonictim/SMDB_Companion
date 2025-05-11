@@ -38,7 +38,6 @@ declare module '$env/static/private' {
 	export const ORIGINAL_XDG_CURRENT_DESKTOP: string;
 	export const TAURI_CLI_VERBOSITY: string;
 	export const ZDOTDIR: string;
-	export const TAURI_ENV_DEBUG: string;
 	export const npm_config_registry: string;
 	export const PNPM_HOME: string;
 	export const USER: string;
@@ -131,7 +130,6 @@ declare module '$env/dynamic/private' {
 		ORIGINAL_XDG_CURRENT_DESKTOP: string;
 		TAURI_CLI_VERBOSITY: string;
 		ZDOTDIR: string;
-		TAURI_ENV_DEBUG: string;
 		npm_config_registry: string;
 		PNPM_HOME: string;
 		USER: string;

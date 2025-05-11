@@ -164,7 +164,7 @@ export function getDatabasePath(): string | null {
 
         let defaultPath = "~/Library/Application Support/SoundminerV6/Databases";
         if (currentPlatform === "windows") {
-            defaultPath = "~\\AppData\\Roaming\\SoundminerV6\\Databases";
+            defaultPath = "%AppData%\\SoundminerV6\\Databases";
             
         }
 
