@@ -23,6 +23,7 @@ pub fn run() {
     set_library_path();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let version = app.package_info().version.to_string();

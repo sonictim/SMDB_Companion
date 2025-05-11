@@ -367,6 +367,10 @@ h2 {
   /* Allows the input to take up the remaining space */
   background-color: var(--primary-bg);
   border-style: hidden;
+  
+
+
+
 }
 
 .input-field:focus,
@@ -699,4 +703,13 @@ h2 {
 .tooltip-trigger:hover .tooltip-text {
   visibility: visible;
   opacity: 1;
+}
+
+@media screen and (-ms-high-contrast: active), (-ms-high-contrast: none) {
+  .select-field {
+    height: 36px; /* increased height for Windows */
+    padding: 3px 8px; /* adjusted padding for Windows */
+    line-height: 1.2;
+    box-sizing: content-box;
+  }
 }

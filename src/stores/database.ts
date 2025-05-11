@@ -8,7 +8,7 @@ import { clearResults } from './results';
 import type { Database } from './types';
 import { open } from "@tauri-apps/plugin-dialog";
 import { viewStore, showSearchView } from './menu';
-
+import { platform } from '@tauri-apps/plugin-os';
 
 
 
@@ -153,6 +153,9 @@ export function getDatabasePath(): string | null {
 
 
  export async function openSqliteFile(): Promise<string | null> {
+    let defaultPath = "~/Library/Application Support/SoundminerV6/Databases";
+    if (platform() === "windows") {
+      defaultPath = "%AppData%\\SoundminerV6\\Databases";}
     try {
       let db = await open({
         multiple: false,

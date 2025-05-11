@@ -736,11 +736,28 @@
           bind:this={parentRef}
           class="virtual-table-viewport"
           on:wheel={(e) => {
-            // Prevent default behavior for wheel events
-            e.stopPropagation();
-            // Custom scroll handling
+            // Don't stop propagation - can cause issues in some browsers
+            // e.stopPropagation();
+
+            // Explicitly handle the scroll with better cross-platform support
             if (parentRef) {
-              parentRef.scrollTop += e.deltaY;
+              // Different platforms have different scroll behavior
+              // Delta multiplier to make scrolling feel consistent
+              const multiplier = 1;
+
+              // Use deltaMode to determine appropriate scaling
+              // 0: pixels, 1: lines, 2: pages
+              let scrollAmount = e.deltaY;
+
+              // Apply platform-specific adjustments if needed
+              if (e.deltaMode === 1) {
+                // Line mode (typically Windows)
+                scrollAmount *= 20; // Adjust for line-based scrolling
+              }
+
+              parentRef.scrollTop += scrollAmount * multiplier;
+              // Prevent default to avoid double-scrolling
+              e.preventDefault();
             }
           }}
         >
