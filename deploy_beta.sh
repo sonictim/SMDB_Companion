@@ -1,5 +1,6 @@
 #!/bin/bash
 
+# Run necessary setup scripts
 ./scripts/update_cargo.toml.sh
 ./scripts/make_public.sh
 
@@ -20,17 +21,15 @@ if [[ $(git status --porcelain) ]]; then
   git commit -m "$msg"
 fi
 
-# Switch to beta and merge
-if [ "$current_branch" != "beta" ]; then
-    echo "Switching to beta branch and merging from $current_branch..."
-    git checkout beta || { echo "Failed to switch to beta branch"; exit 1; }
-    git merge "$current_branch" || { echo "Merge failed. Resolve conflicts and try again."; exit 1; }
-    echo "Merge successful."
-fi
+# Force update beta branch with current branch contents
+echo "Making beta branch identical to $current_branch (will overwrite beta)..."
+git checkout -B beta || { echo "Failed to switch to beta branch"; exit 1; }
+echo "Beta branch now matches $current_branch."
 
-# Push to beta branch
-echo "Pushing to beta branch..."
-git push origin beta
+# Force push to beta branch
+echo "Force pushing to beta branch..."
+git push -f origin beta || { echo "Push failed"; exit 1; }
+echo "Force push successful - beta branch now exactly matches $current_branch."
 
 # Return to original branch
 echo "Returning to $current_branch branch..."

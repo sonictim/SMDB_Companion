@@ -1,8 +1,8 @@
 #!/bin/bash
 
+# Run necessary setup scripts
 ./scripts/update_cargo.toml.sh
 ./scripts/make_public.sh
-
 
 # Get the current branch name
 current_branch=$(git rev-parse --abbrev-ref HEAD)
@@ -21,23 +21,18 @@ if [[ $(git status --porcelain) ]]; then
   git commit -m "$msg"
 fi
 
-# Switch to release and merge
-if [ "$current_branch" != "release" ]; then
-    echo "Switching to release branch and merging from $current_branch..."
-    git checkout release || { echo "Failed to switch to release branch"; exit 1; }
-    git merge "$current_branch" || { echo "Merge failed. Resolve conflicts and try again."; exit 1; }
-    echo "Merge successful."
-fi
+# Force update release branch with current branch contents
+echo "Making release branch identical to $current_branch (will overwrite release)..."
+git checkout -B release || { echo "Failed to switch to release branch"; exit 1; }
+echo "release branch now matches $current_branch."
 
-# Push to release branch
-echo "Pushing to release branch..."
-git push origin release
+# Force push to release branch
+echo "Force pushing to release branch..."
+git push -f origin release || { echo "Push failed"; exit 1; }
+echo "Force push successful - release branch now exactly matches $current_branch."
 
-
-# Return to the original branch
+# Return to original branch
 echo "Returning to $current_branch branch..."
 git checkout "$current_branch"
 
-echo "Release deployment complete!"
-
-
+echo "release deployment complete!"
