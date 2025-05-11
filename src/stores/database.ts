@@ -44,6 +44,9 @@ export async function setDatabase(path: string | null, is_compare: boolean) {
         databaseStore.set(db);
         addRecentDatabase({name: name, path: path});
         clearResults();
+        if (get(viewStore) === "results") {
+            showSearchView();
+        }
         
     } catch (error) {
         console.error("Error setting database:", error);
@@ -68,9 +71,7 @@ export async function openDatabase(is_compare: boolean){
     let path = await openSqliteFile();
     if (path) {
         setDatabase(path, is_compare);
-        if (get(viewStore) === "results") {
-            showSearchView();
-        }
+        
 
     }
     

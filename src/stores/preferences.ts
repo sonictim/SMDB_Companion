@@ -293,6 +293,13 @@ export function updateAlgorithmOrder() {
     updatePreference('algorithms', defAlgo);
 }
 
+export function addMissingPrefs() {
+    let currentPrefs = get(preferencesStore);
+    // Add default preferences only for missing properties
+    const updatedPrefs = { ...defaultPreferences, ...currentPrefs };
+    preferencesStore.set(updatedPrefs);
+    localStorage.setItem('preferencesInfo', JSON.stringify(updatedPrefs));
+}
 
 const storedPreferences = localStorage.getItem('preferencesInfo');
 let initialPreferences: Preferences;

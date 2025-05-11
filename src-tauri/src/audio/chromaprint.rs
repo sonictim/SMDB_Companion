@@ -136,7 +136,7 @@ impl Database {
             batch_size = total_records;
         }
         let completed = AtomicUsize::new(0);
-        const STORE_MIN_INTERVAL: usize = 200;
+        // const STORE_MIN_INTERVAL: usize = 200;
 
         let pool = self.get_pool().await;
 
@@ -169,9 +169,6 @@ impl Database {
                         (new_completed % batch_size) * 100 / batch_size,
                         record.get_filename(),
                     );
-                    let fingerprint_result = record.get_chromaprint_fingerprint();
-
-                    let fingerprint = fingerprint_result.unwrap_or("FAILED".to_string());
                     app.status(
                         "fingerprinting",
                         new_completed * 100 / total_records,
@@ -180,6 +177,9 @@ impl Database {
                             new_completed, total_records
                         ),
                     );
+                    let fingerprint_result = record.get_chromaprint_fingerprint();
+
+                    let fingerprint = fingerprint_result.unwrap_or("FAILED".to_string());
 
                     Some((record.id, fingerprint))
                 })
@@ -187,7 +187,7 @@ impl Database {
 
             record_ids_to_store.extend(local_ids);
 
-            if pref.store_waveforms && record_ids_to_store.len() >= STORE_MIN_INTERVAL {
+            if pref.store_waveforms && record_ids_to_store.len() >= pref.batch_size {
                 // Store fingerprints in batches to avoid memory issues
                 store_fingerprints_batch_optimized(&pool, &record_ids_to_store, app).await;
                 record_ids_to_store.clear(); // Clear after storing

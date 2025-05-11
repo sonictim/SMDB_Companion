@@ -188,7 +188,7 @@
             style="width: 80px"
             placeholder="1000"
             step="100"
-            min="0"
+            min="100"
             max="10000"
             value={$preferencesStore.batch_size}
             on:input={(e) =>

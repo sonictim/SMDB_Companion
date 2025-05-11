@@ -22,6 +22,7 @@
   import {
     preferencesStore,
     updateAlgorithmOrder,
+    addMissingPrefs,
   } from "../stores/preferences";
   import { databaseStore } from "../stores/database";
   import { checkForUpdates } from "../stores/utils";
@@ -46,6 +47,7 @@
     try {
       // App initialization
       console.log("Starting app initialization");
+      addMissingPrefs();
       await initializeMenu();
       isRegistered = await checkRegistered();
       appInitialized = true;
