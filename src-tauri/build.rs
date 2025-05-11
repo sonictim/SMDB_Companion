@@ -12,11 +12,11 @@ fn main() {
     // #[cfg(target_os = "macos")]
     // println!("cargo:rustc-link-lib=dylib=c++");
 
-    #[cfg(target_os = "windows")]
-    {
-        println!("cargo:rustc-link-lib=dylib=msvrct");
-        println!("cargo:rustc-link-lib=dylib=libvcruntime");
-    }
+    // #[cfg(target_os = "windows")]
+    // {
+    //     println!("cargo:rustc-link-lib=dylib=msvrct");
+    //     println!("cargo:rustc-link-lib=dylib=libvcruntime");
+    // }
 
     // Link against Accelerate framework (for vDSP functions)
     // println!("cargo:rustc-link-lib=framework=Accelerate");
