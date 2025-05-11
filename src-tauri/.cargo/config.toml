@@ -1,11 +1,11 @@
-[build]
-jobs = 8
-rustc-wrapper = "sccache"
+# [build]
+# jobs = 8
+# rustc-wrapper = "sccache"
 
-[env]
-SCCACHE_CACHE_SIZE = "10G"
-SCCACHE_DIR = "/Users/tfarrell/.cache/sccache"
-RUSTC_WRAPPER = "sccache"
+# [env]
+# SCCACHE_CACHE_SIZE = "10G"
+# SCCACHE_DIR = "/Users/tfarrell/.cache/sccache"
+# RUSTC_WRAPPER = "sccache"
 
 [profile.dev]
 incremental = true
