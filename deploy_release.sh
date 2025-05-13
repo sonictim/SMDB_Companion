@@ -7,6 +7,11 @@
 # Get the current branch name
 current_branch=$(git rev-parse --abbrev-ref HEAD)
 
+# Update submodules to the latest commit on their default branch
+echo "Updating FFCodex submodule to latest version..."
+git submodule update --init --recursive --remote
+echo "Submodule updated to latest version."
+
 # Check if there are uncommitted changes
 if [[ $(git status --porcelain) ]]; then
   echo "Uncommitted changes detected."
@@ -24,7 +29,7 @@ fi
 # Force update release branch with current branch contents
 echo "Making release branch identical to $current_branch (will overwrite release)..."
 git checkout -B release || { echo "Failed to switch to release branch"; exit 1; }
-echo "release branch now matches $current_branch."
+echo "Release branch now matches $current_branch."
 
 # Force push to release branch
 echo "Force pushing to release branch..."
@@ -35,4 +40,4 @@ echo "Force push successful - release branch now exactly matches $current_branch
 echo "Returning to $current_branch branch..."
 git checkout "$current_branch"
 
-echo "release deployment complete!"
+echo "Release deployment complete!"

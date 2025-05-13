@@ -127,10 +127,16 @@ impl Database {
     ) -> Result<(), String> {
         let mut batch_size: usize = pref.batch_size;
         println!("Batch size: {}", batch_size);
-        let total_records = self.records.len();
+        let total_records = self
+            .records
+            .iter()
+            .filter(|record| {
+                record.fingerprint.is_none() || record.fingerprint == Some(Arc::from("FAILED"))
+            })
+            .count();
         if total_records == 0 {
             println!("No records available for fingerprinting.");
-            return Err("No records available for fingerprinting.".to_string());
+            return Ok(());
         }
         if batch_size > total_records {
             batch_size = total_records;
@@ -156,10 +162,11 @@ impl Database {
                 .par_iter_mut()
                 .filter_map(|record| {
                     let path = PathBuf::from(record.get_filepath());
-                    if !path.exists()
-                        || !path.is_file()
-                        || record.fingerprint.is_some()
-                        || self.abort.load(Ordering::SeqCst)
+                    if self.abort.load(Ordering::SeqCst)
+                        || (record.fingerprint.is_some()
+                            && record.fingerprint != Some(Arc::from("FAILED")))
+                        || !path.exists()
+                    // || !path.is_file()
                     {
                         return None;
                     }

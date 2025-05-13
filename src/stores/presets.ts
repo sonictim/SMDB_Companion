@@ -41,8 +41,6 @@ export async function applyPreset(preset: Preset)  {
 
 }
 
-
-
 export async function loadPreset(name: string | null) {
     if (!name) {
         console.warn("No preset name provided.");
@@ -54,11 +52,18 @@ export async function loadPreset(name: string | null) {
   const preset = presets.find(p => p.name === name);
   
   if (preset) {
-    preferencesStore.set(preset.pref);
+    // Merge the preset preferences with default preferences
+    // This ensures any newly added preferences in defaultPreferences are included
+    const mergedPreferences = { ...defaultPreferences, ...preset.pref };
+    
+    // Set the store to the merged preferences
+    preferencesStore.set(mergedPreferences);
+    
+    // Call cleanPreferences for any additional cleaning
     cleanPreferences();
     
     emit('preset-change', { 
-        preset: preset
+        preset: {...preset, pref: mergedPreferences}
     }).catch(err => {
       console.error('Error emitting preset-change event:', err);
     });

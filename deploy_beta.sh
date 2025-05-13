@@ -7,6 +7,11 @@
 # Get the current branch name
 current_branch=$(git rev-parse --abbrev-ref HEAD)
 
+# Update submodules to the latest commit on their default branch
+echo "Updating FFCodex submodule to latest version..."
+git submodule update --init --recursive --remote
+echo "Submodule updated to latest version."
+
 # Check if there are uncommitted changes
 if [[ $(git status --porcelain) ]]; then
   echo "Uncommitted changes detected."
