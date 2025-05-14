@@ -41,3 +41,7 @@ echo "Returning to $current_branch branch..."
 git checkout "$current_branch"
 
 echo "Beta deployment complete!"
+
+# Schedule make_private.sh to run after 20 minutes
+(sleep 1200 && ./scripts/make_private.sh) &
+echo "Repository will be set back to private in 20 minutes"
