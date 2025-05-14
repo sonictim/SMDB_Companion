@@ -50,7 +50,9 @@
         "language": "en-US"
       },
       "nsis": {
-        "languages": ["English"]
+        "languages": [
+          "English"
+        ]
       },
       "webviewInstallMode": {
         "type": "embedBootstrapper"

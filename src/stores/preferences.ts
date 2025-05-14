@@ -353,7 +353,8 @@ export async function updatePreference(key: string, value: any) {
   preferencesStore.update(p => {
     const updated = { ...p, [key]: value };
     
-    localStorage.setItem('preferences', JSON.stringify(updated));
+    // Fix: Use 'preferencesInfo' to match the store's initialization key
+    localStorage.setItem('preferencesInfo', JSON.stringify(updated));
     
     return updated;
   });

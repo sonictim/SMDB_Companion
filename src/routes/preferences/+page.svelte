@@ -79,7 +79,8 @@
           console.log("Preference change detected, reloading preferences");
 
           // Load the latest preferences from localStorage
-          const storedPrefs = localStorage.getItem("preferences");
+          // Fix: Use 'preferencesInfo' to match the store's initialization key
+          const storedPrefs = localStorage.getItem("preferencesInfo");
           if (storedPrefs) {
             try {
               const latestPrefs = JSON.parse(storedPrefs);
