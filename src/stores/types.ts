@@ -1,3 +1,5 @@
+import type { invertSelected } from "./results";
+
 console.log('Loading module:', 'types.ts');  // Add to each file
 
 
@@ -103,3 +105,26 @@ export type SearchProgressState = {
     subsearchMessage: string;
     subsearchStage: string;
 };
+
+export type HotKeys = {
+    settings: string;
+    showToolbars: string;
+    showSearchView: string;
+    showResultsView: string;
+    showSplitView: string;
+    showNoFrillsView: string;
+    showRegistration: string;
+    openDatabase: string;
+    openRecent: string;
+    closeDatabase: string;
+    searchDatabase: string;
+    cancelSearch: string;
+    checkSelected: string;
+    uncheckSelected: string;
+    toggleSelected: string;
+    invertSelected: string;
+    clearSelected: string;
+    helpMenu: string;
+
+
+}

@@ -15,6 +15,7 @@ import { openDatabase, closeDatabase, recentDbStore, setDatabase, databaseStore 
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Window } from '@tauri-apps/api/window';
 import { loadPreset } from './presets';
+import { hotkeysStore, defaultHotKeys } from './hotkeys';
   import {
     resultsStore,
     filteredItemsStore,
@@ -70,6 +71,11 @@ export async function initializeMenu() {
       await setupMenu();
     });
     
+    // Subscribe to hotkeys store to update accelerators when hotkeys change
+    const hotkeysUnsubscribe = hotkeysStore.subscribe(async () => {
+      await setupMenu();
+    });
+    
     // Store unsubscribe functions to clean up later if needed
     menuStore.update(state => ({ 
       ...state, 
@@ -79,6 +85,7 @@ export async function initializeMenu() {
         prefUnsubscribe();
         recentDbUnsubscribe();
         presetsUnsubscribe();
+        hotkeysUnsubscribe();
       }
     }));
     
@@ -460,7 +467,7 @@ async function setupMenu() {
         id: "showToolbars",
         text: "Show Toolbars",
         checked: get(preferencesStore).showToolbars,
-        accelerator: ",",
+        accelerator: defaultHotKeys.showToolbars,
         action: () => {preferencesStore.update(prefs => ({
           ...prefs,
           showToolbars: !prefs.showToolbars
@@ -540,14 +547,14 @@ const algoMenu = await Submenu.new({
       {
         id: "settings",
         text: "Settings...",
-        accelerator: "CmdOrCtrl+,",
+        accelerator: defaultHotKeys.settings,
         action: togglePreferencesWindow,
       },
              separator,
         {
           id: "registration",
           text: "Registration",
-          accelerator: "5",
+          accelerator: defaultHotKeys.showRegistration,
           action: () => {
             showRegistrationView();
           },
@@ -571,12 +578,13 @@ const algoMenu = await Submenu.new({
       {
         id: "open",
         text: "Open Database",
-        accelerator: "CmdOrCtrl+O",
+        accelerator: defaultHotKeys.openDatabase,
         action: () => openDatabase(false),
       },
       { id: "close", 
         text: "Close Database",
-        accelerator: "CmdOrCtrl+W", 
+        accelerator: defaultHotKeys.closeDatabase,
+        enabled: get(databaseStore) !== null, 
         action: () => closeDatabase() },
       
       await Submenu.new({
@@ -588,7 +596,7 @@ const algoMenu = await Submenu.new({
               id: db.name!,
               text: db.name!,
               // Add accelerator only to the first (most recent) item
-              accelerator: index === 0 ? "CmdOrCtrl+Shift+O" : undefined,
+              accelerator: index === 0 ? defaultHotKeys.openRecent : undefined,
               action: async () => {
                 await setDatabase(db.path!, false);
               }
@@ -601,14 +609,14 @@ const algoMenu = await Submenu.new({
       {
         id: "searchDatabase",
         text: "Search Database",
-        accelerator: "CmdOrCtrl+Enter",
+        accelerator: defaultHotKeys.searchDatabase,
         enabled: !get(isSearching) && get(databaseStore) !== null,
         action: () => {search()},
       },
       {
         id: "cancelSearch",
         text: "Cancel Search",
-        accelerator: "Esc",
+        accelerator: defaultHotKeys.cancelSearch,
         enabled: get(isSearching),
         action: () => {cancelSearch()},
       },
@@ -626,34 +634,33 @@ const selectionMenu = await Submenu.new({
       {
         id: "checkSelected",
         text: "Check Selected",
-        accelerator: "C",
+        accelerator: defaultHotKeys.checkSelected,
         action: () => {checkSelected()}
       },
       {
         id: "uncheckSelected",
         text: "Uncheck Selected",
-        accelerator: "U",
+        accelerator: defaultHotKeys.uncheckSelected,
         action: () => {uncheckSelected()}
       },
       {
         id: "toggleSelected",
         text: "Toggle Selected",
-        accelerator: "T",
+        accelerator: defaultHotKeys.toggleSelected,
         action: () => {toggleChecksSelected()}
       },
       separator,
       {
         id: "invertSelected",
         text: "Invert Selection",
-        accelerator: "I",
+        accelerator: defaultHotKeys.invertSelected,
         action: () => {invertSelected()}
       },
       {
         id: "clearSelected",
         text: "Clear Selection",
-        accelerator: "delete",
+        accelerator: defaultHotKeys.clearSelected,
         action: () => {clearSelected()}
-
       },
     
     ]});
@@ -676,32 +683,32 @@ const selectionMenu = await Submenu.new({
        {
         id: "checkSelected",
         text: "Check Selected",
-        accelerator: "C",
+        accelerator: defaultHotKeys.checkSelected,
         action: () => {checkSelected()}
       },
       {
         id: "uncheckSelected",
         text: "Uncheck Selected",
-        accelerator: "U",
+        accelerator: defaultHotKeys.uncheckSelected,
         action: () => {uncheckSelected()}
       },
       {
         id: "toggleSelected",
         text: "Toggle Selected",
-        accelerator: "t",
+        accelerator: defaultHotKeys.toggleSelected,
         action: () => {toggleChecksSelected()}
       },
       separator,
       {
         id: "invertSelected",
         text: "Invert Selection",
-        accelerator: "I",
+        accelerator: defaultHotKeys.invertSelected,
         action: () => {invertSelected()}
       },
       {
         id: "clearSelected",
         text: "Clear Selection",
-        accelerator: "Backspace",
+        accelerator: defaultHotKeys.clearSelected,
         action: () => {clearSelected()}
       },
     
@@ -725,28 +732,28 @@ const selectionMenu = await Submenu.new({
       await CheckMenuItem.new({
         id: "search-view",
         text: "Search",
-        accelerator: "1",
+        accelerator: defaultHotKeys.showSearchView,
         checked: viewState === "search",
         action: showSearchView,
       }),
       await CheckMenuItem.new({
         id: "results-view",
         text: "Results",
-        accelerator: "2",
+        accelerator: defaultHotKeys.showResultsView,
         checked: viewState === "results",
         action: showResultsView,
       }),
       await CheckMenuItem.new({
         id: "split-view",
         text: "Split",
-        accelerator: "3",
+        accelerator: defaultHotKeys.showSplitView,
         checked: viewState === "split",
         action: showSplitView,
       }),
       await CheckMenuItem.new({
         id: "nofrills-view",
         text: "No Frills",
-        accelerator: "4",
+        accelerator: defaultHotKeys.showNoFrillsView,
         checked: viewState === "nofrills",
         action: showNoFrillsView,
       }),
@@ -780,7 +787,7 @@ const selectionMenu = await Submenu.new({
       {
         id: "manual",
         text: "User Manual",
-        accelerator: "F1",
+        accelerator: defaultHotKeys.helpMenu,
         action: () => openManual(),
       },
       licenseMenu,

@@ -433,6 +433,11 @@
   function item(value: FileRecord, index: number, array: FileRecord[]): void {
     throw new Error("Function not implemented.");
   }
+
+  // Helper function to safely access record properties
+  function getRecordValue(record: FileRecord, key: string): string {
+    return (record[key as keyof FileRecord] as string) || "";
+  }
   import {
     CheckSquare,
     Square,
@@ -868,7 +873,7 @@
                               : toggleChecked(filteredItems[virtualRow.index])}
                         >
                           <div class="algorithm-icons">
-                            {#each filteredItems[virtualRow.index].algorithm.filter((algo: string) => algo !== "Keep" || filteredItems[virtualRow.index].algorithm.length === 1) as algo}
+                            {#each filteredItems[virtualRow.index].algorithm.filter((algo) => algo !== "Keep" || filteredItems[virtualRow.index].algorithm.length === 1) as algo}
                               {@const iconData = getAlgorithmIcon(algo)}
                               <span
                                 class="icon-wrapper"
@@ -898,9 +903,10 @@
                                 )
                               : toggleChecked(filteredItems[virtualRow.index])}
                         >
-                          {filteredItems[virtualRow.index][
-                            column.name as keyof FileRecord
-                          ] || ""}
+                          {getRecordValue(
+                            filteredItems[virtualRow.index],
+                            column.name
+                          )}
                         </div>
                       {/if}
                     {/each}

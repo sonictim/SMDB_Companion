@@ -31,6 +31,7 @@
     toggleSearch,
   } from "../stores/status";
 
+  import { metadataStore } from "../stores/metadata";
   import { ask, message } from "@tauri-apps/plugin-dialog";
   import { createVirtualizer } from "@tanstack/svelte-virtual";
 
@@ -48,6 +49,11 @@
 
   let processing = false;
   let loading = true;
+
+  // Helper function to safely access record properties
+  function getRecordValue(record: FileRecord, key: string): string {
+    return (record[key as keyof FileRecord] as string) || "";
+  }
   let idsToRemove: number[] = [];
   let filesToRemove: string[] = [];
   let dualMono: { id: number; path: string }[] = [];
@@ -520,13 +526,7 @@
     {#if $resultsStore.length > 0}
       <button
         class="nav-link"
-        on:click={() => {
-          if (selectedItems.size > 0) {
-            removeSelectedRecords();
-          } else {
-            removeRecords();
-          }
-        }}
+        on:click={removeRecords}
         title="Remove Duplicates"
       >
         <div class="flex items-center gap-2">
@@ -688,7 +688,6 @@
                         {/if}
                       </div>
                     {:else if column.name === "algorithm"}
-                      <!-- Algorithm Column -->
                       <div
                         class="grid-item"
                         on:click={(event) =>
@@ -700,7 +699,7 @@
                             : toggleChecked(filteredItems[virtualRow.index])}
                       >
                         <div class="algorithm-icons">
-                          {#each filteredItems[virtualRow.index].algorithm.filter((algo: string) => algo !== "Keep" || filteredItems[virtualRow.index].algorithm.length === 1) as algo}
+                          {#each filteredItems[virtualRow.index].algorithm.filter((algo) => algo !== "Keep" || filteredItems[virtualRow.index].algorithm.length === 1) as algo}
                             {@const iconData = getAlgorithmIcon(algo)}
                             <span class="icon-wrapper" title={iconData.tooltip}>
                               <svelte:component
@@ -727,9 +726,10 @@
                               )
                             : toggleChecked(filteredItems[virtualRow.index])}
                       >
-                        {filteredItems[virtualRow.index][
-                          column.name as keyof FileRecord
-                        ] || ""}
+                        {getRecordValue(
+                          filteredItems[virtualRow.index],
+                          column.name
+                        )}
                       </div>
                     {/if}
                   {/each}

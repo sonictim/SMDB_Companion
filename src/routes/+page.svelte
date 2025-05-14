@@ -2,10 +2,9 @@
   import "../styles.css";
   import { onMount, onDestroy } from "svelte";
   import { get } from "svelte/store";
-  import { confirm } from "@tauri-apps/plugin-dialog";
+  import { confirm, message } from "@tauri-apps/plugin-dialog";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { listen } from "@tauri-apps/api/event";
-  import { message } from "@tauri-apps/plugin-dialog";
 
   // Components
   import Header from "../components/Header.svelte";
@@ -71,24 +70,30 @@
         await message(
           "Please be sure to back up your Databases and Audio Files before using this application."
         );
-        preferencesStore.update((prefs) => ({ ...prefs, firstOpen: false }));
+        preferencesStore.update((prefs: any) => ({
+          ...prefs,
+          firstOpen: false,
+        }));
       }
 
       // Set up preset listener
-      presetChangedListener = await listen("preset-change", (event) => {
-        console.log("Preset change event received:", event);
+      presetChangedListener = await listen(
+        "preset-change",
+        (event: { payload: { preset: Preset } }) => {
+          console.log("Preset change event received:", event);
 
-        let presetData = event.payload as { preset: Preset };
-        if (presetData?.preset) {
-          console.log("Applying preset:", presetData.preset.name);
-          applyPreset(presetData.preset);
-          preferencesStore.update((prefs) => ({
-            ...prefs,
-          }));
-        } else {
-          console.error("Invalid preset data received:", event.payload);
+          let presetData = event.payload as { preset: Preset };
+          if (presetData?.preset) {
+            console.log("Applying preset:", presetData.preset.name);
+            applyPreset(presetData.preset);
+            preferencesStore.update((prefs: any) => ({
+              ...prefs,
+            }));
+          } else {
+            console.error("Invalid preset data received:", event.payload);
+          }
         }
-      });
+      );
 
       preferencesChangedListener = await listen(
         "preference-change",

@@ -221,6 +221,5 @@
     }
   }
 
-  // Export functions for use in other components if needed
-  export { togglePreferencesWindow };
+  // Function is already exported above - no need to re-export
 </script>

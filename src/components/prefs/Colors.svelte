@@ -12,8 +12,13 @@
   $: preferences = $preferencesStore;
 
   // Function to get current color value - this is now reactive
-  function getCurrentColor(colorKey: keyof Colors): string {
-    return preferences?.colors[colorKey] || "";
+  function getCurrentColor(colorKey: string): string {
+    return preferences?.colors[colorKey as keyof Colors] || "";
+  }
+
+  // Wrapper function to handle the type conversion from string to keyof Colors
+  function handleColorChange(key: string, value: string): void {
+    changeColor(key as keyof Colors, value);
   }
 </script>
 
@@ -36,21 +41,17 @@
           <div class="color-swatch">
             <div
               class="swatch-box"
-              style="background-color: {getCurrentColor(key as keyof Colors)};"
+              style="background-color: {getCurrentColor(key)};"
             >
               <input
                 type="color"
-                value={getCurrentColor(key as keyof Colors)}
-                on:input={(e) =>
-                  changeColor(
-                    key as keyof Colors,
-                    (e.target as HTMLInputElement).value
-                  )}
+                value={getCurrentColor(key)}
+                on:input={(e) => handleColorChange(key, e.currentTarget.value)}
                 class="color-input"
               />
             </div>
             <div class="hex-value">
-              {getCurrentColor(key as keyof Colors)}
+              {getCurrentColor(key)}
             </div>
           </div>
         </div>

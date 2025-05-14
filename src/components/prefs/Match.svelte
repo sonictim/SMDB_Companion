@@ -106,6 +106,21 @@
 
     return tooltips[id] || "No description available";
   }
+
+  // Wrapper functions for type conversions
+  function handleWaveformSearchTypeChange(event: Event): void {
+    updateWaveformSearchType((event.target as HTMLSelectElement).value);
+  }
+
+  function handleBatchSizeChange(event: Event): void {
+    update_batch_size(parseFloat((event.target as HTMLInputElement).value));
+  }
+
+  function handleSimilarityThresholdChange(event: Event): void {
+    updateSimilarityThreshold(
+      parseFloat((event.target as HTMLInputElement).value)
+    );
+  }
 </script>
 
 <div class="grid-container">
@@ -191,10 +206,7 @@
             min="100"
             max="10000"
             value={$preferencesStore.batch_size}
-            on:input={(e) =>
-              update_batch_size(
-                parseFloat((e.target as HTMLInputElement).value)
-              )}
+            on:input={handleBatchSizeChange}
           />
           records
           <!-- <span class="inactive" style="margin-left: 5px"> 0-100%</span> -->
@@ -205,8 +217,7 @@
         <select
           class="select-field"
           bind:value={$preferencesStore.waveform_search_type}
-          on:change={(e) =>
-            updateWaveformSearchType((e.target as HTMLSelectElement).value)}
+          on:change={handleWaveformSearchTypeChange}
         >
           {#each [{ text: "Exact Match", val: "Exact" }, { text: "Relative Match", val: "Similar" }] as { text, val }}
             <!-- {#each [{ text: "Exact Match", val: "Exact" }, { text: "Relative Match", val: "Similar" }, { text: "Subset Match", val: "Subset" }] as { text, val }} -->
@@ -240,10 +251,7 @@
             min="0"
             max="100"
             value={$preferencesStore.similarity_threshold}
-            on:input={(e) =>
-              updateSimilarityThreshold(
-                parseFloat((e.target as HTMLInputElement).value)
-              )}
+            on:input={handleSimilarityThresholdChange}
           />
           <span class="inactive" style="margin-left: 5px"> 0-100%</span>
         </span>

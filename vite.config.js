@@ -27,4 +27,8 @@ export default defineConfig( () => ({
   optimizeDeps: {
     include: ["svelte-virtual-list"],
   },
+  resolve: {
+    conditions: ['svelte', 'import', 'module', 'browser', 'default'],
+    dedupe: ['svelte']
+  },
 }));

@@ -1,5 +1,11 @@
 <script lang="ts">
-  import { ListOrdered, ListCheck, Tags, Palette } from "lucide-svelte";
+  import {
+    ListOrdered,
+    ListCheck,
+    Tags,
+    Palette,
+    Keyboard,
+  } from "lucide-svelte";
   import "../../styles.css";
   import { onMount, onDestroy } from "svelte";
   import { get } from "svelte/store";
@@ -11,6 +17,7 @@
   import TagsComponent from "../../components/prefs/Tags.svelte";
   import SelectComponent from "../../components/prefs/Select.svelte";
   import ColorsComponent from "../../components/prefs/Colors.svelte";
+  // import HotkeysComponent from "../../components/prefs/Hotkeys.svelte";
   import { preferencesStore } from "../../stores/preferences";
   import {
     presetsStore,
@@ -33,6 +40,7 @@
     { id: "preservationOrder", label: "Preservation Order", icon: ListOrdered },
     { id: "audiosuiteTags", label: "Tags Manager", icon: Tags },
     { id: "colors", label: "Colors", icon: Palette },
+    { id: "hotkeys", label: "Keyboard Shortcuts", icon: Keyboard },
   ];
 
   onMount(async () => {
@@ -51,17 +59,20 @@
         });
       }
 
-      presetChangedListener = await listen("preset-change", (event) => {
-        console.log("Preset change event received:", event);
-        let presetData = event.payload as { preset: Preset };
+      presetChangedListener = await listen(
+        "preset-change",
+        (event: { payload: { preset: Preset } }) => {
+          console.log("Preset change event received:", event);
+          let presetData = event.payload as { preset: Preset };
 
-        if (presetData && presetData.preset) {
-          console.log("Applying preset:", presetData.preset.name);
-          applyPreset(presetData.preset);
-        } else {
-          console.error("Invalid preset data received:", event.payload);
+          if (presetData && presetData.preset) {
+            console.log("Applying preset:", presetData.preset.name);
+            applyPreset(presetData.preset);
+          } else {
+            console.error("Invalid preset data received:", event.payload);
+          }
         }
-      });
+      );
       preferencesChangedListener = await listen(
         "preference-change",
         async () => {
@@ -132,6 +143,8 @@
         <SelectComponent />
       {:else if activeTab === "colors"}
         <ColorsComponent />
+        <!-- {:else if activeTab === "hotkeys"}
+        <HotkeysComponent /> -->
       {/if}
     </div>
 
