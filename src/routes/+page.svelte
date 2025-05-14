@@ -28,6 +28,7 @@
   import { checkRegistered } from "../stores/registration";
   import { initializeMenu, viewStore, showSearchView } from "../stores/menu";
   import { applyPreset } from "../stores/presets";
+  import { hotkeysStore } from "../stores/hotkeys";
   import type { Preset } from "../stores/types";
 
   // Component state
@@ -89,11 +90,25 @@
             preferencesStore.update((prefs: any) => ({
               ...prefs,
             }));
-          } else {
-            console.error("Invalid preset data received:", event.payload);
           }
         }
       );
+
+      // Listen for hotkey changes to sync between windows
+      await listen("hotkey-change", async () => {
+        console.log("Hotkey change detected, refreshing menu");
+        // The menu will be refreshed by its own event listener
+        // Reload hotkeys from localStorage to ensure synchronization
+        const storedHotkeys = localStorage.getItem("hotkeys");
+        if (storedHotkeys) {
+          try {
+            const latestHotkeys = JSON.parse(storedHotkeys);
+            hotkeysStore.set(latestHotkeys);
+          } catch (error) {
+            console.error("Error parsing hotkeys:", error);
+          }
+        }
+      });
 
       preferencesChangedListener = await listen(
         "preference-change",
@@ -109,7 +124,16 @@
               preferencesStore.set(latestPrefs);
 
               // Update any UI elements that depend on preferences
-              // e.g., CSS variables
+              // e.g., CSS variables - Apply CSS variables here if needed
+              if (latestPrefs?.colors) {
+                Object.entries(latestPrefs.colors).forEach(([key, value]) => {
+                  const cssVariable = `--${key.replace(/([A-Z])/g, "-$1").toLowerCase()}`;
+                  document.documentElement.style.setProperty(
+                    cssVariable,
+                    String(value)
+                  );
+                });
+              }
             } catch (error) {
               console.error("Error parsing stored preferences:", error);
             }

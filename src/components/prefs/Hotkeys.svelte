@@ -1,36 +1,68 @@
 <script lang="ts">
-  import { hotkeysStore, defaultHotKeys } from "../../stores/hotkeys";
+  import {
+    hotkeysStore,
+    defaultHotKeys,
+    getHotkey,
+    setHotkey,
+    notifyHotkeyChange,
+  } from "../../stores/hotkeys";
   import { onMount } from "svelte";
-  import type { HotKeys } from "../../stores/types";
+  import { OctagonX, RefreshCcw } from "lucide-svelte";
+  import type { HashMap } from "../../stores/types";
+  import { get } from "svelte/store";
 
-  // Deep copy of the hotkeys store for local state management
-  let localHotkeys: HotKeys = { ...defaultHotKeys };
-  let editing: keyof HotKeys | null = null;
+  // Local state for managing hotkeys
+  let localHotkeys: HashMap[] = [];
+  let editing: string | null = null;
   let currentKey = "";
   let isRecordingKey = false;
   let searchTerm = "";
 
+  // Convert array of HashMaps to flat object for easier UI manipulation
+  function convertToFlatObject(
+    hotkeysArray: HashMap[]
+  ): Record<string, string> {
+    const flatObject: Record<string, string> = {};
+    hotkeysArray.forEach((item) => {
+      const key = Object.keys(item)[0];
+      flatObject[key] = item[key];
+    });
+    return flatObject;
+  }
+
+  // Convert flat object back to array of HashMaps
+  function convertToHashMapArray(
+    flatObject: Record<string, string>
+  ): HashMap[] {
+    return Object.entries(flatObject).map(([key, value]) => ({ [key]: value }));
+  }
+
+  // For UI display, we'll use a flat object representation
+  let flatHotkeys: Record<string, string> = {};
+
   // Subscribe to hotkeys store changes
   onMount(() => {
-    const unsubscribe = hotkeysStore.subscribe((value: any) => {
-      localHotkeys = JSON.parse(JSON.stringify(value)); // Deep copy
+    const unsubscribe = hotkeysStore.subscribe((value: HashMap[]) => {
+      localHotkeys = JSON.parse(JSON.stringify(value)); // Deep copy of array
+      flatHotkeys = convertToFlatObject(localHotkeys); // Convert to flat object for UI
     });
 
     return unsubscribe;
   });
 
   // Start recording a new hotkey
-  function startRecording(key: keyof HotKeys) {
+  function startRecording(key: string) {
     editing = key;
-    currentKey = localHotkeys[key];
+    currentKey = flatHotkeys[key];
     isRecordingKey = true;
-  }
-
-  // Save the current recorded key
-  function saveHotkey() {
+  } // Save the current recorded key
+  async function saveHotkey() {
     if (editing) {
-      localHotkeys[editing] = currentKey;
-      hotkeysStore.set(localHotkeys);
+      flatHotkeys[editing] = currentKey;
+      await setHotkey(editing, currentKey); // Use the async helper function to update the store
+
+      // No need to manually refresh now - the event system will handle it
+
       editing = null;
       isRecordingKey = false;
     }
@@ -39,7 +71,7 @@
   // Cancel current recording
   function cancelRecording() {
     if (editing) {
-      currentKey = localHotkeys[editing];
+      currentKey = flatHotkeys[editing];
     }
     editing = null;
     isRecordingKey = false;
@@ -81,10 +113,18 @@
   }
 
   // Reset all hotkeys to default
-  function resetAllHotkeys() {
+  async function resetAllHotkeys() {
     if (confirm("Reset all hotkeys to default values?")) {
+      // Reset the store to default values
+      hotkeysStore.set(JSON.parse(JSON.stringify(defaultHotKeys)));
+
+      // Update our local state
       localHotkeys = JSON.parse(JSON.stringify(defaultHotKeys));
-      hotkeysStore.set(localHotkeys);
+      flatHotkeys = convertToFlatObject(localHotkeys);
+
+      // Notify about the change to trigger menu refresh
+      await notifyHotkeyChange();
+
       editing = null;
       isRecordingKey = false;
     }
@@ -92,12 +132,12 @@
 
   // Filter hotkeys based on search term
   $: filteredHotkeys = searchTerm
-    ? Object.entries(localHotkeys).filter(
+    ? Object.entries(flatHotkeys).filter(
         ([key, value]) =>
           key.toLowerCase().includes(searchTerm.toLowerCase()) ||
           getReadableName(key).toLowerCase().includes(searchTerm.toLowerCase())
       )
-    : Object.entries(localHotkeys);
+    : Object.entries(flatHotkeys);
 
   // Helper function to convert camelCase or snake_case to readable format
   function getReadableName(key: string): string {
@@ -110,55 +150,59 @@
 
 <svelte:window on:keydown={handleKeyDown} />
 
-<div class="hotkeys-container">
-  <div class="hotkeys-header">
+<div class="block">
+  <div class="header">
     <h2>Keyboard Shortcuts</h2>
-    <div class="search-reset">
-      <div class="search-container">
-        <input
-          type="text"
-          placeholder="Search shortcuts..."
-          bind:value={searchTerm}
-        />
-      </div>
-      <button class="reset-button" on:click={resetAllHotkeys}>
-        Reset All
-      </button>
-    </div>
+    <button class="cta-button cancel" on:click={resetAllHotkeys}>
+      <RefreshCcw size={18} />
+      Reset All
+    </button>
   </div>
 
-  <div class="hotkeys-list">
+  <div class="bar">
+    <input
+      type="text"
+      placeholder="Search shortcuts..."
+      bind:value={searchTerm}
+      class="input-field"
+    />
+  </div>
+
+  <div class="block inner">
     {#each filteredHotkeys as [key, value]}
-      <div class="hotkey-item">
-        <div class="hotkey-name">{getReadableName(key)}</div>
-        <div class="hotkey-actions">
-          {#if editing === key}
-            <div class="hotkey-recording">
-              <input
-                type="text"
-                readonly
-                placeholder="Press keys..."
-                value={currentKey}
-                class="recording-input"
-              />
-              <div class="recording-actions">
-                <button on:click={saveHotkey} class="save-button">✓</button>
-                <button on:click={cancelRecording} class="cancel-button"
-                  >✕</button
+      <div class="item-container">
+        <div class="list-item">
+          <div class="item-content">
+            <span>{getReadableName(key)}</span>
+
+            {#if editing === key}
+              <div class="key-edit-container editing">
+                <input
+                  type="text"
+                  readonly
+                  placeholder="Press keys..."
+                  value={currentKey}
+                  class="input-field"
+                />
+                <button on:click={saveHotkey} class="cta-button small">✓</button
+                >
+                <button
+                  on:click={cancelRecording}
+                  class="cta-button small cancel">✕</button
                 >
               </div>
-            </div>
-          {:else}
-            <div class="hotkey-shortcut">
-              <span class="key-combo">{value}</span>
-              <button
-                on:click={() => startRecording(key as keyof HotKeys)}
-                class="edit-button"
-              >
-                Edit
-              </button>
-            </div>
-          {/if}
+            {:else}
+              <div class="key-display">
+                <span class="key-value">{value}</span>
+                <button
+                  on:click={() => startRecording(key)}
+                  class="cta-button small"
+                >
+                  Edit
+                </button>
+              </div>
+            {/if}
+          </div>
         </div>
       </div>
     {/each}
@@ -166,167 +210,59 @@
 </div>
 
 <style>
-  .hotkeys-container {
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    padding: 0 16px;
-  }
-
-  .hotkeys-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 16px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid var(--color-border, #444);
-  }
-
-  .hotkeys-header h2 {
-    margin: 0;
-    font-size: 1.5rem;
-  }
-
-  .search-reset {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .search-container {
+  .item-container {
     position: relative;
+    margin: 2px 0;
   }
 
-  .search-container input {
-    padding: 8px 12px;
+  .list-item {
+    display: flex;
+    align-items: center;
+    padding: 8px;
     border-radius: 4px;
-    border: 1px solid var(--color-border, #444);
-    background-color: var(--color-input-bg, #333);
-    color: var(--color-text, #fff);
-    width: 200px;
+    background-color: var(--primary-bg-color);
+    transition: all 0.2s;
   }
 
-  .reset-button {
-    background-color: var(--color-warning, #b33);
-    color: white;
-    border: none;
-    border-radius: 4px;
-    padding: 8px 12px;
-    cursor: pointer;
-    font-weight: 500;
-    transition: background-color 0.2s;
-  }
-
-  .reset-button:hover {
-    background-color: var(--color-warning-hover, #c44);
-  }
-
-  .hotkeys-list {
-    flex: 1;
-    overflow-y: auto;
-    border: 1px solid var(--color-border, #444);
-    border-radius: 4px;
-    background-color: var(--color-bg-secondary, #222);
-  }
-
-  .hotkey-item {
+  .item-content {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 10px 16px;
-    border-bottom: 1px solid var(--color-border, #333);
+    flex-grow: 1;
+    cursor: pointer;
   }
 
-  .hotkey-item:last-child {
-    border-bottom: none;
-  }
-
-  .hotkey-name {
-    flex: 1;
-    font-weight: 500;
-  }
-
-  .hotkey-actions {
-    display: flex;
-    align-items: center;
-    min-width: 200px;
-    justify-content: flex-end;
-  }
-
-  .hotkey-shortcut {
+  .key-edit-container {
     display: flex;
     align-items: center;
     gap: 8px;
+    margin-left: 16px;
   }
 
-  .key-combo {
+  .editing {
+    background-color: var(--accent-color);
     padding: 4px 8px;
-    background-color: var(--color-bg-accent, #333);
+    border-radius: 4px;
+  }
+
+  .key-display {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: 16px;
+  }
+
+  .key-value {
+    padding: 4px 8px;
+    background-color: var(--secondary-bg);
     border-radius: 4px;
     font-family: monospace;
-    border: 1px solid var(--color-border, #555);
     min-width: 80px;
     text-align: center;
+    border: 1px solid var(--topbar-color);
   }
 
-  .edit-button {
-    background-color: var(--color-accent, #0078d7);
-    color: white;
-    border: none;
-    border-radius: 4px;
-    padding: 4px 8px;
-    cursor: pointer;
-    transition: background-color 0.2s;
-  }
-
-  .edit-button:hover {
-    background-color: var(--color-hover, #2089e8);
-  }
-
-  .hotkey-recording {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .recording-input {
-    padding: 4px 8px;
-    border: 1px solid var(--color-accent, #0078d7);
-    border-radius: 4px;
-    background-color: var(--color-input-bg, #333);
-    color: var(--color-text, #fff);
-    width: 150px;
-  }
-
-  .recording-actions {
-    display: flex;
-    gap: 4px;
-  }
-
-  .save-button,
-  .cancel-button {
-    border: none;
-    border-radius: 4px;
-    padding: 4px 8px;
-    cursor: pointer;
-    transition: background-color 0.2s;
-  }
-
-  .save-button {
-    background-color: var(--color-success, #2a2);
-    color: white;
-  }
-
-  .save-button:hover {
-    background-color: var(--color-success-hover, #3b3);
-  }
-
-  .cancel-button {
-    background-color: var(--color-warning, #b33);
-    color: white;
-  }
-
-  .cancel-button:hover {
-    background-color: var(--color-warning-hover, #c44);
+  .block {
+    height: calc(100vh - 160px);
   }
 </style>

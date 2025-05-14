@@ -560,6 +560,10 @@ grid-container.selected {
   /* Full viewport height */
 }
 
+.block.options {
+  height: calc(100vh - 200px);
+}
+
 .block.inner {
   background-color: var(--primary-bg);
   padding: 1rem;

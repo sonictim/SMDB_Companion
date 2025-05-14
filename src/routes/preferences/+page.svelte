@@ -17,8 +17,9 @@
   import TagsComponent from "../../components/prefs/Tags.svelte";
   import SelectComponent from "../../components/prefs/Select.svelte";
   import ColorsComponent from "../../components/prefs/Colors.svelte";
-  // import HotkeysComponent from "../../components/prefs/Hotkeys.svelte";
+  import HotkeysComponent from "../../components/prefs/Hotkeys.svelte";
   import { preferencesStore } from "../../stores/preferences";
+  import { hotkeysStore } from "../../stores/hotkeys";
   import {
     presetsStore,
     loadPreset,
@@ -39,8 +40,8 @@
     { id: "matchCriteria", label: "Match Criteria", icon: ListCheck },
     { id: "preservationOrder", label: "Preservation Order", icon: ListOrdered },
     { id: "audiosuiteTags", label: "Tags Manager", icon: Tags },
-    { id: "colors", label: "Colors", icon: Palette },
     { id: "hotkeys", label: "Keyboard Shortcuts", icon: Keyboard },
+    { id: "colors", label: "Colors", icon: Palette },
   ];
 
   onMount(async () => {
@@ -85,15 +86,27 @@
             try {
               const latestPrefs = JSON.parse(storedPrefs);
               preferencesStore.set(latestPrefs);
-
-              // Update any UI elements that depend on preferences
-              // e.g., CSS variables
             } catch (error) {
               console.error("Error parsing stored preferences:", error);
             }
           }
         }
       );
+
+      // Listen for hotkey changes to sync between windows
+      await listen("hotkey-change", async () => {
+        console.log("Hotkey change detected in preferences window");
+        // Reload hotkeys from localStorage
+        const storedHotkeys = localStorage.getItem("hotkeys");
+        if (storedHotkeys) {
+          try {
+            const latestHotkeys = JSON.parse(storedHotkeys);
+            hotkeysStore.set(latestHotkeys);
+          } catch (error) {
+            console.error("Error parsing hotkeys:", error);
+          }
+        }
+      });
     } catch (error) {
       console.error("Error setting up listeners:", error);
     }
@@ -144,8 +157,8 @@
         <SelectComponent />
       {:else if activeTab === "colors"}
         <ColorsComponent />
-        <!-- {:else if activeTab === "hotkeys"}
-        <HotkeysComponent /> -->
+      {:else if activeTab === "hotkeys"}
+        <HotkeysComponent />
       {/if}
     </div>
 
@@ -155,7 +168,7 @@
         on:click={handleSavePreset}
         disabled={!newPreset}
       >
-        Save:
+        Save Preset
       </button>
       <input
         type="text"
