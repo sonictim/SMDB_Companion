@@ -11,7 +11,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { writable, get } from 'svelte/store';
 import { preferencesStore, toggle_ignore_filetype, toggle_remove_records_from, updateEraseFiles, toggle_fetch_waveforms, toggle_store_waveforms, toggle_strip_dual_mono, updateWaveformSearchType } from './preferences';
 import { presetsStore } from './presets';
-import { openDatabase, closeDatabase, recentDbStore, setDatabase } from './database';
+import { openDatabase, closeDatabase, recentDbStore, setDatabase, databaseStore } from './database';
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Window } from '@tauri-apps/api/window';
 import { loadPreset } from './presets';
@@ -35,7 +35,19 @@ import { loadPreset } from './presets';
     filtersStore,
     manualFiltersStore,
   } from "../stores/results";
-import { show } from "@tauri-apps/api/app";
+    import {
+    isSearching,
+    searchProgressStore,
+    initializeSearchListeners,
+    toggleSearch, // Import the moved functions
+    search,
+    cancelSearch,
+  } from "../stores/status";
+//   import { register } from '@tauri-apps/plugin-global-shortcut';
+
+// await register('CommandOrControl+Enter', () => {
+//   console.log('Shortcut triggered');
+// });
 
 
 export async function initializeMenu() {
@@ -448,6 +460,7 @@ async function setupMenu() {
         id: "showToolbars",
         text: "Show Toolbars",
         checked: get(preferencesStore).showToolbars,
+        accelerator: ",",
         action: () => {preferencesStore.update(prefs => ({
           ...prefs,
           showToolbars: !prefs.showToolbars
@@ -527,12 +540,14 @@ const algoMenu = await Submenu.new({
       {
         id: "settings",
         text: "Settings...",
+        accelerator: "CmdOrCtrl+,",
         action: togglePreferencesWindow,
       },
              separator,
         {
           id: "registration",
           text: "Registration",
+          accelerator: "5",
           action: () => {
             showRegistrationView();
           },
@@ -556,27 +571,47 @@ const algoMenu = await Submenu.new({
       {
         id: "open",
         text: "Open Database",
+        accelerator: "CmdOrCtrl+O",
         action: () => openDatabase(false),
       },
-      { id: "close", text: "Close Database", action: () => closeDatabase() },
+      { id: "close", 
+        text: "Close Database",
+        accelerator: "CmdOrCtrl+W", 
+        action: () => closeDatabase() },
       
       await Submenu.new({
         text: "Open Recent",
         items: recentdb
-          .filter(db => db.name !== null && db.path !== null  && db.name !== "Select Database")
-          .map((db) => {
+          .filter(db => db.name !== null && db.path !== null && db.name !== "Select Database")
+          .map((db, index) => {
             return {
               id: db.name!,
               text: db.name!,
+              // Add accelerator only to the first (most recent) item
+              accelerator: index === 0 ? "CmdOrCtrl+Shift+O" : undefined,
               action: async () => {
                 await setDatabase(db.path!, false);
               }
             };
           })
-
       }),
       
       
+      separator,
+      {
+        id: "searchDatabase",
+        text: "Search Database",
+        accelerator: "CmdOrCtrl+Enter",
+        enabled: !get(isSearching) && get(databaseStore) !== null,
+        action: () => {search()},
+      },
+      {
+        id: "cancelSearch",
+        text: "Cancel Search",
+        accelerator: "Esc",
+        enabled: get(isSearching),
+        action: () => {cancelSearch()},
+      },
       separator,
       loadPresetMenu,
       separator,
@@ -591,27 +626,32 @@ const selectionMenu = await Submenu.new({
       {
         id: "checkSelected",
         text: "Check Selected",
+        accelerator: "C",
         action: () => {checkSelected()}
       },
       {
         id: "uncheckSelected",
         text: "Uncheck Selected",
+        accelerator: "U",
         action: () => {uncheckSelected()}
       },
       {
         id: "toggleSelected",
         text: "Toggle Selected",
+        accelerator: "T",
         action: () => {toggleChecksSelected()}
       },
       separator,
       {
         id: "invertSelected",
         text: "Invert Selection",
+        accelerator: "I",
         action: () => {invertSelected()}
       },
       {
         id: "clearSelected",
         text: "Clear Selection",
+        accelerator: "delete",
         action: () => {clearSelected()}
 
       },
@@ -636,30 +676,35 @@ const selectionMenu = await Submenu.new({
        {
         id: "checkSelected",
         text: "Check Selected",
+        accelerator: "C",
         action: () => {checkSelected()}
       },
       {
         id: "uncheckSelected",
         text: "Uncheck Selected",
+        accelerator: "U",
         action: () => {uncheckSelected()}
       },
       {
         id: "toggleSelected",
         text: "Toggle Selected",
+        accelerator: "t",
         action: () => {toggleChecksSelected()}
       },
       separator,
       {
         id: "invertSelected",
         text: "Invert Selection",
+        accelerator: "I",
         action: () => {invertSelected()}
       },
       {
         id: "clearSelected",
         text: "Clear Selection",
+        accelerator: "Backspace",
         action: () => {clearSelected()}
-
       },
+    
       separator,
      
       textEditMenu,
@@ -680,24 +725,28 @@ const selectionMenu = await Submenu.new({
       await CheckMenuItem.new({
         id: "search-view",
         text: "Search",
+        accelerator: "1",
         checked: viewState === "search",
         action: showSearchView,
       }),
       await CheckMenuItem.new({
         id: "results-view",
         text: "Results",
+        accelerator: "2",
         checked: viewState === "results",
         action: showResultsView,
       }),
       await CheckMenuItem.new({
         id: "split-view",
         text: "Split",
+        accelerator: "3",
         checked: viewState === "split",
         action: showSplitView,
       }),
       await CheckMenuItem.new({
         id: "nofrills-view",
         text: "No Frills",
+        accelerator: "4",
         checked: viewState === "nofrills",
         action: showNoFrillsView,
       }),
@@ -731,6 +780,7 @@ const selectionMenu = await Submenu.new({
       {
         id: "manual",
         text: "User Manual",
+        accelerator: "F1",
         action: () => openManual(),
       },
       licenseMenu,

@@ -142,7 +142,7 @@
 
   // Clean up on component destruction
   onDestroy(() => {
-    if (view === "results") showSearchView;
+    if (view === "results") showSearchView();
     if (presetChangedListener) presetChangedListener();
     if (preferencesChangedListener) preferencesChangedListener();
   });

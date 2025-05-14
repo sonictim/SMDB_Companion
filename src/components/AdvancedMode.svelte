@@ -31,7 +31,6 @@
     toggleSearch,
   } from "../stores/status";
 
-  import { metadataStore } from "../stores/metadata";
   import { ask, message } from "@tauri-apps/plugin-dialog";
   import { createVirtualizer } from "@tanstack/svelte-virtual";
 
@@ -521,7 +520,13 @@
     {#if $resultsStore.length > 0}
       <button
         class="nav-link"
-        on:click={removeRecords}
+        on:click={() => {
+          if (selectedItems.size > 0) {
+            removeSelectedRecords();
+          } else {
+            removeRecords();
+          }
+        }}
         title="Remove Duplicates"
       >
         <div class="flex items-center gap-2">

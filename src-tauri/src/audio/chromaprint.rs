@@ -9,6 +9,12 @@ impl FileRecord {
     pub fn get_chromaprint_fingerprint(&mut self) -> Option<String> {
         let fp = ffcodex_lib::get_fingerprint(self.get_filepath()).ok();
         if let Some(fingerprint) = fp {
+            // println!(
+            //     "Generated fingerprint for: {} size; {}\n{}",
+            //     self.get_filename(),
+            //     fingerprint.len(),
+            //     fingerprint
+            // );
             if !fingerprint.is_empty() && fingerprint != "FAILED" {
                 self.fingerprint = Some(Arc::from(fingerprint.as_str()));
                 return Some(fingerprint);
