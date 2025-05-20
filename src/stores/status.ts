@@ -7,7 +7,7 @@ import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { preferencesStore } from './preferences';
 import { resultsStore } from './results';
-import { viewStore, showResultsView } from './menu';
+import { viewStore, showResultsView, isRemove } from './menu';
 
 
 export const isSearching = writable(false);
@@ -97,6 +97,7 @@ export async function initializeSearchListeners(): Promise<void> {
  */
 export async function toggleSearch(): Promise<boolean> {
     console.log("Toggle Search");
+    isRemove.set(true);
     const currentSearching = get(isSearching);
     
     if (!currentSearching) {

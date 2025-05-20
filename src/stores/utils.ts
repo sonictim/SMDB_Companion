@@ -1,6 +1,8 @@
 console.log('Loading module:', 'utils.ts');  // Add to each file
 
   import { invoke } from "@tauri-apps/api/core";
+  import { basename, extname } from "@tauri-apps/api/path";
+
 import { getAllWindows, Window } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { writable } from 'svelte/store';
@@ -191,4 +193,11 @@ export async function checkForUpdates(): Promise<{
     // Force a re-render by creating a new reference
     preferencesStore.update(prefs => ({...prefs}));
     console.log("Preferences refreshed");
+  }
+
+
+  export async function getFilenameWithoutExtension(fullPath: string) {
+    const name = await basename(fullPath); // Extracts filename with extension
+    const ext = await extname(fullPath); // Extracts extension
+    return name.replace(ext, ""); // Removes extension
   }

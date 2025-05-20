@@ -10,35 +10,26 @@
     CheckSquare,
     NotebookPenIcon,
   } from "lucide-svelte";
-  import { invoke } from "@tauri-apps/api/core";
   import { onMount, onDestroy } from "svelte";
   import { databaseStore, openSqliteFile } from "../stores/database";
   $: database = $databaseStore;
 
-  export let isRemove: boolean;
-
-  import { viewStore, showResultsView } from "../stores/menu";
-
   let isFinding = false;
 
-  import type { Algorithm, Preferences, FileRecord } from "../stores/types";
+  import {
+    getAlgorithmTooltip,
+    getAlgoClass,
+    toggleAlgorithm,
+  } from "../stores/algorithms";
   import { preferencesStore } from "../stores/preferences";
-  import { resultsStore } from "../stores/results";
-  import { metadataStore } from "../stores/metadata";
+  import { metadataStore, findMetadata } from "../stores/metadata";
   import {
     isSearching,
     searchProgressStore,
     initializeSearchListeners,
     toggleSearch, // Import the moved functions
   } from "../stores/status";
-  import { get } from "svelte/store";
-  import { basename, extname } from "@tauri-apps/api/path";
-
-  async function getFilenameWithoutExtension(fullPath: string) {
-    const name = await basename(fullPath); // Extracts filename with extension
-    const ext = await extname(fullPath); // Extracts extension
-    return name.replace(ext, ""); // Removes extension
-  }
+  import { getFilenameWithoutExtension } from "../stores/utils";
 
   async function getCompareDb() {
     try {
@@ -65,38 +56,6 @@
     $preferencesStore?.algorithms?.find((a) => a.id === "basic")?.enabled ||
     false;
 
-  function getAlgoClass(algo: { id: string }, algorithms: any[]) {
-    if (
-      (algo.id === "audiosuite" || algo.id === "filename") &&
-      !algorithms.find((a) => a.id === "basic")?.enabled
-    ) {
-      return "inactive";
-    }
-    return "";
-  }
-
-  async function replaceMetadata() {
-    isRemove = false;
-    isFinding = true;
-    const metaValue = get(metadataStore);
-    console.log(
-      `Finding: ${metaValue.find}, Replacing: ${metaValue.replace}, Case Sensitive: ${metaValue.case_sensitive}, Column: ${metaValue.column}`
-    );
-
-    await invoke<FileRecord[]>("find", {
-      find: metaValue.find,
-      column: metaValue.column,
-      caseSensitive: metaValue.case_sensitive,
-      pref: get(preferencesStore),
-    })
-      .then((result) => {
-        console.log(result);
-        resultsStore.set(result); // ✅ Store the results in session storage
-      })
-      .catch((error) => console.error(error));
-    isFinding = false;
-    showResultsView();
-  }
   function toggleCaseSensitivity() {
     metadataStore.update((meta) => ({
       ...meta,
@@ -104,31 +63,11 @@
     }));
   }
 
-  function toggleAlgorithm(id: string) {
-    preferencesStore.update((prefs) => ({
-      ...prefs,
-      algorithms: prefs.algorithms.map((algo) =>
-        algo.id === id ? { ...algo, enabled: !algo.enabled } : algo
-      ),
-    }));
-  }
-
-  // Handle search tab navigation after search completion
-  // $: {
-  //   // When search completes and returns results, navigate to results tab
-  //   if (!$isSearching && $resultsStore.length > 0) {
-  //     showResultsView();
-  //   }
-  // }
-
-  // Setup event listener when component mounts
   onMount(() => {
-    // Initialize the listeners only once in the application lifecycle
     initializeSearchListeners().then(() => {
       console.log("Search component mounted, isSearching:", $isSearching);
     });
 
-    // Add debugging to track isSearching changes
     const unsubscribe = isSearching.subscribe((value) => {
       console.log("isSearching changed:", value);
     });
@@ -138,28 +77,14 @@
     };
   });
 
-  function getAlgorithmTooltip(id: string): string {
-    const tooltips: Record<string, string> = {
-      basic: "Finds duplicates by comparing Match Criteria set in Preferences.",
-      filename:
-        "Will attempt to remove extra letters and numbers (.1.4.21.M.wav) from the filename",
-      audiosuite:
-        "Searches for Protools Audiosuite tags in the filename and checks for orginal file.",
-      duration: "Files less than the set duration will be marked for removal.",
-      waveform:
-        "Compares audio waveform patterns to find similar sounds.  This may take a while.",
-      dbcompare: "Compares against another database to find duplicates.",
-      invalidpath: "Files with invalid paths will be marked for removal.",
-      filetags:
-        "Filenames containting tags in this list will be marked for removal.",
-      dual_mono:
-        "Files where all channels contain identical audio will be identified.  User can choose to remove extra channels in results panel.",
-    };
-
-    return tooltips[id] || "No description available";
-  }
   function checkAnyAlgorithmEnabled() {
     return $preferencesStore.algorithms.some((algo) => algo.enabled);
+  }
+
+  function searchForMetadata() {
+    isFinding = true;
+    findMetadata();
+    isFinding = false;
   }
 </script>
 
@@ -308,7 +233,7 @@
         <button
           class="cta-button"
           style="width: 125px"
-          on:click={replaceMetadata}
+          on:click={searchForMetadata}
         >
           <SearchCode size={18} />
           <span> Find Metadata </span>

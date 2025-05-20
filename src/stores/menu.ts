@@ -6,7 +6,7 @@ import {
   Submenu,
   CheckMenuItem,
 } from "@tauri-apps/api/menu";
-import { createLocalStore } from "./utils";
+import { createLocalStore, createSessionStore } from "./utils";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { writable, get } from 'svelte/store';
 import { preferencesStore, toggle_ignore_filetype, toggle_remove_records_from, updateEraseFiles, toggle_fetch_waveforms, toggle_store_waveforms, toggle_strip_dual_mono, updateWaveformSearchType } from './preferences';
@@ -16,6 +16,7 @@ import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Window } from '@tauri-apps/api/window';
 import { loadPreset } from './presets';
 import { hotkeysStore, defaultHotKeys, getHotkey } from './hotkeys';
+import {removeRecords} from './remove';
   import {
     resultsStore,
     filteredItemsStore,
@@ -44,14 +45,7 @@ import { hotkeysStore, defaultHotKeys, getHotkey } from './hotkeys';
     search,
     cancelSearch,
   } from "../stores/status";
-//   import { register } from '@tauri-apps/plugin-global-shortcut';
 
-// await register('CommandOrControl+Enter', () => {
-//   console.log('Shortcut triggered');
-// });
-
-
-// Function to immediately refresh the menu
 export async function refreshMenu() {
   try {
     await setupMenu();
@@ -67,22 +61,18 @@ export async function initializeMenu() {
     menuStore.update(state => ({ ...state, isReady: false, error: null }));
     await setupMenu();
     
-    // Create subscriptions to both stores
     const prefUnsubscribe = preferencesStore.subscribe(async () => {
       await setupMenu();
     });
     
-    // Add subscription to recentDbStore
     const recentDbUnsubscribe = recentDbStore.subscribe(async () => {
       await setupMenu();
     });
     
-    // Also subscribe to presets store to update preset menu items
     const presetsUnsubscribe = presetsStore.subscribe(async () => {
       await setupMenu();
     });
     
-    // Subscribe to hotkeys store to update accelerators when hotkeys change
     const hotkeysUnsubscribe = hotkeysStore.subscribe(async () => {
       await setupMenu();
     });
@@ -600,12 +590,6 @@ const algoMenu = await Submenu.new({
         accelerator: getHotkey("openDatabase"),
         action: () => openDatabase(false),
       },
-      { id: "close", 
-        text: "Close Database",
-        accelerator: getHotkey("closeDatabase"),
-        enabled: get(databaseStore) !== null, 
-        action: () => closeDatabase() },
-      
       await Submenu.new({
         text: "Open Recent",
         items: recentdb
@@ -622,6 +606,12 @@ const algoMenu = await Submenu.new({
             };
           })
       }),
+      { id: "close", 
+        text: "Close Database",
+        accelerator: getHotkey("closeDatabase"),
+        enabled: get(databaseStore) !== null, 
+        action: () => closeDatabase() },
+      
       
       
       separator,
@@ -638,6 +628,16 @@ const algoMenu = await Submenu.new({
         accelerator: getHotkey("cancelSearch"),
         enabled: get(isSearching),
         action: () => {cancelSearch()},
+      },
+      {
+        id: "removeRecords",
+        text: "Remove Records",
+        accelerator: getHotkey("removeRecords"),
+        enabled: get(isRemove) && get(databaseStore) !== null,
+        action: () => {removeRecords()},
+
+
+
       },
       separator,
       loadPresetMenu,
@@ -836,6 +836,7 @@ const initialView = (() => {
 })();
 
 export const viewStore = createLocalStore<string>("view", initialView);
+export const isRemove = createSessionStore<boolean>("isRemove", true);
 
 // View state management function
 export function showSearchView() {

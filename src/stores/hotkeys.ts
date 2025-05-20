@@ -4,30 +4,11 @@ import { get } from "svelte/store";
 import type { Hash } from "lucide-svelte";
 import { emit } from '@tauri-apps/api/event';
 
-export const OldDefaultHotKeys: HotKeys = {
-  settings: "CmdOrCtrl+,",
-  showToolbars: "CmdOrCtrl+T", // Fixed: was just "," before
-  showSearchView: "1",
-  showResultsView: "2", 
-  showSplitView: "3",
-  showNoFrillsView: "4",
-  showRegistration: "5",
-  openDatabase: "CmdOrCtrl+O",
-  openRecent: "CmdOrCtrl+Shift+O",
-  closeDatabase: "CmdOrCtrl+W",
-  searchDatabase: "CmdOrCtrl+Enter",
-  cancelSearch: "Esc",
-  checkSelected: "C",
-  uncheckSelected: "U",
-  toggleSelected: "T",
-  invertSelected: "I",
-  clearSelected: "Backspace",
-  helpMenu: "F1"
-}
+
 
 export const defaultHotKeys: HashMap[] = [
   {"settings": "CmdOrCtrl+,"},
-  {"showToolbars": "CmdOrCtrl+T"},
+  {"showToolbars": ","},
   {"showSearchView": "1"},
   {"showResultsView": "2"},
   {"showSplitView": "3"},
@@ -38,6 +19,7 @@ export const defaultHotKeys: HashMap[] = [
   {"closeDatabase": "CmdOrCtrl+W"},
   {"searchDatabase": "CmdOrCtrl+Enter"},
   {"cancelSearch": "Esc"},
+  {"removeRecords": "CmdOrCtrl+Backspace"},
   {"checkSelected": "C"},
   {"uncheckSelected": "U"},
   {"toggleSelected": "T"},
@@ -47,6 +29,33 @@ export const defaultHotKeys: HashMap[] = [
 ]
 
 export const hotkeysStore = createLocalStore<HashMap[]>('hotkeys', defaultHotKeys);
+
+export function checkForNewDefaults(): void {
+    const store = get(hotkeysStore);
+    
+    // Create a map of existing hotkeys for quick lookup
+    const existingHotkeysMap = new Map();
+    store.forEach(item => {
+        const key = Object.keys(item)[0];
+        existingHotkeysMap.set(key, item[key]);
+    });
+    
+    // Start with the current store values
+    const updatedHotkeys = [...store];
+    
+    // Add any new default hotkeys that don't exist in the current store
+    defaultHotKeys.forEach(defaultItem => {
+        const defaultKey = Object.keys(defaultItem)[0];
+        if (!existingHotkeysMap.has(defaultKey)) {
+            // This is a new hotkey that doesn't exist in the store
+            updatedHotkeys.push(defaultItem);
+            console.log(`Added new default hotkey: ${defaultKey} -> ${defaultItem[defaultKey]}`);
+        }
+    });
+    
+    hotkeysStore.set(updatedHotkeys);
+}
+
 
 // Helper function to get a hotkey value by key name
 export function getHotkey(key: string): string {

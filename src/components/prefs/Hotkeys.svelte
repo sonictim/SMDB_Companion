@@ -5,6 +5,7 @@
     getHotkey,
     setHotkey,
     notifyHotkeyChange,
+    checkForNewDefaults,
   } from "../../stores/hotkeys";
   import { onMount } from "svelte";
   import { OctagonX, RefreshCcw } from "lucide-svelte";
@@ -42,6 +43,7 @@
 
   // Subscribe to hotkeys store changes
   onMount(() => {
+    checkForNewDefaults();
     const unsubscribe = hotkeysStore.subscribe((value: HashMap[]) => {
       localHotkeys = JSON.parse(JSON.stringify(value)); // Deep copy of array
       flatHotkeys = convertToFlatObject(localHotkeys); // Convert to flat object for UI

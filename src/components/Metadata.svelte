@@ -9,14 +9,12 @@
     NotebookPenIcon,
   } from "lucide-svelte";
 
-  export let isRemove: boolean;
-
   import type { Preferences } from "../stores/types";
   import { preferencesStore } from "../stores/preferences";
   import { get } from "svelte/store";
   let pref: Preferences = get(preferencesStore);
   import { databaseStore } from "../stores/database";
-  import { viewStore } from "../stores/menu";
+  import { viewStore, isRemove } from "../stores/menu";
   $: database = $databaseStore;
   $: view = $viewStore;
 
@@ -26,7 +24,7 @@
   let selectedColumn = "FilePath"; // Default option
 
   async function replaceMetadata() {
-    isRemove = false;
+    isRemove.set(false);
     // Your logic for replacing metadata goes here
     console.log(
       `Finding: ${findText}, Replacing: ${replaceText}, Case Sensitive: ${isCaseSensitive}, Column: ${selectedColumn}`

@@ -32,7 +32,6 @@
   import type { Preset } from "../stores/types";
 
   // Component state
-  export let isRemove = true;
   export let isRegistered = false;
   let appInitialized = false;
   let initError: unknown = null;
@@ -172,7 +171,7 @@
 
   // Clean up on component destruction
   onDestroy(() => {
-    if (view === "results") showSearchView();
+    if (view === "results") view = "search";
     if (presetChangedListener) presetChangedListener();
     if (preferencesChangedListener) preferencesChangedListener();
   });
@@ -211,26 +210,23 @@
     <!-- Main Content Area -->
     <main class="content">
       {#if view === "metadata"}
-        <MetadataComponent bind:isRemove />
+        <MetadataComponent />
       {:else if view === "registration"}
         <RegisterOnlyComponent bind:isRegistered />
       {:else if view === "split"}
         <div class="grid">
-          <SearchSkinnyComponent bind:isRemove />
+          <SearchSkinnyComponent />
           {#if isRegistered}
-            <ResultsSkinnyComponent bind:isRemove />
+            <ResultsSkinnyComponent />
           {:else}
             <RegisterComponent bind:isRegistered />
           {/if}
         </div>
       {:else if view === "search"}
-        <SearchComponent bind:isRemove />
+        <SearchComponent />
       {:else if view === "results"}
         {#if isRegistered}
-          <ResultsComponent
-            {isRemove}
-            selectedDb={$databaseStore?.path || null}
-          />
+          <ResultsComponent selectedDb={$databaseStore?.path || null} />
         {:else}
           <RegisterComponent bind:isRegistered />
         {/if}

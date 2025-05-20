@@ -2,6 +2,7 @@ console.log('Loading module:', 'algorithms.ts');  // Add to each file
 
 import type { Algorithm } from './types';
 import { preferencesStore } from './preferences';
+import { get } from 'svelte/store';
 
 export const defaultAlgorithms: Algorithm[] = [
   { id: 'basic', name: 'Duplicate Search', enabled: true },
@@ -53,4 +54,15 @@ export const defaultAlgorithms: Algorithm[] = [
     };
 
     return tooltips[id] || "No description available";
+  }
+
+  export function checkAnyAlgorithmEnabled() {
+    const p = get(preferencesStore);
+    return p.algorithms.some((algo) => algo.enabled);
+  }
+
+  export function algoEnabled(algo: string): boolean {
+    const pref = get(preferencesStore);
+    const algorithm = pref.algorithms.find((option) => option.id === algo);
+    return algorithm?.enabled || false;
   }
