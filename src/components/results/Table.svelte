@@ -69,6 +69,7 @@
     previouslySelectedItems = new Set(selectedItems);
 
     // Check if Option/Alt key is pressed to determine if we're in deselect mode
+    // When Shift+Alt is used, we still want deselect mode behavior for drags
     isDeselectMode = event.altKey;
 
     // Set up global mouse move and mouse up handlers
@@ -237,7 +238,7 @@
           view: window,
         });
 
-        // Use the original toggleSelect function which handles shift-click correctly
+        // Use the toggleSelect function which handles all modifier combinations
         toggleSelect(itemClicked, clickEvent);
       }
     }
@@ -394,6 +395,29 @@
     // Clean up any event listeners
     window.removeEventListener("mousemove", handleMouseMove);
     window.removeEventListener("mouseup", handleMouseUp);
+    window.removeEventListener("keydown", handleKeyDown);
+    window.removeEventListener("keyup", handleKeyUp);
+  });
+
+  // Track Alt+Shift key state for UI feedback
+  let isAltShiftPressed = false;
+
+  function handleKeyDown(event: KeyboardEvent) {
+    if (event.altKey && event.shiftKey) {
+      isAltShiftPressed = true;
+    }
+  }
+
+  function handleKeyUp(event: KeyboardEvent) {
+    if (!event.altKey || !event.shiftKey) {
+      isAltShiftPressed = false;
+    }
+  }
+
+  onMount(() => {
+    // Add keyboard event listeners
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
   });
 
   // Helper function to safely access record properties
@@ -553,7 +577,9 @@
     >
       {#each $rowVirtualizer.getVirtualItems() as virtualRow (virtualRow.index)}
         <div
-          class="virtual-row"
+          class="virtual-row {isAltShiftPressed
+            ? 'alt-shift-range-deselect'
+            : ''}"
           data-index={virtualRow.index}
           style="transform: translateY({virtualRow.start}px); height: {virtualRow.size}px; width: {totalWidth};"
         >
@@ -868,5 +894,10 @@
   /* Add a class that can be applied when in deselect mode */
   .deselect-mode {
     cursor: not-allowed;
+  }
+
+  /* Specific cursor for Alt+Shift range deselection */
+  .alt-shift-range-deselect {
+    cursor: no-drop;
   }
 </style>

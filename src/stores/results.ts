@@ -144,8 +144,8 @@ export function toggleSelect(item: FileRecord, event: MouseEvent): void {
   selectedItemsStore.update(currentSelected => {
     const newSelected = new Set(currentSelected);
     
-    if (event.altKey) {
-      // Alt key: toggle between selecting all and selecting none
+    // Alt key without Shift: toggle between selecting all and selecting none
+    if (event.altKey && !event.shiftKey) {
       if (newSelected.size > 0) {
         newSelected.clear();
       } else {
@@ -154,13 +154,26 @@ export function toggleSelect(item: FileRecord, event: MouseEvent): void {
       return newSelected;
     }
     
-    // Handle Shift click (range selection)
+    // Handle Shift click for range operations
     if (event.shiftKey && get(lastSelectedIndexStore) !== -1) {
       const start = Math.min(get(lastSelectedIndexStore), currentIndex);
       const end = Math.max(get(lastSelectedIndexStore), currentIndex);
       
-      for (let i = start; i <= end; i++) {
-        newSelected.add(filtered[i].id);
+      // Option/Alt + Shift + click: unselect range
+      if (event.altKey) {
+        for (let i = start; i <= end; i++) {
+          newSelected.delete(filtered[i].id);
+        }
+        // Always update the last selected index for both select and deselect operations
+        lastSelectedIndexStore.set(currentIndex);
+      } 
+      // Regular Shift + click: select range
+      else {
+        for (let i = start; i <= end; i++) {
+          newSelected.add(filtered[i].id);
+        }
+        // Always update the last selected index for both select and deselect operations
+        lastSelectedIndexStore.set(currentIndex);
       }
     } else {
       // Normal click: toggle single selection
@@ -168,8 +181,9 @@ export function toggleSelect(item: FileRecord, event: MouseEvent): void {
         newSelected.delete(item.id);
       } else {
         newSelected.add(item.id);
-        lastSelectedIndexStore.set(currentIndex);
       }
+      // Always update the last selected index for all click operations
+      lastSelectedIndexStore.set(currentIndex);
     }
     
     return newSelected;
