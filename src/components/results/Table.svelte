@@ -28,6 +28,7 @@
   let lastDragIndex = -1;
   let dragSelectionState: Map<number, boolean> = new Map();
   let previouslySelectedItems: Set<number> = new Set();
+  let isDeselectMode = false; // Flag to track if we're in deselect mode (Option/Alt key)
 
   let columnConfigs = [
     { minWidth: 10, width: 30, name: "checkbox", header: "✔" },
@@ -49,38 +50,76 @@
 
   let containerElement: HTMLElement;
 
+  // Track mousedown for possible drag operation
+  let mouseDownTime = 0;
+  let mouseDownPosition = { x: 0, y: 0 };
+
   // Drag selection functions
   function handleMouseDown(rowIndex: number, event: MouseEvent) {
     if (!enableSelections || event.button !== 0) return; // Only handle left mouse button
 
-    isDragging = true;
+    // Store the time and position when mouse is pressed down
+    mouseDownTime = Date.now();
+    mouseDownPosition = { x: event.clientX, y: event.clientY };
+
     dragStartIndex = rowIndex;
     lastDragIndex = rowIndex;
+
+    // Store current selection state before any changes
     previouslySelectedItems = new Set(selectedItems);
 
-    // Store the current selection state of the clicked item to determine
-    // if we should select or deselect during drag
-    const itemId = filteredItems[rowIndex].id;
-
-    // Update the selection state of the initial item
-    selectedItemsStore.update((currentSelected) => {
-      const newSelected = new Set(currentSelected);
-      if (newSelected.has(itemId)) {
-        newSelected.delete(itemId);
-      } else {
-        newSelected.add(itemId);
-      }
-      lastSelectedIndexStore.set(rowIndex);
-      return newSelected;
-    });
+    // Check if Option/Alt key is pressed to determine if we're in deselect mode
+    isDeselectMode = event.altKey;
 
     // Set up global mouse move and mouse up handlers
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("mouseup", handleMouseUp);
+
+    // Important: Don't update selections here - wait for mouseMove (drag) or mouseUp (click)
+    // This prevents interfering with the toggle/shift-click behavior
   }
 
   function handleMouseMove(event: MouseEvent) {
-    if (!isDragging || !enableSelections) return;
+    if (!enableSelections) return;
+
+    // Calculate distance moved since mousedown
+    const distanceMoved = Math.sqrt(
+      Math.pow(event.clientX - mouseDownPosition.x, 2) +
+        Math.pow(event.clientY - mouseDownPosition.y, 2)
+    );
+
+    // If we haven't started dragging yet, check if we should start
+    if (!isDragging) {
+      // Start dragging if the mouse has moved more than 5 pixels
+      if (distanceMoved > 5) {
+        isDragging = true;
+
+        // Handle the initial item selection when drag starts
+        const itemId = filteredItems[dragStartIndex].id;
+
+        // When starting a drag, we handle the initial selection differently
+        selectedItemsStore.update((currentSelected) => {
+          const newSelected = new Set(currentSelected);
+
+          if (isDeselectMode) {
+            // In deselect mode, always remove the clicked item
+            newSelected.delete(itemId);
+          } else {
+            // In select mode, always add the clicked item (don't toggle)
+            // For drag operations, we always want to select the start item
+            // rather than toggle it, to make the operation predictable
+            newSelected.add(itemId);
+          }
+
+          // Update the last selected index for potential future shift-clicks
+          lastSelectedIndexStore.set(dragStartIndex);
+          return newSelected;
+        });
+      } else {
+        // Still not dragging, just return
+        return;
+      }
+    }
 
     // Find the row element under the mouse
     const elementUnderMouse = document.elementFromPoint(
@@ -138,12 +177,18 @@
 
           const itemId = filteredItems[i].id;
 
-          // If moving away from start point, add to selection
+          // If moving away from start point, apply selection action based on mode
           if (
             (dragStartIndex < currentIndex && i > dragStartIndex) ||
             (dragStartIndex > currentIndex && i < dragStartIndex)
           ) {
-            newSelected.add(itemId);
+            if (isDeselectMode) {
+              // In deselect mode, remove items from selection
+              newSelected.delete(itemId);
+            } else {
+              // In select mode, add items to selection
+              newSelected.add(itemId);
+            }
           }
           // If moving back toward start point, restore original selection state
           else if (
@@ -165,18 +210,49 @@
     }
   }
 
-  function handleMouseUp() {
-    if (isDragging) {
-      isDragging = false;
-      dragSelectionState.clear();
+  function handleMouseUp(event: MouseEvent) {
+    // Calculate time from mouseDown to mouseUp
+    const clickDuration = Date.now() - mouseDownTime;
 
-      // Remove global event listeners
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
+    // Calculate distance moved between mouseDown and mouseUp
+    const distanceMoved = Math.sqrt(
+      Math.pow(event.clientX - mouseDownPosition.x, 2) +
+        Math.pow(event.clientY - mouseDownPosition.y, 2)
+    );
 
-      // Update the virtualizer to reflect any changes in the selection
-      updateVirtualizer();
+    // If it wasn't a drag operation (short duration and minimal movement), treat as a click
+    if (!isDragging && clickDuration < 300 && distanceMoved < 5) {
+      // This was a click, not a drag - call toggleSelect directly
+      // Find the item that was clicked
+      const itemClicked = filteredItems[dragStartIndex];
+      if (itemClicked) {
+        // Create a new MouseEvent that preserves the modifier keys
+        const clickEvent = new MouseEvent("click", {
+          altKey: event.altKey,
+          shiftKey: event.shiftKey,
+          ctrlKey: event.ctrlKey,
+          metaKey: event.metaKey,
+          bubbles: true,
+          cancelable: true,
+          view: window,
+        });
+
+        // Use the original toggleSelect function which handles shift-click correctly
+        toggleSelect(itemClicked, clickEvent);
+      }
     }
+
+    // Clean up regardless of whether it was a drag or click
+    isDragging = false;
+    isDeselectMode = false; // Reset deselect mode
+    dragSelectionState.clear();
+
+    // Remove global event listeners
+    window.removeEventListener("mousemove", handleMouseMove);
+    window.removeEventListener("mouseup", handleMouseUp);
+
+    // Update the virtualizer to reflect any changes in the selection
+    updateVirtualizer();
   }
 
   function startResize(index: number, event: MouseEvent) {
@@ -540,14 +616,10 @@
                 {:else if column.name === "algorithm"}
                   <div
                     class="grid-item"
-                    on:click={(event) =>
-                      enableSelections
-                        ? toggleSelect(filteredItems[virtualRow.index], event)
-                        : toggleChecked(filteredItems[virtualRow.index])}
                     on:mousedown={(event) =>
                       enableSelections
                         ? handleMouseDown(virtualRow.index, event)
-                        : null}
+                        : toggleChecked(filteredItems[virtualRow.index])}
                   >
                     <div class="algorithm-icons">
                       {#each filteredItems[virtualRow.index].algorithm.filter((algo) => algo !== "Keep" || filteredItems[virtualRow.index].algorithm.length === 1) as algo}
@@ -567,14 +639,10 @@
                 {:else}
                   <div
                     class="grid-item {column.name === 'filename' ? 'bold' : ''}"
-                    on:click={(event) =>
-                      enableSelections
-                        ? toggleSelect(filteredItems[virtualRow.index], event)
-                        : toggleChecked(filteredItems[virtualRow.index])}
                     on:mousedown={(event) =>
                       enableSelections
                         ? handleMouseDown(virtualRow.index, event)
-                        : null}
+                        : toggleChecked(filteredItems[virtualRow.index])}
                   >
                     {getRecordValue(
                       filteredItems[virtualRow.index],
@@ -795,5 +863,10 @@
   /* Style for when drag selection is active */
   .virtual-row:active .grid-item {
     cursor: grabbing;
+  }
+
+  /* Add a class that can be applied when in deselect mode */
+  .deselect-mode {
+    cursor: not-allowed;
   }
 </style>
