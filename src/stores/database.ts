@@ -86,6 +86,16 @@ export async function closeDatabase(): Promise<boolean> {
         
         // Set database to null after successful close
         databaseStore.set(null);
+        preferencesStore.update((prefs) => ({
+            ...prefs,
+            algorithms: prefs.algorithms.map((algo) => {
+              if (algo.id === "dbcompare") {
+                console.log("Updating dbcompare:", algo, "New DB:", null);
+                return { ...algo, enabled: true, db: null };
+              }
+              return algo;
+            }),
+          }));
         return true;
     } catch (error) {
         console.error("Error closing database:", error);

@@ -12,6 +12,8 @@ import { metadataStore } from "../stores/metadata";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { setDatabase } from "../stores/database";
 import { showSearchView } from "../stores/menu";
+import { showStatus } from "../stores/status";
+import { show } from '@tauri-apps/api/app';
 
   
 
@@ -64,6 +66,7 @@ import { showSearchView } from "../stores/menu";
 
 
  export async function removeRecords() {
+    showStatus.set(true)
     let filteredItems = get(filteredItemsStore);
     let pref = get(preferencesStore);
     idsToRemove = filteredItems
@@ -101,22 +104,27 @@ import { showSearchView } from "../stores/menu";
             );
           }
           console.log("Successfully removed records with IDs:", idsToRemove);
+          showStatus.set(false);
           setDatabase(updatedDb, false);
           showSearchView();
         } catch (error) {
           console.error("Error removing records:", error);
+          showStatus.set(false);
           await ask("An error occurred while removing records.");
         } finally {
           processing = false;
+          
         }
       }
     } else {
       console.log("No records to remove");
       await message("No records to remove!");
+      showStatus.set(false);
     }
   }
 
  export async function removeSelectedRecords() {
+    showStatus.set(true)
     let filteredItems = get(filteredItemsStore);
     let selectedItems = get(selectedItemsStore);
     let pref = get(preferencesStore);
@@ -164,11 +172,13 @@ import { showSearchView } from "../stores/menu";
             );
           }
           console.log("Successfully removed records with IDs:", idsToRemove);
+          showStatus.set(false);
           processing = false;
           setDatabase(updatedDb, false);
         } catch (error) {
           console.error("Error removing selected records:", error);
           await ask("An error occurred while removing selected records.");
+          showStatus.set(false);
         } finally {
           processing = false;
         }
@@ -176,6 +186,7 @@ import { showSearchView } from "../stores/menu";
     } else {
       console.log("No records to remove");
       await message("No selected records to remove!");
+      showStatus.set(false);
     }
   }
 

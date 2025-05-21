@@ -665,7 +665,7 @@ impl Database {
         if let Some(pool) = self.get_pool().await {
             // Iterate over chunks of IDs
             for chunk in ids.chunks(BATCH_SIZE) {
-                app.rstatus(
+                app.status(
                     "removing",
                     counter * 100 / ids.len(),
                     &format!("removing records... {}/{}", counter, ids.len()),
@@ -690,7 +690,7 @@ impl Database {
                 // Execute the query
                 query_builder.execute(&pool).await?;
             }
-            app.rstatus("complete", 100, "Records successfully removed");
+            app.status("complete", 100, "Records successfully removed");
         }
         Ok(())
     }
@@ -715,7 +715,7 @@ impl Database {
             let path = Path::new(&record.path);
             let filename = path.file_name().unwrap_or_default().to_str().unwrap_or("");
 
-            app.rsubstatus(
+            app.substatus(
                 "clean multi mono",
                 new_completed * 100 / records.len(),
                 filename,
@@ -793,7 +793,7 @@ impl Database {
                 .await
             {
                 Ok(_) => {
-                    app.rsubstatus(
+                    app.substatus(
                         "complete with results",
                         100,
                         &format!("Updated {} files to mono, {} failures", success, failed),
@@ -801,7 +801,7 @@ impl Database {
                     Ok(())
                 }
                 Err(e) => {
-                    app.rsubstatus(
+                    app.substatus(
                         "database error",
                         100,
                         &format!("Error updating database: {}", e),
@@ -810,7 +810,7 @@ impl Database {
                 }
             }
         } else {
-            app.rsubstatus("complete", 100, "No files were successfully processed");
+            app.substatus("complete", 100, "No files were successfully processed");
             Ok(())
         }
     }
@@ -944,7 +944,7 @@ impl Database {
 
                 // Update progress
                 counter += chunk.len();
-                app.rstatus(
+                app.status(
                     "updating",
                     counter * 100 / record_ids.len(),
                     format!(
@@ -960,7 +960,7 @@ impl Database {
             tx.commit().await?;
 
             // Final status update
-            app.rstatus(
+            app.status(
                 "complete",
                 100,
                 format!("Updated {} records to mono", record_ids.len()).as_str(),
@@ -1009,7 +1009,7 @@ impl Delete {
         app: &AppHandle,
     ) -> Result<(), Box<dyn std::error::Error>> {
         println!("Removing Files");
-        app.rsubstatus("remove", 0, "Preparing to remove files...");
+        app.substatus("remove", 0, "Preparing to remove files...");
 
         // Filter valid files directly and collect them into a Vec
         let valid_files: Vec<&str> = files
@@ -1029,14 +1029,14 @@ impl Delete {
             valid_files.len(),
             files.len()
         );
-        app.rsubstatus(
+        app.substatus(
             "remove",
             10,
             &format!("Processing {} valid files", valid_files.len()),
         );
 
         if valid_files.is_empty() {
-            app.rsubstatus("remove", 100, "No valid files to process");
+            app.substatus("remove", 100, "No valid files to process");
             return Ok(());
         }
 
@@ -1047,7 +1047,7 @@ impl Delete {
                     // On Windows, process files individually for better error reporting
                     let total = valid_files.len();
                     for (i, file) in valid_files.iter().enumerate() {
-                        app.rsubstatus(
+                        app.substatus(
                             "remove",
                             10 + (i * 90 / total),
                             &format!("Moving to trash: {}/{}", i + 1, total),
@@ -1058,7 +1058,7 @@ impl Delete {
                             Err(e) => {
                                 // Log error but continue with other files
                                 println!("Failed to move to trash: {}: {}", file, e);
-                                app.rsubstatus(
+                                app.substatus(
                                     "warning",
                                     10 + (i * 90 / total),
                                     &format!("Warning: Failed to trash: {}", file),
@@ -1072,11 +1072,11 @@ impl Delete {
                 {
                     // macOS/Linux - use batch operation which is more efficient
                     if !valid_files.is_empty() {
-                        app.rsubstatus("remove", 50, "Moving files to trash...");
+                        app.substatus("remove", 50, "Moving files to trash...");
                         match trash::delete_all(&valid_files) {
                             Ok(_) => {}
                             Err(e) => {
-                                app.rsubstatus("error", 100, &format!("Trash error: {}", e));
+                                app.substatus("error", 100, &format!("Trash error: {}", e));
                                 eprintln!("Move to Trash Failed: {}", e);
                                 return Err(e.into());
                             }
@@ -1087,7 +1087,7 @@ impl Delete {
             Delete::Delete => {
                 let total = valid_files.len();
                 for (i, file) in valid_files.iter().enumerate() {
-                    app.rsubstatus(
+                    app.substatus(
                         "remove",
                         10 + (i * 90 / total),
                         &format!("Permanently deleting: {}/{}", i + 1, total),
@@ -1095,7 +1095,7 @@ impl Delete {
 
                     if let Err(e) = fs::remove_file(file) {
                         eprintln!("Failed to remove file {}: {}", file, e);
-                        app.rsubstatus(
+                        app.substatus(
                             "warning",
                             10 + (i * 90 / total),
                             &format!("Warning: Failed to delete: {}", file),
@@ -1106,7 +1106,7 @@ impl Delete {
             _ => {}
         }
 
-        app.rsubstatus("remove", 100, "File removal complete");
+        app.substatus("remove", 100, "File removal complete");
         Ok(())
     }
 }

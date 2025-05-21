@@ -1,58 +1,57 @@
 <script lang="ts">
+  // Svelte lifecycle imports
   import { onMount, onDestroy } from "svelte";
   import { listen } from "@tauri-apps/api/event";
 
-  import Table from "./results/common/Table.svelte";
+  // Component imports
+  import Table from "./results/Table.svelte";
+  import Filters from "./results/filterSwitch.svelte";
+  import RemoveBar from "./results/removeBar.svelte";
+  import Toolbar from "./results/Toolbar.svelte";
+  import RemoveButton from "./results/removeButton.svelte";
+  import Status from "./Status.svelte";
+  import Form from "./registration/Form.svelte";
+
+  // Icon imports
+  import {
+    CheckSquare,
+    Square,
+    NotebookPenIcon,
+    OctagonX,
+    TriangleAlert,
+    Loader,
+  } from "lucide-svelte";
+
+  // Store imports
   import { preferencesStore } from "../stores/preferences";
+  import { isRegistered } from "../stores/registration";
+  import { showStatus, searchProgressStore } from "../stores/status";
+  import { isRemove } from "../stores/menu";
   import {
     resultsStore,
     filteredItemsStore,
-    selectedItemsStore,
-    currentFilterStore,
-    enableSelectionsStore,
-    clearSelected,
-    invertSelected,
-    checkSelected,
-    uncheckSelected,
-    toggleChecksSelected,
     totalChecksStore,
-    selectedChecksStore,
-    updateCurrentFilter,
-    filtersStore,
   } from "../stores/results";
-  import { removeRecords, removeSelectedRecords } from "../stores/remove";
-  import {
-    metadataStore,
-    replaceMetadata,
-    toggleMarkDirty,
-  } from "../stores/metadata";
-  import { isRemove } from "../stores/menu";
-  import { algoEnabled } from "../stores/algorithms";
 
-  export let selectedDb: string | null = null;
-
-  $: pref = $preferencesStore;
+  // Store subscriptions
   $: results = $resultsStore;
-  $: metadata = $metadataStore;
   $: filteredItems = $filteredItemsStore;
-  $: selectedItems = $selectedItemsStore;
-  $: currentFilter = $currentFilterStore;
-  $: enableSelections = $enableSelectionsStore;
-  $: totalChecks = $totalChecksStore;
-  $: selectedChecks = $selectedChecksStore;
 
+  $: totalChecks = $totalChecksStore;
+
+  // UI state variables
   let processing = false;
   let loading = true;
-
-  let processingBatch = false;
   let loadingResults = true;
   let showLoadingOverlay = true;
 
-  function handleFilterChange(event: Event) {
-    const select = event.target as HTMLSelectElement;
-    updateCurrentFilter(select.value);
-  }
+  // Remove process state
+  let removeProgress = 0;
+  let removeMessage = "Initializing...";
+  let removeStage = "";
+  let unlistenRemoveFn: () => void;
 
+  // Data loading functions
   async function fetchData() {
     try {
       loading = true;
@@ -63,22 +62,27 @@
     }
   }
 
-  onMount(() => {
+  function activateResultsTab() {
+    loadingResults = true;
+    showLoadingOverlay = true;
+
+    setTimeout(() => {
+      const timer = setTimeout(() => {
+        loadingResults = false;
+        showLoadingOverlay = false;
+      }, 500);
+
+      return () => clearTimeout(timer);
+    }, 100);
+  }
+
+  onMount(async () => {
     setTimeout(() => {
       loading = false;
     }, 100);
 
     activateResultsTab();
-  });
 
-  $: filters = $filtersStore;
-
-  let removeProgress = 0;
-  let removeMessage = "Initializing...";
-  let removeStage = "";
-  let unlistenRemoveFn: () => void;
-
-  onMount(async () => {
     unlistenRemoveFn = await listen<{
       progress: number;
       message: string;
@@ -102,40 +106,6 @@
     if (unlistenRemoveFn) unlistenRemoveFn();
   });
 
-  import {
-    CheckSquare,
-    Square,
-    NotebookPenIcon,
-    OctagonX,
-    TriangleAlert,
-    Loader,
-  } from "lucide-svelte";
-
-  async function checkSelectedWithIndicator() {
-    processingBatch = true;
-    setTimeout(() => {
-      try {
-        checkSelected();
-      } finally {
-        processingBatch = false;
-      }
-    }, 10);
-  }
-
-  function activateResultsTab() {
-    loadingResults = true;
-    showLoadingOverlay = true;
-
-    setTimeout(() => {
-      const timer = setTimeout(() => {
-        loadingResults = false;
-        showLoadingOverlay = false;
-      }, 500);
-
-      return () => clearTimeout(timer);
-    }, 100);
-  }
-
   $: {
     if (filteredItems && filteredItems.length > 0 && loadingResults) {
       setTimeout(() => {
@@ -156,137 +126,44 @@
         {results.length} Records found
       {/if}
     </span>
-
-    <div style="margin-left: auto; display: flex; gap: 20px;">
-      {#if $isRemove}
-        {#if selectedItems.size > 0}
-          <button class="cta-button cancel" on:click={removeSelectedRecords}>
-            <OctagonX size="18" />
-            Remove {selectedChecks} Selected Records
-          </button>
-          <button class="cta-button cancel" on:click={removeRecords}>
-            <OctagonX size="18" />
-            Remove all {totalChecks} Records
-          </button>
-        {:else}
-          <button class="cta-button cancel" on:click={removeRecords}>
-            <OctagonX size="18" />
-            Remove {totalChecks} Records
-          </button>
-        {/if}
-      {:else}
-        <button class="cta-button cancel" on:click={replaceMetadata}>
-          <NotebookPenIcon size="18" />
-          <span>Replace '{metadata.find}' with '{metadata?.replace || ""}'</span
-          >
-        </button>
-      {/if}
-    </div>
+    <RemoveButton />
   </div>
-  {#if $preferencesStore.showToolbars}
-    <div
-      class="bar"
-      style="margin-top: 10px; margin-bottom: 20px; padding: 0px;"
-    >
-      {#if enableSelections}
-        <button class="small-button" on:click={toggleChecksSelected}
-          >Toggle Selected</button
-        >
-        <button class="small-button" on:click={checkSelectedWithIndicator}
-          >Check Selected</button
-        >
-        <button class="small-button" on:click={uncheckSelected}
-          >Uncheck Selected</button
-        >
-        <button class="small-button" on:click={invertSelected}
-          >Invert Selections</button
-        >
-        <button class="small-button" on:click={clearSelected}
-          >Clear Selections</button
-        >
-        {#if selectedItems.size > 0}
-          <p style="margin-left: 10px">({selectedItems.size} selected)</p>
-        {/if}
-        {#if processingBatch}
-          <div class="batch-processing">
-            <Loader size={24} class="spinner" />
-            <span>Processing {selectedItems.size} items...</span>
+  {#if $isRegistered}
+    {#if $preferencesStore.showToolbars}
+      <span>
+        <Toolbar>
+          <div slot="right">
+            <Filters />
           </div>
-        {/if}
-      {/if}
-
-      <div class="filter-container">
-        {#if $isRemove}
-          <span>Filter by: </span>
-          <select
-            class="select-field"
-            bind:value={currentFilter}
-            on:change={handleFilterChange}
-          >
-            {#each filters as option}
-              {#if option.enabled}
-                {#if option.id === "spacer"}
-                  <option disabled>{option.name}</option>
-                {:else}
-                  <option value={option.id}>{option.name}</option>
-                {/if}
-              {/if}
-            {/each}
-          </select>
-        {:else}
-          <button
-            type="button"
-            class="grid item"
-            style="margin-left: 120px"
-            on:click={toggleMarkDirty}
-          >
-            {#if $metadataStore.mark_dirty}
-              <CheckSquare
-                size={20}
-                class="checkbox checked {metadata.column == 'FilePath' ||
-                metadata.column == 'Filename' ||
-                metadata.column == 'Pathname'
-                  ? 'inactive'
-                  : ''}"
-              />
-            {:else}
-              <Square size={20} class="checkbox" />
-            {/if}
-            <span
-              class={metadata.column == "FilePath" ||
-              metadata.column == "Filename" ||
-              metadata.column == "Pathname"
-                ? "inactive"
-                : ""}>Mark Records as Dirty</span
-            >
-          </button>
-        {/if}
-      </div>
-    </div>
-  {/if}
-  <div class="block inner" style="margin-bottom: 15px;">
-    {#if loading}
-      <p class="ellipsis">Loading data...</p>
-    {:else if processing}
-      <div class="block inner">
-        <span>
-          <Loader
-            size={24}
-            class="spinner ml-2"
-            style="color: var(--accent-color)"
-          />
-          {removeMessage}
-        </span>
-        <div class="progress-container">
-          <div class="progress-bar" style="width: {removeProgress}%"></div>
-        </div>
-      </div>
-    {:else}
-      <Table />
+        </Toolbar>
+      </span>
     {/if}
-  </div>
-  {#if $preferencesStore.showToolbars}
-    <div class="header" style="margin-bottom: 0px; margin-top: 0px;">
+    <div class="block inner" style="margin-bottom: 15px;">
+      {#if $showStatus}
+        <Status />
+      {:else if loading}
+        <p class="ellipsis">Loading data...</p>
+      {:else if processing}
+        <div class="block inner">
+          <span>
+            <Loader
+              size={24}
+              class="spinner ml-2"
+              style="color: var(--accent-color)"
+            />
+            {removeMessage}
+          </span>
+          <div class="progress-container">
+            <div class="progress-bar" style="width: {removeProgress}%"></div>
+          </div>
+        </div>
+      {:else}
+        <Table />
+      {/if}
+    </div>
+    {#if $preferencesStore.showToolbars}
+      <RemoveBar />
+      <!-- <div class="header" style="margin-bottom: 0px; margin-top: 0px;">
       {#if $isRemove}
         <span>
           Remove Records from:
@@ -357,7 +234,11 @@
           {/if}
         </span>
       {/if}
-    </div>
+    </div> -->
+    {/if}
+  {:else}
+    <p>Registration Required to View Results</p>
+    <Form />
   {/if}
 </div>
 
@@ -389,16 +270,5 @@
 
   .header h2 {
     margin: 0;
-  }
-
-  .spinner {
-    animation: spin 1.5s linear infinite;
-    color: var(--accent-color);
-  }
-
-  @keyframes spin {
-    100% {
-      transform: rotate(360deg);
-    }
   }
 </style>

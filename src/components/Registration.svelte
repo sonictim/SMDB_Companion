@@ -1,22 +1,16 @@
 <script lang="ts">
-  import {
-    X,
-    Search,
-    AlertCircle,
-    Loader,
-    Square,
-    CheckSquare,
-    Smile,
-  } from "lucide-svelte";
+  import { Loader } from "lucide-svelte";
+  import Form from "./registration/Form.svelte";
+  import Button from "./registration/Button.svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { Window } from "@tauri-apps/api/window";
   import { onMount, tick } from "svelte";
-  export let isRegistered: boolean;
 
   import type { Registration } from "../stores/types";
   import { registrationStore } from "../stores/registration";
   import { resultsStore } from "../stores/results";
   import { get } from "svelte/store";
+  import { isRegistered } from "../stores/registration";
 
   const DEBUG_MODE = import.meta.env.DEV || false; // Will be true in development, false in production
   let attemptFailed = false;
@@ -45,7 +39,7 @@
     invoke<boolean>("check_reg", { data: reg })
       .then((result) => {
         attemptFailed = !result;
-        isRegistered = result;
+        isRegistered.set(result);
         console.log("Registration:", result);
         if (!result) getreg();
       })
@@ -119,80 +113,9 @@
   <div class="block">
     <div class="header">
       <h2>Registration</h2>
-      <span>
-        <!-- <button class="cta-button" on:click={resetInputs}> Reset Form </button> -->
-        <button class="cta-button cancel" on:click={setReg}> Register </button>
-      </span>
+      <Button />
     </div>
-    <div class="input-group2" style="margin-left: 110px;">
-      <label for="case-sensitive">
-        {#if isRegistered}
-          <Smile style="color: var(--topbar-color)" />
-          Succesfully registered! Thank you for your support.
-        {:else}
-          <p>Please enter your credentials below:</p>
-          <span
-            >If you have not yet purchased a license, you can do so by clicking: <button
-              class="cta-button small"
-              on:click={openPurchaseLink}>HERE</button
-            ></span
-          >
-        {/if}
-      </label>
-    </div>
-    <div class="input-group">
-      <label for="name-input">Name:</label>
-      <div class="input-wrapper" on:click={() => focusInput("name-input")}>
-        <input
-          type="text"
-          id="name-input"
-          bind:value={reg.name}
-          placeholder="Enter Registration Name"
-          class="input-field"
-          disabled={!inputsEnabled}
-        />
-      </div>
-    </div>
-
-    <div class="input-group">
-      <label for="email-input">Email:</label>
-      <div class="input-wrapper" on:click={() => focusInput("email-input")}>
-        <input
-          type="text"
-          id="email-input"
-          bind:value={reg.email}
-          placeholder="Enter Registration Email"
-          class="input-field"
-          disabled={!inputsEnabled}
-        />
-      </div>
-    </div>
-
-    <div class="input-group">
-      <label for="license-input">License:</label>
-      <div class="input-wrapper" on:click={() => focusInput("license-input")}>
-        <input
-          type="text"
-          id="license-input"
-          bind:value={reg.license}
-          placeholder="Enter License number"
-          class="input-field"
-          disabled={!inputsEnabled}
-        />
-      </div>
-    </div>
-
-    {#if attemptFailed}
-      <p style="margin-left: 110px; color: var(--topbar-color)">
-        Registration Attempt Failed. Please double check your credentials.
-      </p>
-    {/if}
-
-    {#if DEBUG_MODE}
-      <div class="debug-info">
-        Debug: {r2}
-      </div>
-    {/if}
+    <Form />
   </div>
 {/if}
 

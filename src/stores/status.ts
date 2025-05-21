@@ -10,7 +10,7 @@ import { resultsStore } from './results';
 import { viewStore, showResultsView, isRemove } from './menu';
 
 
-export const isSearching = writable(false);
+export const showStatus = writable(false);
 export const currentTaskId = writable<number | null>(null);
 export const virtualizerStore = writable(null);
 export const scrollPositionStore = writable(0);
@@ -54,12 +54,12 @@ export async function initializeSearchListeners(): Promise<void> {
                 searchStage: status.stage,
             }));
             
-            // Set isSearching to true whenever we get a search status update
+            // Set showStatus to true whenever we get a search status update
             // This ensures the UI stays in "searching" mode while the backend is working
             // if (status.stage !== "complete" && status.stage !== "cancelled") {
-            //     isSearching.set(true);
+            //     showStatus.set(true);
             // } else if (status.stage === "complete" || status.stage === "cancelled") {
-            //     isSearching.set(false);
+            //     showStatus.set(false);
                 
             // }
             
@@ -98,7 +98,7 @@ export async function initializeSearchListeners(): Promise<void> {
 export async function toggleSearch(): Promise<boolean> {
     console.log("Toggle Search");
     isRemove.set(true);
-    const currentSearching = get(isSearching);
+    const currentSearching = get(showStatus);
     
     if (!currentSearching) {
        return await search();
@@ -113,8 +113,8 @@ export async function toggleSearch(): Promise<boolean> {
  * @returns {Promise<string>} The next active tab to navigate to
  */
 export async function search(): Promise<boolean> {
-    // Set isSearching to true at the start of the search process
-    isSearching.set(true);
+    // Set showStatus to true at the start of the search process
+    showStatus.set(true);
     
     const preferences = get(preferencesStore);
     
@@ -123,7 +123,7 @@ export async function search(): Promise<boolean> {
         alert(
             "Application settings not loaded properly. Please restart the application."
         );
-        isSearching.set(false); // Make sure to reset if we exit early
+        showStatus.set(false); // Make sure to reset if we exit early
         return false;
     }
     
@@ -176,15 +176,15 @@ export async function search(): Promise<boolean> {
         if (result && result.length > 0) {
             if (get(viewStore) === "search") showResultsView();
             resultsStore.set(result);
-            isSearching.set(false);
+            showStatus.set(false);
             
             return true;
         }
     } catch (error) {
         console.error("Search error:", error);
-        isSearching.set(false); // Make sure to reset on error
+        showStatus.set(false); // Make sure to reset on error
     }
-    isSearching.set(false); // Make sure to reset on error
+    showStatus.set(false); // Make sure to reset on error
     return false;
 }
 
@@ -192,7 +192,7 @@ export async function search(): Promise<boolean> {
  * Cancel an ongoing search operation
  */
 export async function cancelSearch(): Promise<void> {
-    isSearching.set(false);
+    showStatus.set(false);
     await invoke("cancel_search")
         .then(() => {
             console.log("Search cancellation requested");

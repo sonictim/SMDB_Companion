@@ -24,12 +24,14 @@
   import { preferencesStore } from "../stores/preferences";
   import { metadataStore, findMetadata } from "../stores/metadata";
   import {
-    isSearching,
+    showStatus,
     searchProgressStore,
     initializeSearchListeners,
     toggleSearch, // Import the moved functions
   } from "../stores/status";
   import { getFilenameWithoutExtension } from "../stores/utils";
+  import Algorithms from "./search/Algorithms.svelte";
+  import Status from "./Status.svelte";
 
   async function getCompareDb() {
     try {
@@ -65,11 +67,11 @@
 
   onMount(() => {
     initializeSearchListeners().then(() => {
-      console.log("Search component mounted, isSearching:", $isSearching);
+      console.log("Search component mounted, showStatus:", $showStatus);
     });
 
-    const unsubscribe = isSearching.subscribe((value) => {
-      console.log("isSearching changed:", value);
+    const unsubscribe = showStatus.subscribe((value) => {
+      console.log("showStatus changed:", value);
     });
 
     return () => {
@@ -99,13 +101,13 @@
         </button>
       {:else}
         <button
-          class="cta-button {$isSearching ? 'cancel' : ''}"
+          class="cta-button {$showStatus ? 'cancel' : ''}"
           on:click={async () => {
             let result = await toggleSearch();
           }}
         >
           <div class="flex items-center gap-2">
-            {#if $isSearching}
+            {#if $showStatus}
               <X size={18} />
               <span>Cancel</span>
             {:else}
@@ -116,105 +118,11 @@
         </button>
       {/if}
     </div>
-    {#if $isSearching}
-      <div class="block inner">
-        <span>
-          <Loader
-            size={24}
-            class="spinner ml-2"
-            style="color: var(--accent-color)"
-          />
-          {$searchProgressStore.searchMessage}
-        </span>
-        <div class="progress-container">
-          <div
-            class="progress-bar"
-            style="width: {$searchProgressStore.searchProgress}%"
-          ></div>
-        </div>
-        <span>
-          {$searchProgressStore.subsearchMessage}
-        </span>
-        <div class="progress-container">
-          <div
-            class="progress-bar"
-            style="width: {$searchProgressStore.subsearchProgress}%"
-          ></div>
-        </div>
-      </div>
+    {#if $showStatus}
+      <Status />
     {:else}
       <div class="grid">
-        {#each $preferencesStore.algorithms as algo}
-          <div
-            class="grid item {getAlgoClass(algo, $preferencesStore.algorithms)}"
-          >
-            <button
-              type="button"
-              class="grid item"
-              on:click={() => toggleAlgorithm(algo.id)}
-            >
-              {#if algo.id === "audiosuite" || algo.id === "filename"}
-                <span style="margin-right: 20px;"></span>
-              {/if}
-
-              {#if algo.enabled}
-                <CheckSquare
-                  size={20}
-                  class="checkbox {(algo.id === 'audiosuite' ||
-                    algo.id === 'filename') &&
-                  !isBasicEnabled
-                    ? 'inactive'
-                    : 'checked'}"
-                />
-              {:else}
-                <Square size={20} class="checkbox inactive" />
-              {/if}
-
-              <span
-                class="tooltip-trigger {(algo.id === 'audiosuite' ||
-                  algo.id === 'filename') &&
-                !isBasicEnabled
-                  ? 'inactive'
-                  : ''}"
-              >
-                {algo.name}
-                <span class="tooltip-text"
-                  >{getAlgorithmTooltip(algo.id)}
-                </span>
-              </span>
-            </button>
-
-            {#if algo.id === "dbcompare"}
-              {#if algo.db !== null && algo.db !== undefined}
-                {#await getFilenameWithoutExtension(algo.db) then filename}
-                  <!-- svelte-ignore a11y_click_events_have_key_events -->
-                  <!-- svelte-ignore a11y_no_static_element_interactions -->
-                  <span class="clickable" on:click={getCompareDb}
-                    >{filename}</span
-                  >
-                {/await}
-              {:else}
-                <button
-                  type="button"
-                  class="small-button"
-                  on:click={getCompareDb}>Select DB</button
-                >
-              {/if}
-            {/if}
-
-            {#if algo.id === "duration"}
-              <input
-                type="number"
-                min="0"
-                step="0.1"
-                bind:value={algo.min_dur}
-                class="duration-input"
-                style="width: 55px; background-color: var(--primary-bg)"
-              />
-              s
-            {/if}
-          </div>
-        {/each}
+        <Algorithms />
       </div>
       <span style="margin-left: 255px"> </span>
     {/if}

@@ -245,13 +245,13 @@ pub async fn remove_records(
     let mut state = state.lock().await;
 
     if strip_dual_mono {
-        app.rstatus("starting", 0, "Stripping Dual Mono Records...");
+        app.status("starting", 0, "Stripping Dual Mono Records...");
 
         let _ = state.db.clean_multi_mono(&app, &dual_mono).await;
     }
 
     if clone {
-        app.rstatus(
+        app.status(
             "starting",
             20,
             "Creating Safety Copy of Current Database...",
@@ -259,10 +259,10 @@ pub async fn remove_records(
 
         state.db = state.db.create_clone(&clone_tag).await;
     }
-    app.rstatus("starting", 30, "Removing Records from Database...");
+    app.status("starting", 30, "Removing Records from Database...");
 
     let _ = state.db.remove(&records, &app).await;
-    app.rstatus(
+    app.status(
         "starting",
         70,
         match delete {
@@ -275,7 +275,7 @@ pub async fn remove_records(
     let _ = delete.delete_files(files, &app);
 
     println!("Remove Ended");
-    app.rstatus("complete", 100, "Success! Removal is complete");
+    app.status("complete", 100, "Success! Removal is complete");
 
     Ok(state.db.get_name().unwrap_or(Arc::from("Select Database")))
 }

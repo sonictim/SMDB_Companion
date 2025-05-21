@@ -9,13 +9,11 @@
   // Components
   import Header from "../components/Header.svelte";
   import SearchComponent from "../components/Search.svelte";
-  import SearchSkinnyComponent from "../components/SearchSkinny.svelte";
   import ResultsComponent from "../components/Results.svelte";
-  import ResultsSkinnyComponent from "../components/ResultsSkinny.svelte";
   import MetadataComponent from "../components/Metadata.svelte";
-  import RegisterComponent from "../components/Register.svelte";
-  import RegisterOnlyComponent from "../components/RegisterOnly.svelte";
-  import AdvancedComponent from "../components/AdvancedMode.svelte";
+  import RegistrationComponent from "../components/Registration.svelte";
+  import SplitComponent from "../components/Split.svelte";
+  import NoFrillsComponent from "../components/NoFrills.svelte";
 
   // Stores and utilities
   import {
@@ -25,14 +23,13 @@
   } from "../stores/preferences";
   import { databaseStore } from "../stores/database";
   import { checkForUpdates } from "../stores/utils";
-  import { checkRegistered } from "../stores/registration";
+  import { checkRegistered, isRegistered } from "../stores/registration";
   import { initializeMenu, viewStore, showSearchView } from "../stores/menu";
   import { applyPreset } from "../stores/presets";
   import { hotkeysStore } from "../stores/hotkeys";
   import type { Preset } from "../stores/types";
 
   // Component state
-  export let isRegistered = false;
   let appInitialized = false;
   let initError: unknown = null;
   let presetChangedListener: (() => void) | null = null;
@@ -48,7 +45,8 @@
       console.log("Starting app initialization");
       addMissingPrefs();
       await initializeMenu();
-      isRegistered = await checkRegistered();
+      const reg = await checkRegistered();
+      isRegistered.set(reg);
       appInitialized = true;
       console.log("App initialization complete");
       updateAlgorithmOrder();
@@ -201,7 +199,7 @@
 {/if}
 
 {#if view === "nofrills"}
-  <AdvancedComponent />
+  <NoFrillsComponent />
 {:else}
   <div class="app-container">
     <!-- Top Bar -->
@@ -212,24 +210,21 @@
       {#if view === "metadata"}
         <MetadataComponent />
       {:else if view === "registration"}
-        <RegisterOnlyComponent bind:isRegistered />
+        <RegistrationComponent />
       {:else if view === "split"}
-        <div class="grid">
+        <SplitComponent />
+        <!-- <div class="grid">
           <SearchSkinnyComponent />
           {#if isRegistered}
             <ResultsSkinnyComponent />
           {:else}
-            <RegisterComponent bind:isRegistered />
+            <RegisterComponent  />
           {/if}
-        </div>
+        </div> -->
       {:else if view === "search"}
         <SearchComponent />
       {:else if view === "results"}
-        {#if isRegistered}
-          <ResultsComponent selectedDb={$databaseStore?.path || null} />
-        {:else}
-          <RegisterComponent bind:isRegistered />
-        {/if}
+        <ResultsComponent />
       {/if}
     </main>
   </div>

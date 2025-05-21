@@ -198,6 +198,16 @@ export async function checkForUpdates(): Promise<{
 
   export async function getFilenameWithoutExtension(fullPath: string) {
     const name = await basename(fullPath); // Extracts filename with extension
-    const ext = await extname(fullPath); // Extracts extension
-    return name.replace(ext, ""); // Removes extension
+    const ext = await extname(fullPath); // Extracts extension (includes the dot)
+    
+    // If there's no extension, just return the name
+    if (!ext) return name;
+    
+    // Remove the extension including the dot
+    const lastDotIndex = name.lastIndexOf('.');
+    if (lastDotIndex !== -1) {
+      return name.substring(0, lastDotIndex);
+    }
+    
+    return name; // Fallback in case something goes wrong
   }

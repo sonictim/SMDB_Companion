@@ -416,14 +416,6 @@ h2 {
 
 
 
-.filter-container {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  /* Keeps spacing between "Filter by:" and select */
-  margin-left: auto;
-  /* Pushes the filter section to the right */
-}
 
 
 .grid-container {

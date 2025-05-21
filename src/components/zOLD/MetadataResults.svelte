@@ -3,7 +3,7 @@
   import { onMount, onDestroy } from "svelte";
   import { listen } from "@tauri-apps/api/event";
 
-  import Table from "./results/common/Table.svelte";
+  import Table from "./results/Table.svelte";
   import { preferencesStore } from "../stores/preferences";
   import {
     resultsStore,

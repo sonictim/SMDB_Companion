@@ -1,7 +1,6 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
-  export let isRegistered: boolean;
 
   import type { Registration } from "../stores/types";
   import { registrationStore } from "../stores/registration";

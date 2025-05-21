@@ -18,12 +18,12 @@
   } from "../stores/results";
   import {
     searchProgressStore,
-    isSearching,
+    showStatus,
     initializeSearchListeners,
     toggleSearch,
   } from "../stores/status";
 
-  import Table from "./results/common/Table.svelte";
+  import Table from "./results/Table.svelte";
   import { removeRecords, removeSelectedRecords } from "../stores/remove";
 
   export let selectedDb: string | null = null;
@@ -129,7 +129,7 @@
         title="Search for Duplicates"
       >
         <div class="flex items-center gap-2">
-          {#if $isSearching}
+          {#if $showStatus}
             <X size={18} />
             <span>Cancel Search</span>
           {:else}
@@ -180,7 +180,7 @@
     </div>
   {:else if $resultsStore.length > 0}
     <Table />
-  {:else if $isSearching}
+  {:else if $showStatus}
     <div class="block inner">
       <span>
         <Loader

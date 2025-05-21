@@ -3,20 +3,14 @@
   import { onMount, onDestroy } from "svelte";
   import { listen } from "@tauri-apps/api/event";
 
-  import type { FileRecord } from "../../../stores/types";
-  import { preferencesStore } from "../../../stores/preferences";
+  import type { FileRecord } from "../../stores/types";
   import {
-    resultsStore,
     filteredItemsStore,
     selectedItemsStore,
-    currentFilterStore,
     enableSelectionsStore,
     toggleSelect,
     toggleChecked,
-    totalChecksStore,
-    selectedChecksStore,
-  } from "../../../stores/results";
-  import { metadataStore } from "../../../stores/metadata";
+  } from "../../stores/results";
   import { createVirtualizer } from "@tanstack/svelte-virtual";
 
   $: filteredItems = $filteredItemsStore;

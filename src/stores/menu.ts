@@ -38,7 +38,7 @@ import {removeRecords} from './remove';
     manualFiltersStore,
   } from "../stores/results";
     import {
-    isSearching,
+    showStatus,
     searchProgressStore,
     initializeSearchListeners,
     toggleSearch, // Import the moved functions
@@ -619,14 +619,14 @@ const algoMenu = await Submenu.new({
         id: "searchDatabase",
         text: "Search Database",
         accelerator: getHotkey("searchDatabase"),
-        enabled: !get(isSearching) && get(databaseStore) !== null,
+        enabled: !get(showStatus) && get(databaseStore) !== null,
         action: () => {search()},
       },
       {
         id: "cancelSearch",
         text: "Cancel Search",
         accelerator: getHotkey("cancelSearch"),
-        enabled: get(isSearching),
+        enabled: get(showStatus),
         action: () => {cancelSearch()},
       },
       {
