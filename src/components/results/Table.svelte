@@ -10,6 +10,7 @@
     enableSelectionsStore,
     toggleSelect,
     toggleChecked,
+    lastSelectedIndexStore,
   } from "../../stores/results";
   import { createVirtualizer } from "@tanstack/svelte-virtual";
 
@@ -20,6 +21,13 @@
   let processing = false;
   let loading = true;
   let lastPlayed = "Timbo";
+
+  // Drag selection variables
+  let isDragging = false;
+  let dragStartIndex = -1;
+  let lastDragIndex = -1;
+  let dragSelectionState: Map<number, boolean> = new Map();
+  let previouslySelectedItems: Set<number> = new Set();
 
   let columnConfigs = [
     { minWidth: 10, width: 30, name: "checkbox", header: "✔" },
@@ -40,6 +48,136 @@
     columnWidths.reduce((acc, width) => acc + width, 0) + 100 + "px";
 
   let containerElement: HTMLElement;
+
+  // Drag selection functions
+  function handleMouseDown(rowIndex: number, event: MouseEvent) {
+    if (!enableSelections || event.button !== 0) return; // Only handle left mouse button
+
+    isDragging = true;
+    dragStartIndex = rowIndex;
+    lastDragIndex = rowIndex;
+    previouslySelectedItems = new Set(selectedItems);
+
+    // Store the current selection state of the clicked item to determine
+    // if we should select or deselect during drag
+    const itemId = filteredItems[rowIndex].id;
+
+    // Update the selection state of the initial item
+    selectedItemsStore.update((currentSelected) => {
+      const newSelected = new Set(currentSelected);
+      if (newSelected.has(itemId)) {
+        newSelected.delete(itemId);
+      } else {
+        newSelected.add(itemId);
+      }
+      lastSelectedIndexStore.set(rowIndex);
+      return newSelected;
+    });
+
+    // Set up global mouse move and mouse up handlers
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+  }
+
+  function handleMouseMove(event: MouseEvent) {
+    if (!isDragging || !enableSelections) return;
+
+    // Find the row element under the mouse
+    const elementUnderMouse = document.elementFromPoint(
+      event.clientX,
+      event.clientY
+    );
+    if (!elementUnderMouse) return;
+
+    // Find the virtual row containing this element
+    const virtualRow = elementUnderMouse.closest(".virtual-row");
+    if (!virtualRow) return;
+
+    // Get the index from the dataset or other attribute
+    const rowIndexAttr = virtualRow.getAttribute("data-index");
+    if (!rowIndexAttr) return;
+
+    const currentIndex = parseInt(rowIndexAttr, 10);
+    if (
+      isNaN(currentIndex) ||
+      currentIndex < 0 ||
+      currentIndex >= filteredItems.length
+    )
+      return;
+
+    // If we've moved to a different row
+    if (currentIndex !== lastDragIndex) {
+      // Determine range between the current position and the last processed position
+      const start = Math.min(dragStartIndex, currentIndex);
+      const end = Math.max(dragStartIndex, currentIndex);
+      const lastStart = Math.min(dragStartIndex, lastDragIndex);
+      const lastEnd = Math.max(dragStartIndex, lastDragIndex);
+
+      // Update selection based on direction
+      selectedItemsStore.update((currentSelected) => {
+        const newSelected = new Set(currentSelected);
+
+        // Reset any selections that are no longer in the range
+        for (let i = 0; i < filteredItems.length; i++) {
+          // If it's in the old range but not in the new range
+          if (i >= lastStart && i <= lastEnd && !(i >= start && i <= end)) {
+            const itemId = filteredItems[i].id;
+            // Restore to its original state
+            if (previouslySelectedItems.has(itemId)) {
+              newSelected.add(itemId);
+            } else {
+              newSelected.delete(itemId);
+            }
+          }
+        }
+
+        // For items in the new range that are not the start item
+        for (let i = start; i <= end; i++) {
+          // Skip the drag start item, which was already toggled on mousedown
+          if (i === dragStartIndex) continue;
+
+          const itemId = filteredItems[i].id;
+
+          // If moving away from start point, add to selection
+          if (
+            (dragStartIndex < currentIndex && i > dragStartIndex) ||
+            (dragStartIndex > currentIndex && i < dragStartIndex)
+          ) {
+            newSelected.add(itemId);
+          }
+          // If moving back toward start point, restore original selection state
+          else if (
+            (dragStartIndex < currentIndex && i < dragStartIndex) ||
+            (dragStartIndex > currentIndex && i > dragStartIndex)
+          ) {
+            if (previouslySelectedItems.has(itemId)) {
+              newSelected.add(itemId);
+            } else {
+              newSelected.delete(itemId);
+            }
+          }
+        }
+
+        return newSelected;
+      });
+
+      lastDragIndex = currentIndex;
+    }
+  }
+
+  function handleMouseUp() {
+    if (isDragging) {
+      isDragging = false;
+      dragSelectionState.clear();
+
+      // Remove global event listeners
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+
+      // Update the virtualizer to reflect any changes in the selection
+      updateVirtualizer();
+    }
+  }
 
   function startResize(index: number, event: MouseEvent) {
     event.preventDefault();
@@ -176,6 +314,10 @@
 
   onDestroy(() => {
     if (unlistenRemoveFn) unlistenRemoveFn();
+
+    // Clean up any event listeners
+    window.removeEventListener("mousemove", handleMouseMove);
+    window.removeEventListener("mouseup", handleMouseUp);
   });
 
   // Helper function to safely access record properties
@@ -336,6 +478,7 @@
       {#each $rowVirtualizer.getVirtualItems() as virtualRow (virtualRow.index)}
         <div
           class="virtual-row"
+          data-index={virtualRow.index}
           style="transform: translateY({virtualRow.start}px); height: {virtualRow.size}px; width: {totalWidth};"
         >
           <div
@@ -401,6 +544,10 @@
                       enableSelections
                         ? toggleSelect(filteredItems[virtualRow.index], event)
                         : toggleChecked(filteredItems[virtualRow.index])}
+                    on:mousedown={(event) =>
+                      enableSelections
+                        ? handleMouseDown(virtualRow.index, event)
+                        : null}
                   >
                     <div class="algorithm-icons">
                       {#each filteredItems[virtualRow.index].algorithm.filter((algo) => algo !== "Keep" || filteredItems[virtualRow.index].algorithm.length === 1) as algo}
@@ -424,6 +571,10 @@
                       enableSelections
                         ? toggleSelect(filteredItems[virtualRow.index], event)
                         : toggleChecked(filteredItems[virtualRow.index])}
+                    on:mousedown={(event) =>
+                      enableSelections
+                        ? handleMouseDown(virtualRow.index, event)
+                        : null}
                   >
                     {getRecordValue(
                       filteredItems[virtualRow.index],
@@ -485,6 +636,8 @@
     top: 0;
     left: 0;
     width: max(var(--total-width), 100vw);
+    user-select: none;
+    cursor: pointer;
   }
 
   .resizer-container {
@@ -637,5 +790,10 @@
   .checked-item {
     color: var(--warning-hover);
     background-color: var(--primary-bg);
+  }
+
+  /* Style for when drag selection is active */
+  .virtual-row:active .grid-item {
+    cursor: grabbing;
   }
 </style>
