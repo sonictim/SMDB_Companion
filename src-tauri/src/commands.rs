@@ -243,6 +243,7 @@ pub async fn remove_records(
     println!("Removing Records");
     println!("Dual Mono: {:?}", dual_mono);
     let mut state = state.lock().await;
+    app.substatus("starting", 0, "Nothing to report here...");
 
     if strip_dual_mono {
         app.status("starting", 0, "Stripping Dual Mono Records...");
