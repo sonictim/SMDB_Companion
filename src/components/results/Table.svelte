@@ -12,6 +12,7 @@
     toggleChecked,
     lastSelectedIndexStore,
   } from "../../stores/results";
+  import { getHotkey } from "../../stores/hotkeys";
   import { createVirtualizer } from "@tanstack/svelte-virtual";
 
   $: filteredItems = $filteredItemsStore;
@@ -29,6 +30,71 @@
   let dragSelectionState: Map<number, boolean> = new Map();
   let previouslySelectedItems: Set<number> = new Set();
   let isDeselectMode = false; // Flag to track if we're in deselect mode (Option/Alt key)
+
+  // Functions for working with custom mouse modifiers
+  function getMouseModifierKeys(actionName: string): string {
+    const hotkeyValue = getHotkey(actionName);
+    if (!hotkeyValue) return "";
+
+    // If there's no plus sign, there's no modifier
+    if (!hotkeyValue.includes("+")) return "";
+
+    // Extract everything before the final plus (which separates action)
+    const parts = hotkeyValue.split("+");
+    if (parts.length <= 1) return "";
+
+    // Remove the action part (last element) and join the rest
+    return parts.slice(0, -1).join("+");
+  }
+
+  function checkMouseModifier(event: MouseEvent, actionName: string): boolean {
+    const hotkeyValue = getHotkey(actionName);
+    if (!hotkeyValue) {
+      console.log(`${actionName}: No hotkey found`);
+      return false;
+    }
+
+    // Check if we should skip the base action type check
+    // 1. For lasso actions in handleMouseDown (before dragging starts)
+    // 2. When we're evaluating a potential drag operation
+    const isPotentialDragAction = actionName.includes("lasso");
+    const skipBaseActionCheck = !isDragging && isPotentialDragAction;
+
+    // Debug information about the action being checked
+    console.log(
+      `Checking ${actionName}: isDragging=${isDragging}, skipBaseActionCheck=${skipBaseActionCheck}`
+    );
+
+    // Only check the base action type (Click/Drag) if we're not skipping
+    if (!skipBaseActionCheck) {
+      const isClick = !hotkeyValue.includes("Drag");
+      const baseActionMatches = isDragging ? !isClick : isClick;
+      if (!baseActionMatches) {
+        console.log(
+          `${actionName}: Base action mismatch, isDragging=${isDragging}, hotkeyValue=${hotkeyValue}`
+        );
+        return false;
+      }
+    }
+
+    // Check if modifiers match
+    const hasAlt = hotkeyValue.includes("Alt+");
+    const hasShift = hotkeyValue.includes("Shift+");
+    const hasCmd = hotkeyValue.includes("CmdOrCtrl+");
+
+    const modifiersMatch =
+      event.altKey === hasAlt &&
+      event.shiftKey === hasShift &&
+      (event.metaKey || event.ctrlKey) === hasCmd;
+
+    if (!modifiersMatch) {
+      console.log(
+        `${actionName}: Modifiers don't match, expected Alt=${hasAlt}, Shift=${hasShift}, Cmd/Ctrl=${hasCmd}, got Alt=${event.altKey}, Shift=${event.shiftKey}, Cmd/Ctrl=${event.metaKey || event.ctrlKey}`
+      );
+    }
+
+    return modifiersMatch;
+  }
 
   let columnConfigs = [
     { minWidth: 10, width: 30, name: "checkbox", header: "✔" },
@@ -58,6 +124,9 @@
   function handleMouseDown(rowIndex: number, event: MouseEvent) {
     if (!enableSelections || event.button !== 0) return; // Only handle left mouse button
 
+    // Update UI feedback for hotkey modifiers
+    updateHotkeyFeedback(event);
+
     // Store the time and position when mouse is pressed down
     mouseDownTime = Date.now();
     mouseDownPosition = { x: event.clientX, y: event.clientY };
@@ -68,9 +137,39 @@
     // Store current selection state before any changes
     previouslySelectedItems = new Set(selectedItems);
 
-    // Check if Option/Alt key is pressed to determine if we're in deselect mode
-    // When Shift+Alt is used, we still want deselect mode behavior for drags
-    isDeselectMode = event.altKey;
+    // Get hotkeys for lasso operations - we need to evaluate this correctly
+    // before the drag operation actually starts
+    const lassoUnselectHotkey = getHotkey("lassoUnselect");
+    console.log("lassoUnselect hotkey:", lassoUnselectHotkey);
+
+    // Check all modifiers that could be relevant for a potential drag action
+    const isLassoUnselect = checkMouseModifier(event, "lassoUnselect");
+    const isLassoSelect = checkMouseModifier(event, "lassoSelect");
+
+    // Also check click-based operations
+    const isUnselectRange = checkMouseModifier(event, "unselectRange");
+    const isSelectRange = checkMouseModifier(event, "selectRange");
+
+    // Set deselect mode if any deselect operation is active
+    isDeselectMode = isLassoUnselect || isUnselectRange;
+
+    // Log detailed detection status for debugging
+    console.log("Modifier detection:", {
+      isLassoUnselect,
+      isLassoSelect,
+      isUnselectRange,
+      isSelectRange,
+      isDeselectMode,
+      modifierKeys: {
+        alt: event.altKey,
+        shift: event.shiftKey,
+        ctrl: event.ctrlKey,
+        meta: event.metaKey,
+      },
+    });
+
+    // No longer apply global classes to the body element
+    // The mode is tracked with the isDeselectMode variable
 
     // Set up global mouse move and mouse up handlers
     window.addEventListener("mousemove", handleMouseMove);
@@ -83,17 +182,69 @@
   function handleMouseMove(event: MouseEvent) {
     if (!enableSelections) return;
 
-    // Calculate distance moved since mousedown
+    // Update UI feedback for hotkey modifiers
+    updateHotkeyFeedback(event);
+
+    // Determine if we're just now starting a drag operation
     const distanceMoved = Math.sqrt(
       Math.pow(event.clientX - mouseDownPosition.x, 2) +
         Math.pow(event.clientY - mouseDownPosition.y, 2)
     );
+
+    const startingDrag = !isDragging && distanceMoved > 5;
+
+    if (startingDrag) {
+      // Re-evaluate modifiers at the moment drag starts
+      // This ensures we correctly identify lasso operations
+      const isLassoUnselect = checkMouseModifier(event, "lassoUnselect");
+
+      // If deselect mode was not set in mouseDown but should be active for this drag,
+      // update it now that we know it's a drag operation
+      if (isLassoUnselect) {
+        isDeselectMode = true;
+      }
+
+      console.log(
+        "Starting drag, deselect mode:",
+        isDeselectMode,
+        "lasso unselect:",
+        isLassoUnselect,
+        "distance:",
+        distanceMoved
+      );
+    }
 
     // If we haven't started dragging yet, check if we should start
     if (!isDragging) {
       // Start dragging if the mouse has moved more than 5 pixels
       if (distanceMoved > 5) {
         isDragging = true;
+
+        // When drag starts, we need to verify which modifier is active
+        // and update both the deselect mode and hotkey feedback
+        const isLassoUnselect = checkMouseModifier(event, "lassoUnselect");
+        const isLassoSelect = checkMouseModifier(event, "lassoSelect");
+
+        // Log detailed information about the drag start
+        console.log("Drag started with modifiers:", {
+          isLassoUnselect,
+          isLassoSelect,
+          currentModifiers: {
+            alt: event.altKey,
+            shift: event.shiftKey,
+            ctrl: event.ctrlKey,
+            meta: event.metaKey,
+          },
+        });
+
+        // Set deselect mode if lasso unselect is active
+        if (isLassoUnselect) {
+          isDeselectMode = true;
+          console.log("Deselect mode activated at drag start");
+
+          // Add visual indicator for deselect mode
+          document.body.classList.add("deselect-drag-active");
+        }
 
         // Handle the initial item selection when drag starts
         const itemId = filteredItems[dragStartIndex].id;
@@ -102,6 +253,7 @@
         selectedItemsStore.update((currentSelected) => {
           const newSelected = new Set(currentSelected);
 
+          // Check if this is a deselect drag (using customized hotkey setting)
           if (isDeselectMode) {
             // In deselect mode, always remove the clicked item
             newSelected.delete(itemId);
@@ -212,6 +364,9 @@
   }
 
   function handleMouseUp(event: MouseEvent) {
+    // Update UI feedback for hotkey modifiers
+    updateHotkeyFeedback(event);
+
     // Calculate time from mouseDown to mouseUp
     const clickDuration = Date.now() - mouseDownTime;
 
@@ -223,8 +378,7 @@
 
     // If it wasn't a drag operation (short duration and minimal movement), treat as a click
     if (!isDragging && clickDuration < 300 && distanceMoved < 5) {
-      // This was a click, not a drag - call toggleSelect directly
-      // Find the item that was clicked
+      // This was a click, not a drag - handle the click according to the hotkey configuration
       const itemClicked = filteredItems[dragStartIndex];
       if (itemClicked) {
         // Create a new MouseEvent that preserves the modifier keys
@@ -238,15 +392,32 @@
           view: window,
         });
 
-        // Use the toggleSelect function which handles all modifier combinations
+        // Use the toggleSelect function, but let's adapt the mouse event
+        // to the custom hotkey configurations
         toggleSelect(itemClicked, clickEvent);
       }
     }
 
     // Clean up regardless of whether it was a drag or click
+    const wasInDeselectMode = isDeselectMode;
+    const wasDragging = isDragging;
+
+    // Reset all state variables
     isDragging = false;
-    isDeselectMode = false; // Reset deselect mode
+    isDeselectMode = false;
     dragSelectionState.clear();
+
+    // Remove any visual indicators
+    document.body.classList.remove("deselect-drag-active");
+    document.body.classList.remove("deselect-mode");
+
+    // Log the end of the operation for debugging
+    if (wasDragging) {
+      console.log(
+        "Drag operation ended. Was in deselect mode:",
+        wasInDeselectMode
+      );
+    }
 
     // Remove global event listeners
     window.removeEventListener("mousemove", handleMouseMove);
@@ -403,15 +574,17 @@
   let isAltShiftPressed = false;
 
   function handleKeyDown(event: KeyboardEvent) {
-    if (event.altKey && event.shiftKey) {
-      isAltShiftPressed = true;
-    }
+    updateHotkeyFeedback(event);
+
+    // For backward compatibility, still track Alt+Shift specifically
+    isAltShiftPressed = event.altKey && event.shiftKey;
   }
 
   function handleKeyUp(event: KeyboardEvent) {
-    if (!event.altKey || !event.shiftKey) {
-      isAltShiftPressed = false;
-    }
+    updateHotkeyFeedback(event);
+
+    // For backward compatibility, still track Alt+Shift specifically
+    isAltShiftPressed = event.altKey && event.shiftKey;
   }
 
   onMount(() => {
@@ -419,6 +592,89 @@
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
   });
+
+  // Track key states for UI feedback
+  let activeHotkeyModifiers = {
+    toggleSelectAll: false,
+    selectRange: false,
+    unselectRange: false,
+    lassoSelect: false,
+    lassoUnselect: false,
+  };
+
+  // Update UI feedback based on current key state
+  function updateHotkeyFeedback(event: KeyboardEvent | MouseEvent) {
+    const toggleSelectAllMods = getModifiersFromHotkey("toggleSelectAll");
+    const selectRangeMods = getModifiersFromHotkey("selectRange");
+    const unselectRangeMods = getModifiersFromHotkey("unselectRange");
+    const lassoSelectMods = getModifiersFromHotkey("lassoSelect");
+    const lassoUnselectMods = getModifiersFromHotkey("lassoUnselect");
+
+    // Calculate each modifier match separately
+    const toggleSelectAllMatch =
+      toggleSelectAllMods.alt === event.altKey &&
+      toggleSelectAllMods.shift === event.shiftKey &&
+      toggleSelectAllMods.meta === (event.metaKey || event.ctrlKey);
+
+    const selectRangeMatch =
+      selectRangeMods.alt === event.altKey &&
+      selectRangeMods.shift === event.shiftKey &&
+      selectRangeMods.meta === (event.metaKey || event.ctrlKey);
+
+    const unselectRangeMatch =
+      unselectRangeMods.alt === event.altKey &&
+      unselectRangeMods.shift === event.shiftKey &&
+      unselectRangeMods.meta === (event.metaKey || event.ctrlKey);
+
+    const lassoSelectMatch =
+      lassoSelectMods.alt === event.altKey &&
+      lassoSelectMods.shift === event.shiftKey &&
+      lassoSelectMods.meta === (event.metaKey || event.ctrlKey);
+
+    const lassoUnselectMatch =
+      lassoUnselectMods.alt === event.altKey &&
+      lassoUnselectMods.shift === event.shiftKey &&
+      lassoUnselectMods.meta === (event.metaKey || event.ctrlKey);
+
+    // Update active modifiers
+    activeHotkeyModifiers = {
+      toggleSelectAll: toggleSelectAllMatch,
+      selectRange: selectRangeMatch,
+      unselectRange: unselectRangeMatch,
+      lassoSelect: lassoSelectMatch,
+      lassoUnselect: lassoUnselectMatch,
+    };
+
+    // We no longer apply any global overlay classes
+    // Just track the state internally for cursor changes
+
+    // Debug log for hotkey detection if needed
+    if (event.altKey || event.shiftKey || event.metaKey || event.ctrlKey) {
+      console.log("Active modifiers:", {
+        ...activeHotkeyModifiers,
+        keys: {
+          alt: event.altKey,
+          shift: event.shiftKey,
+          meta: event.metaKey || event.ctrlKey,
+        },
+        isDragging,
+      });
+    }
+  }
+
+  // Helper function to get modifiers from a hotkey name
+  function getModifiersFromHotkey(hotkeyName: string): {
+    alt: boolean;
+    shift: boolean;
+    meta: boolean;
+  } {
+    const hotkey = getHotkey(hotkeyName);
+    return {
+      alt: hotkey.includes("Alt+"),
+      shift: hotkey.includes("Shift+"),
+      meta: hotkey.includes("CmdOrCtrl+"),
+    };
+  }
 
   // Helper function to safely access record properties
   function getRecordValue(record: FileRecord, key: string): string {
@@ -577,9 +833,19 @@
     >
       {#each $rowVirtualizer.getVirtualItems() as virtualRow (virtualRow.index)}
         <div
-          class="virtual-row {isAltShiftPressed
-            ? 'alt-shift-range-deselect'
-            : ''}"
+          class="virtual-row {activeHotkeyModifiers.unselectRange
+            ? 'unselect-range-hover'
+            : activeHotkeyModifiers.toggleSelectAll
+              ? 'toggle-select-all-hover'
+              : activeHotkeyModifiers.selectRange
+                ? 'select-range-hover'
+                : activeHotkeyModifiers.lassoSelect
+                  ? 'lasso-select-hover'
+                  : activeHotkeyModifiers.lassoUnselect
+                    ? 'lasso-unselect-hover'
+                    : isAltShiftPressed
+                      ? 'alt-shift-range-deselect'
+                      : ''}"
           data-index={virtualRow.index}
           style="transform: translateY({virtualRow.start}px); height: {virtualRow.size}px; width: {totalWidth};"
         >
@@ -896,8 +1162,32 @@
     cursor: not-allowed;
   }
 
-  /* Specific cursor for Alt+Shift range deselection */
-  .alt-shift-range-deselect {
+  /* Cursor styles for different mouse modifiers - only change cursor without outlines */
+  .alt-shift-range-deselect,
+  .unselect-range-hover,
+  .lasso-unselect-hover {
     cursor: no-drop;
+  }
+
+  .select-range-hover {
+    cursor: cell;
+  }
+
+  .toggle-select-all-hover {
+    cursor: crosshair;
+  }
+
+  .lasso-select-hover {
+    cursor: grab;
+  }
+
+  /* Style for when in deselect mode during a drag */
+  .deselect-drag-active .virtual-row .grid-item {
+    cursor: no-drop !important;
+  }
+
+  /* Use a very subtle indicator in the status bar or other unobtrusive UI element instead */
+  .deselect-drag-active {
+    /* No background change */
   }
 </style>

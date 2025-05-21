@@ -277,6 +277,16 @@
       );
       return result;
     }
+    if (keyStr.includes("Alt")) {
+      const result = keyStr.replace("Alt", isMac ? "Opt" : "Alt");
+      console.log(
+        "Replacing Alt with: ",
+        isMac ? "Opt" : "Alt",
+        "Result:",
+        result
+      );
+      return result;
+    }
     return keyStr;
   }
 
