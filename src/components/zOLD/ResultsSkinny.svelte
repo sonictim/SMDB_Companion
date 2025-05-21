@@ -3,14 +3,14 @@
   import { onMount, onDestroy } from "svelte";
   import { listen } from "@tauri-apps/api/event";
 
-  import Table from "./results/Table.svelte";
-  import Filters from "./results/filterSwitch.svelte";
-  import RemoveBar from "./results/removeBar.svelte";
-  import Toolbar from "./results/Toolbar.svelte";
-  import RemoveButton from "./results/removeButton.svelte";
-  import Status from "./Status.svelte";
-  import { preferencesStore } from "../stores/preferences";
-  import { showStatus, searchProgressStore } from "../stores/status";
+  import Table from "../results/Table.svelte";
+  import Filters from "../results/filterSwitch.svelte";
+  import RemoveBar from "../results/removeBar.svelte";
+  import Toolbar from "../results/Toolbar.svelte";
+  import RemoveButton from "../results/removeButton.svelte";
+  import Status from "../Status.svelte";
+  import { preferencesStore } from "../../stores/preferences";
+  import { showStatus, searchProgressStore } from "../../stores/status";
 
   import { Loader } from "lucide-svelte";
 

@@ -7,24 +7,27 @@
     databaseStore,
     openDatabase,
     getCompareDb,
-  } from "../stores/database";
-  import { preferencesStore } from "../stores/preferences";
-  import { toggleAlgorithm, getAlgorithmTooltip } from "../stores/algorithms";
+  } from "../../stores/database";
+  import { preferencesStore } from "../../stores/preferences";
+  import {
+    toggleAlgorithm,
+    getAlgorithmTooltip,
+  } from "../../stores/algorithms";
   import {
     resultsStore,
     selectedItemsStore,
     totalChecksStore,
     selectedChecksStore, // Import the new store
-  } from "../stores/results";
+  } from "../../stores/results";
   import {
     searchProgressStore,
     showStatus,
     initializeSearchListeners,
     toggleSearch,
-  } from "../stores/status";
+  } from "../../stores/status";
 
-  import Table from "./results/Table.svelte";
-  import { removeRecords, removeSelectedRecords } from "../stores/remove";
+  import Table from "../results/Table.svelte";
+  import { removeRecords, removeSelectedRecords } from "../../stores/remove";
 
   export let selectedDb: string | null = null;
 

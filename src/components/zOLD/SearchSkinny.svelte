@@ -1,6 +1,6 @@
 <script lang="ts">
-  import Algorithms from "./search/Algorithms.svelte";
-  import Button from "./search/SearchButton.svelte";
+  import Algorithms from "../search/Algorithms.svelte";
+  import Button from "../search/SearchButton.svelte";
 </script>
 
 <div class="page-columns">

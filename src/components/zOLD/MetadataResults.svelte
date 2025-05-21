@@ -3,8 +3,8 @@
   import { onMount, onDestroy } from "svelte";
   import { listen } from "@tauri-apps/api/event";
 
-  import Table from "./results/Table.svelte";
-  import { preferencesStore } from "../stores/preferences";
+  import Table from "../results/Table.svelte";
+  import { preferencesStore } from "../../stores/preferences";
   import {
     resultsStore,
     filteredItemsStore,
@@ -15,9 +15,9 @@
     checkSelected,
     uncheckSelected,
     toggleChecksSelected,
-  } from "../stores/results";
-  import { metadataStore } from "../stores/metadata";
-  import { viewStore, showSearchView } from "../stores/menu";
+  } from "../../stores/results";
+  import { metadataStore } from "../../stores/metadata";
+  import { viewStore, showSearchView } from "../../stores/menu";
   import { ask, message } from "@tauri-apps/plugin-dialog";
 
   $: pref = $preferencesStore;

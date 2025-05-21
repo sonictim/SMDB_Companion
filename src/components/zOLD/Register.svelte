@@ -2,9 +2,9 @@
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
 
-  import type { Registration } from "../stores/types";
-  import { registrationStore } from "../stores/registration";
-  import { resultsStore } from "../stores/results";
+  import type { Registration } from "../../stores/types";
+  import { registrationStore } from "../../stores/registration";
+  import { resultsStore } from "../../stores/results";
   import { get } from "svelte/store";
 
   const DEBUG_MODE = import.meta.env.DEV || false; // Will be true in development, false in production
