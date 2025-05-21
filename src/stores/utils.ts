@@ -13,6 +13,41 @@ import { preferencesStore } from "./preferences";
 import type { Colors } from "./types";
 import { get } from "svelte/store";
   import { onMount, onDestroy } from "svelte";
+  import { platform } from "@tauri-apps/plugin-os";
+  
+  // Detect platform and return a promise that resolves to true if on macOS
+  export async function isMacOS(): Promise<boolean> {
+    try {
+      const osType = await platform();
+      const lowerOs = osType.toLowerCase();
+      return lowerOs === "macos" || lowerOs === "darwin";
+    } catch (err) {
+      console.error("Failed to detect platform:", err);
+      
+      // Fallback detection based on navigator.userAgent or navigator.platform if available in the browser
+      if (typeof navigator !== "undefined") {
+        const userAgent = navigator.userAgent.toLowerCase();
+        const platform = navigator.platform.toLowerCase();
+        
+        return userAgent.includes("mac") || 
+               platform.includes("mac") ||
+               platform.includes("darwin");
+      }
+      
+      return false;
+    }
+  }
+  
+  // Cache the result to avoid repeated async calls
+  let isMacCached: boolean | null = null;
+  
+  export async function getIsMac(): Promise<boolean> {
+    if (isMacCached === null) {
+      isMacCached = await isMacOS();
+    }
+    return isMacCached;
+  }
+  
 
 
 

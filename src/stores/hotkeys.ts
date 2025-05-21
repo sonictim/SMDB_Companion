@@ -3,10 +3,17 @@ import type { HotKeys, HashMap } from "./types";
 import { get } from "svelte/store";
 import type { Hash } from "lucide-svelte";
 import { emit } from '@tauri-apps/api/event';
+import { platform } from '@tauri-apps/plugin-os';
 
 
 
 export const defaultHotKeys: HashMap[] = [
+  {"openDatabase": "CmdOrCtrl+O"},
+  {"openRecent": "CmdOrCtrl+Shift+O"},
+  {"closeDatabase": "CmdOrCtrl+W"},
+  {"searchDatabase": "CmdOrCtrl+Enter"},
+  {"cancelSearch": "Esc"},
+  {"removeRecords": "CmdOrCtrl+Backspace"},
   {"settings": "CmdOrCtrl+,"},
   {"showToolbars": ","},
   {"showSearchView": "1"},
@@ -14,18 +21,20 @@ export const defaultHotKeys: HashMap[] = [
   {"showSplitView": "3"},
   {"showNoFrillsView": "4"},
   {"showRegistration": "5"},
-  {"openDatabase": "CmdOrCtrl+O"},
-  {"openRecent": "CmdOrCtrl+Shift+O"},
-  {"closeDatabase": "CmdOrCtrl+W"},
-  {"searchDatabase": "CmdOrCtrl+Enter"},
-  {"cancelSearch": "Esc"},
-  {"removeRecords": "CmdOrCtrl+Backspace"},
   {"checkSelected": "C"},
   {"uncheckSelected": "U"},
   {"toggleSelected": "T"},
   {"invertSelected": "I"},
   {"clearSelected": "Backspace"},
-  {"helpMenu": "F1"}
+  {"helpMenu": "F1"},
+  
+  // Mouse modifiers for table selection
+  {"toggleRowSelect": "Click"},
+  {"toggleSelectAll": "Alt+Click"},
+  {"selectRange": "Shift+Click"},
+  {"unselectRange": "Alt+Shift+Click"},
+  {"lassoSelect": "Drag"},
+  {"lassoUnselect": "Alt+Drag"}
 ]
 
 export const hotkeysStore = createLocalStore<HashMap[]>('hotkeys', defaultHotKeys);

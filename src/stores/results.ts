@@ -4,6 +4,7 @@ import type { FileRecord } from './types';
 import { createSessionStore } from './utils';
 import { writable, derived, get } from 'svelte/store';
 import { preferencesStore } from './preferences';
+import { getHotkey } from './hotkeys';
 
 // Main results store
 // Change from using createSessionStore
@@ -137,6 +138,37 @@ export function invertSelected(): void {
   });
 }
 
+// Helper functions to check if modifiers match the user-configured hotkeys
+function getModifiersFromHotkey(hotkeyName: string): {alt: boolean, shift: boolean, meta: boolean} {
+  const hotkey = getHotkey(hotkeyName);
+  return {
+    alt: hotkey.includes("Alt+"),
+    shift: hotkey.includes("Shift+"),
+    meta: hotkey.includes("CmdOrCtrl+")
+  };
+}
+
+function isToggleSelectAllModifier(event: MouseEvent): boolean {
+  const mods = getModifiersFromHotkey("toggleSelectAll");
+  return event.altKey === mods.alt && 
+         event.shiftKey === mods.shift && 
+         (event.metaKey || event.ctrlKey) === mods.meta;
+}
+
+function isSelectRangeModifier(event: MouseEvent): boolean {
+  const mods = getModifiersFromHotkey("selectRange");
+  return event.altKey === mods.alt && 
+         event.shiftKey === mods.shift && 
+         (event.metaKey || event.ctrlKey) === mods.meta;
+}
+
+function isUnselectRangeModifier(event: MouseEvent): boolean {
+  const mods = getModifiersFromHotkey("unselectRange");
+  return event.altKey === mods.alt && 
+         event.shiftKey === mods.shift && 
+         (event.metaKey || event.ctrlKey) === mods.meta;
+}
+
 export function toggleSelect(item: FileRecord, event: MouseEvent): void {
   const filtered = get(filteredItemsStore);
   const currentIndex = filtered.findIndex(record => record.id === item.id);
@@ -144,8 +176,8 @@ export function toggleSelect(item: FileRecord, event: MouseEvent): void {
   selectedItemsStore.update(currentSelected => {
     const newSelected = new Set(currentSelected);
     
-    // Alt key without Shift: toggle between selecting all and selecting none
-    if (event.altKey && !event.shiftKey) {
+    // Toggle Select All action
+    if (isToggleSelectAllModifier(event)) {
       if (newSelected.size > 0) {
         newSelected.clear();
       } else {
@@ -154,35 +186,34 @@ export function toggleSelect(item: FileRecord, event: MouseEvent): void {
       return newSelected;
     }
     
-    // Handle Shift click for range operations
-    if (event.shiftKey && get(lastSelectedIndexStore) !== -1) {
+    // Handle Range selection operations
+    if ((isSelectRangeModifier(event) || isUnselectRangeModifier(event)) && 
+        get(lastSelectedIndexStore) !== -1) {
       const start = Math.min(get(lastSelectedIndexStore), currentIndex);
       const end = Math.max(get(lastSelectedIndexStore), currentIndex);
       
-      // Option/Alt + Shift + click: unselect range
-      if (event.altKey) {
+      // Unselect range
+      if (isUnselectRangeModifier(event)) {
         for (let i = start; i <= end; i++) {
           newSelected.delete(filtered[i].id);
         }
-        // Always update the last selected index for both select and deselect operations
-        lastSelectedIndexStore.set(currentIndex);
       } 
-      // Regular Shift + click: select range
+      // Select range
       else {
         for (let i = start; i <= end; i++) {
           newSelected.add(filtered[i].id);
         }
-        // Always update the last selected index for both select and deselect operations
-        lastSelectedIndexStore.set(currentIndex);
       }
+      // Always update the last selected index for range operations
+      lastSelectedIndexStore.set(currentIndex);
     } else {
-      // Normal click: toggle single selection
+      // Normal toggle single selection
       if (newSelected.has(item.id)) {
         newSelected.delete(item.id);
       } else {
         newSelected.add(item.id);
       }
-      // Always update the last selected index for all click operations
+      // Always update the last selected index for regular clicks
       lastSelectedIndexStore.set(currentIndex);
     }
     
