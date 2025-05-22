@@ -7,7 +7,7 @@
   $: pref = $preferencesStore;
 </script>
 
-<div class="header" style="margin-bottom: 0px; margin-top: 15px;">
+<div class="header" style="margin-top: 15px; margin-bottom: 0px">
   <span>
     <select
       class="select-field"

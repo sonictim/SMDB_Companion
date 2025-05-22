@@ -205,15 +205,13 @@
     text-align: center;
   }
 
-  .block {
-    height: calc(100vh - 160px);
-  }
-
   .font-size-container {
     margin-top: 0px;
     padding: 12px 24px;
     background-color: var(--secondary-bg);
     border-radius: 8px;
+    width: 80vw;
+    align-self: center;
   }
 
   .font-size-header {

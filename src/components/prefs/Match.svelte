@@ -181,7 +181,7 @@
       </VirtualList>
     </div>
   </div>
-  <div class="block" style=" height: 30vh;">
+  <div class="block">
     <div class="header">
       <h2>Audio Content Search Options</h2>
     </div>
@@ -290,15 +290,20 @@
 
 <style>
   .block {
-    height: calc(80vh - 250px);
+    height: 100%;
+    margin-top: 0;
+    margin-bottom: 0;
+    /* padding: 15px; */
+    flex: 1;
   }
 
   .grid-container {
-    height: calc(100vh - 160px);
+    height: 100%;
     display: grid;
     grid-template-columns: 1fr;
     grid-template-rows: 2fr 1fr;
-    gap: 20px;
+    gap: 0px;
+    margin-bottom: 0px;
   }
 
   .algorithm-help {

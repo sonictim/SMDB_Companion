@@ -812,7 +812,7 @@
       }
     }}
   >
-    <div class="virtual-table-header" style="width: {totalWidth};">
+    <div class="virtual-table-header" style="width: 100%;">
       <div
         class="grid-container rheader"
         style="grid-template-columns: {gridTemplateColumns};"
@@ -826,7 +826,7 @@
 
       <div
         class="resizer-container"
-        style="grid-template-columns: {gridTemplateColumns}; display: grid; width: {totalWidth};"
+        style="grid-template-columns: {gridTemplateColumns}; display: grid; width: 100%;"
       >
         {#each columnConfigs as column, i}
           <div class="resizer-cell">
@@ -845,7 +845,7 @@
 
     <div
       class="virtual-table-body"
-      style="height: {$rowVirtualizer.getTotalSize()}px; width: {totalWidth};"
+      style="height: {$rowVirtualizer.getTotalSize()}px; width: 100%;"
     >
       {#each $rowVirtualizer.getVirtualItems() as virtualRow (virtualRow.index)}
         <div
@@ -863,7 +863,7 @@
                       ? 'alt-shift-range-deselect'
                       : ''}"
           data-index={virtualRow.index}
-          style="transform: translateY({virtualRow.start}px); height: {virtualRow.size}px; width: {totalWidth};"
+          style="transform: translateY({virtualRow.start}px); height: {virtualRow.size}px; width: 100%;"
         >
           <div
             class="list-item {filteredItems[
@@ -971,19 +971,25 @@
   .virtual-table-container {
     position: relative;
     overflow: hidden;
-    /* width: 100vw; */
+    width: 100%;
+    min-height: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
   }
 
   .virtual-table-viewport {
     overflow: auto;
-    height: 100%;
+    flex: 1;
     width: 100%;
+    min-height: 100%;
     will-change: transform;
     position: relative;
   }
 
   .virtual-table-header {
-    width: max(var(--total-width), 100vw);
+    /* width: max(var(--total-width), 100vw); */
+    width: 100%;
     position: sticky;
     top: 0;
     z-index: 10;
@@ -993,7 +999,8 @@
     margin-top: 0px;
   }
   .virtual-table-header2 {
-    width: max(var(--total-width), 100vw);
+    /* width: max(var(--total-width), 100vw); */
+    width: 100%;
     position: sticky;
     top: 0;
     z-index: 10;
@@ -1004,14 +1011,18 @@
 
   .virtual-table-body {
     position: relative;
-    width: max(var(--total-width), 100vw);
+    width: 100%;
+
+    width: 100%;
   }
 
   .virtual-row {
     position: absolute;
     top: 0;
     left: 0;
-    width: max(var(--total-width), 100vw);
+    width: 100%;
+
+    width: 100%;
     user-select: none;
     cursor: pointer;
   }
@@ -1034,7 +1045,7 @@
     height: calc(var(--font-size-xl) * 2);
     background-color: var(--inactive-color);
     position: absolute;
-    right: -18px; /* Change from -20px to 0 */
+    right: 1px;
     transform: translateX(50%); /* Center on the boundary */
     top: calc(var(--font-size-xl) * -2);
     cursor: col-resize;
@@ -1058,7 +1069,7 @@
     -webkit-user-select: none;
     -moz-user-select: none;
     -ms-user-select: none;
-    width: max(var(--total-width), 100vw);
+    width: 100%;
     min-height: var(--font-size); /* Ensure minimum height for cell contents */
   }
 
@@ -1066,7 +1077,7 @@
     font-size: var(--font-size);
     background-color: var(--secondary-bg);
     margin-top: 0px;
-    width: max(var(--total-width), 100vw);
+    width: 100%;
   }
 
   .rheader {
@@ -1082,7 +1093,7 @@
     ); /* Adjust height based on font size */
     text-align: bottom;
     align-items: end;
-    width: max(var(--total-width), 100vw);
+    width: 100%;
   }
 
   .header {
@@ -1098,7 +1109,7 @@
     -webkit-user-select: none;
     -moz-user-select: none;
     -ms-user-select: none;
-    width: max(var(--total-width), 100vw);
+    width: 100%;
   }
 
   .algorithm-icons {

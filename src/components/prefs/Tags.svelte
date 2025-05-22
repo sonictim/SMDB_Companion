@@ -235,7 +235,7 @@
         {#if selectedItems.size === 0 && selectedTags.size == 0}
           <select
             class="select-field"
-            style="font-size: calc(var(--font-size-xs) - 2px); width: 100px; margin-left: -1px; text-align: center; text-align-last: center;"
+            style="font-size: var(--font-size-xs); width: 100px; margin-left: -1px; text-align: center; text-align-last: center;"
             bind:value={isMove}
           >
             <option value={true}>Move All</option>
@@ -305,6 +305,9 @@
 </div>
 
 <style>
+  .block {
+    height: 88vh;
+  }
   .page-columns {
     display: grid;
     grid-template-columns: 1fr auto 1fr; /* Left, center, right */
@@ -336,10 +339,6 @@
   .arrow-button:hover {
     /* background-color: #f0a500; */
     color: var(--accent-color);
-  }
-
-  .block {
-    height: calc(100vh - 160px);
   }
 
   .list-item {

@@ -265,6 +265,11 @@
 </div>
 
 <style>
+  .block {
+    height: 100%; /* Use available height instead of viewport percentage */
+    margin-bottom: 0px;
+    overflow-y: auto; /* Add scrolling to the component itself if needed */
+  }
   .item-container {
     position: relative;
     margin: 2px 0;
@@ -322,9 +327,5 @@
     display: grid;
     grid-template-columns: 1fr 2fr; /* First column 1/3, second column 2/3 */
     gap: 10px;
-  }
-
-  .block {
-    height: calc(100vh - 160px);
   }
 </style>

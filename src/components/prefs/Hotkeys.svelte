@@ -541,10 +541,6 @@
     border: 1px solid var(--topbar-color);
   }
 
-  .block {
-    height: calc(100vh - 160px);
-  }
-
   .section-header {
     padding: 10px 0 5px 0;
     margin: 10px 0 5px 0;

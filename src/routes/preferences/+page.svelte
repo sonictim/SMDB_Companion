@@ -207,7 +207,7 @@
   </div>
 
   <main class="content">
-    <div>
+    <div class="component-container">
       {#if activeTab === "mainPref"}
         <MainComponent />
       {:else if activeTab === "matchCriteria"}
@@ -287,6 +287,15 @@
 
   .content {
     flex-grow: 1;
+    overflow: hidden; /* Changed from overflow-y: auto */
+    display: flex;
+    flex-direction: column;
+    /* Add padding at the bottom to make room for the preset bar */
+    padding-bottom: 40px;
+  }
+
+  .component-container {
+    height: 100%;
     overflow-y: auto;
   }
 
@@ -297,12 +306,12 @@
     padding: 10px;
     background-color: var(--secondary-bg);
     color: var(--text-color);
-    width: calc(100% + 40px);
-    margin-top: 16px;
-    margin-left: -20px;
-    margin-right: 20px;
-    position: sticky;
+    width: 100%;
+    position: fixed; /* Changed from sticky to fixed */
     bottom: 0;
+    left: 0;
+    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+    z-index: 100;
   }
 
   .preset-bar .cta-button:first-child {

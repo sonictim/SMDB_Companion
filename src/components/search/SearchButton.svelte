@@ -22,21 +22,16 @@
     <SearchCheck size={18} />
     <span>Search for Records</span>
   </button>
-{:else}
-  <button
-    class="cta-button {$showStatus ? 'cancel' : ''}"
-    on:click={async () => {
-      let result = await toggleSearch();
-    }}
-  >
-    <div class="flex items-center gap-2">
-      {#if $showStatus}
-        <X size={18} />
-        <span>Cancel</span>
-      {:else}
-        <SearchCheck size={18} />
-        <span>Search for Records</span>
-      {/if}
+{:else if $showStatus}
+  <button class="cta-button cancel">
+    <div class="cta-button">
+      <X size={18} />
+      <span>Cancel</span>
     </div>
+  </button>
+{:else}
+  <button class="cta-button">
+    <SearchCheck size={18} />
+    <span>Search for Records</span>
   </button>
 {/if}

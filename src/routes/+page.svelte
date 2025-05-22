@@ -34,6 +34,7 @@
   let initError: unknown = null;
   let presetChangedListener: (() => void) | null = null;
   let preferencesChangedListener: (() => void) | null = null;
+  let hotkeyChangeListener: (() => void) | null = null;
 
   // Use the viewStore instead of local variables
   $: view = $viewStore;
@@ -44,6 +45,11 @@
       // App initialization
       console.log("Starting app initialization");
       addMissingPrefs();
+
+      // Ensure hotkeys defaults are applied - critical for fresh installations
+      const { checkForNewDefaults } = await import("../stores/hotkeys");
+      checkForNewDefaults();
+
       await initializeMenu();
       const reg = await checkRegistered();
       isRegistered.set(reg);
@@ -128,6 +134,21 @@
         }
       });
 
+      // Listen for hotkey changes to sync between windows
+      hotkeyChangeListener = await listen("hotkey-change", async () => {
+        console.log("Hotkey change detected in main window");
+        // Reload hotkeys from localStorage
+        const storedHotkeys = localStorage.getItem("hotkeys");
+        if (storedHotkeys) {
+          try {
+            const latestHotkeys = JSON.parse(storedHotkeys);
+            hotkeysStore.set(latestHotkeys);
+          } catch (error) {
+            console.error("Error parsing hotkeys:", error);
+          }
+        }
+      });
+
       // Check for updates in the background
       const updateCheck = await checkForUpdates().catch((err) => {
         console.error("Update check failed:", err);
@@ -161,6 +182,7 @@
   onDestroy(() => {
     if (view === "results") view = "search";
     if (presetChangedListener) presetChangedListener();
+    if (hotkeyChangeListener) hotkeyChangeListener();
     // Remove the call to preferencesChangedListener since it's never initialized
   });
 </script>

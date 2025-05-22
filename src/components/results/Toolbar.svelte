@@ -25,7 +25,7 @@
   }
 </script>
 
-<div class="bar">
+<div class="bar" style="margin-top: 0px">
   <div class="left-side">
     <button class="small-button" on:click={toggleChecksSelected}
       >Toggle Selected</button

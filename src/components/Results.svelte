@@ -116,7 +116,7 @@
   }
 </script>
 
-<div class="block">
+<div class="block results-container">
   <div class="header">
     <h2>Search Results:</h2>
     <span style="font-size: var(--font-size-lg)">
@@ -138,7 +138,7 @@
         </Toolbar>
       </span>
     {/if}
-    <div class="block inner" style="margin-bottom: 15px;">
+    <div class="block inner results-content">
       {#if $showStatus}
         <Status />
       {:else if loading}
@@ -198,5 +198,27 @@
 
   .header h2 {
     margin: 0;
+  }
+
+  .results-container {
+    display: flex;
+    flex-direction: column;
+    height: calc(
+      100vh - (var(--font-size) * 3)
+    ); /* Adjust the 60px based on your header height */
+  }
+
+  .results-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 300px; /* Minimum height to ensure it's always visible */
+  }
+
+  /* This ensures the Table component knows it should fill the space */
+  .results-content :global(.virtualized-table-container) {
+    flex: 1;
+    height: 100% !important;
+    min-height: 250px;
   }
 </style>

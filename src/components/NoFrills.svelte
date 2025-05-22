@@ -150,7 +150,6 @@
     display: flex;
     flex-direction: column;
     /* Stack items vertically */
-    height: calc(100vh - 55px);
     /* Full viewport height */
   }
 
