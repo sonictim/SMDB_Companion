@@ -112,7 +112,7 @@
       <Form />
     {/if}
   {:else}
-    <div class="grid">
+    <div class="grid" style="margin-top: 40px; margin-left: 40px">
       <Algorithms />
     </div>
   {/if}

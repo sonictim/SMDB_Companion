@@ -34,7 +34,7 @@
 </script>
 
 <div class="page-columns">
-  <div class="block">
+  <div class="block" style="height: 45vh; margin-bottom: 0px">
     <div class="header">
       <h2>Search Algorithms</h2>
       {#if database == null || database.name == "" || database.name == "Select Database" || !checkAnyAlgorithmEnabled()}
@@ -85,7 +85,7 @@
     display: grid;
     grid-template-columns: repeat(1, 1fr); /* 3 equal columns */
 
-    gap: 10px;
+    gap: 0px;
   }
 
   :global(.checkbox.checked) {
