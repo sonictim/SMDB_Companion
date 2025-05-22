@@ -47,6 +47,13 @@
       await initializeMenu();
       const reg = await checkRegistered();
       isRegistered.set(reg);
+
+      // Apply font size from preferences
+      const { applyFontSize } = await import("../stores/colors");
+      if ($preferencesStore.fontSize) {
+        await applyFontSize($preferencesStore.fontSize);
+      }
+
       appInitialized = true;
       console.log("App initialization complete");
       updateAlgorithmOrder();
@@ -74,71 +81,54 @@
         }));
       }
 
-      // Set up preset listener
+      // Listen for preset changes
       presetChangedListener = await listen(
         "preset-change",
         (event: { payload: { preset: Preset } }) => {
           console.log("Preset change event received:", event);
-
           let presetData = event.payload as { preset: Preset };
-          if (presetData?.preset) {
+          if (presetData && presetData.preset) {
             console.log("Applying preset:", presetData.preset.name);
             applyPreset(presetData.preset);
-            preferencesStore.update((prefs: any) => ({
-              ...prefs,
-            }));
           }
         }
       );
 
-      // Listen for hotkey changes to sync between windows
-      await listen("hotkey-change", async () => {
-        console.log("Hotkey change detected, refreshing menu");
-        // The menu will be refreshed by its own event listener
-        // Reload hotkeys from localStorage to ensure synchronization
-        const storedHotkeys = localStorage.getItem("hotkeys");
-        if (storedHotkeys) {
-          try {
-            const latestHotkeys = JSON.parse(storedHotkeys);
-            hotkeysStore.set(latestHotkeys);
-          } catch (error) {
-            console.error("Error parsing hotkeys:", error);
-          }
+      // Listen for font size changes
+      listen("font-size-updated", (event) => {
+        const { fontSize } = event.payload as { fontSize: number };
+        if (fontSize) {
+          // Update main font size
+          document.documentElement.style.setProperty(
+            "--font-size",
+            `${fontSize}px`
+          );
+
+          // Update derived font size variables
+          document.documentElement.style.setProperty(
+            "--font-size-xs",
+            `${fontSize - 4}px`
+          );
+          document.documentElement.style.setProperty(
+            "--font-size-sm",
+            `${fontSize - 3}px`
+          );
+          document.documentElement.style.setProperty(
+            "--font-size-md",
+            `${fontSize - 2}px`
+          );
+          document.documentElement.style.setProperty(
+            "--font-size-lg",
+            `${fontSize + 2}px`
+          );
+          document.documentElement.style.setProperty(
+            "--font-size-xl",
+            `${fontSize + 8}px`
+          );
         }
       });
 
-      preferencesChangedListener = await listen(
-        "preference-change",
-        async () => {
-          console.log("Preference change detected, reloading preferences");
-
-          // Load the latest preferences from localStorage
-          // Fix: Use 'preferencesInfo' to match the store's initialization key
-          const storedPrefs = localStorage.getItem("preferencesInfo");
-          if (storedPrefs) {
-            try {
-              const latestPrefs = JSON.parse(storedPrefs);
-              preferencesStore.set(latestPrefs);
-
-              // Update any UI elements that depend on preferences
-              // e.g., CSS variables - Apply CSS variables here if needed
-              if (latestPrefs?.colors) {
-                Object.entries(latestPrefs.colors).forEach(([key, value]) => {
-                  const cssVariable = `--${key.replace(/([A-Z])/g, "-$1").toLowerCase()}`;
-                  document.documentElement.style.setProperty(
-                    cssVariable,
-                    String(value)
-                  );
-                });
-              }
-            } catch (error) {
-              console.error("Error parsing stored preferences:", error);
-            }
-          }
-        }
-      );
-
-      // Check for updates (non-blocking)
+      // Check for updates in the background
       const updateCheck = await checkForUpdates().catch((err) => {
         console.error("Update check failed:", err);
         return null;
@@ -171,7 +161,7 @@
   onDestroy(() => {
     if (view === "results") view = "search";
     if (presetChangedListener) presetChangedListener();
-    if (preferencesChangedListener) preferencesChangedListener();
+    // Remove the call to preferencesChangedListener since it's never initialized
   });
 </script>
 

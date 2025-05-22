@@ -502,6 +502,17 @@
   onMount(() => {
     loading = false;
     fetchData();
+
+    // Listen for font-size changes and update the virtualizer
+    const fontSizeListener = listen("font-size-updated", () => {
+      if ($rowVirtualizer) {
+        $rowVirtualizer.measure();
+      }
+    });
+
+    return () => {
+      fontSizeListener.then((unsubscribe) => unsubscribe());
+    };
   });
 
   async function playAudioFile(record: FileRecord) {
@@ -736,7 +747,12 @@
   let parentRef: Element;
   let parentWidth = 0;
   let parentHeight = 0;
-  export let estimatedItemSize = 40;
+  // Make row height responsive to font size
+  $: estimatedItemSize = Math.round(
+    parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue("--font-size")
+    ) * 2.5
+  );
   export let overscan = 5;
 
   // Create vertical virtualizer for rows
@@ -1015,12 +1031,12 @@
 
   .resizer {
     width: 4px;
-    height: 45px;
+    height: calc(var(--font-size-xl) * 2);
     background-color: var(--inactive-color);
     position: absolute;
     right: -18px; /* Change from -20px to 0 */
     transform: translateX(50%); /* Center on the boundary */
-    top: -45px;
+    top: calc(var(--font-size-xl) * -2);
     cursor: col-resize;
     z-index: 20;
     opacity: 0.7;
@@ -1033,20 +1049,21 @@
 
   .grid-item {
     position: relative;
-    padding: 3px;
+    padding: 3px; /* Scale padding based on font size */
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 14px;
+    font-size: var(--font-size-md);
     user-select: none;
     -webkit-user-select: none;
     -moz-user-select: none;
     -ms-user-select: none;
     width: max(var(--total-width), 100vw);
+    min-height: var(--font-size); /* Ensure minimum height for cell contents */
   }
 
   .grid-item.header {
-    font-size: 16px;
+    font-size: var(--font-size);
     background-color: var(--secondary-bg);
     margin-top: 0px;
     width: max(var(--total-width), 100vw);
@@ -1054,13 +1071,15 @@
 
   .rheader {
     font-weight: bold;
-    font-size: 16px;
+    font-size: var(--font-size);
     color: var(--accent-color);
     background-color: var(--secondary-bg);
     border-bottom: 1px solid var(--inactive-color);
     margin-left: 0px;
     margin-top: 0px;
-    height: 45px;
+    height: calc(
+      var(--font-size-xl) * 2
+    ); /* Adjust height based on font size */
     text-align: bottom;
     align-items: end;
     width: max(var(--total-width), 100vw);
@@ -1101,7 +1120,7 @@
     border: 1px solid var(--border-color);
     padding: 2px 6px;
     border-radius: 4px;
-    font-size: 10px;
+    font-size: calc(var(--font-size-xs) - 2px);
     z-index: 100;
     white-space: nowrap;
     top: 100%;
@@ -1188,6 +1207,6 @@
 
   /* Use a very subtle indicator in the status bar or other unobtrusive UI element instead */
   .deselect-drag-active {
-    /* No background change */
+    opacity: 0.9;
   }
 </style>

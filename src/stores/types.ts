@@ -90,6 +90,7 @@ export type Preferences = {
   algorithms: Algorithm[];
   version?: number; // Add version field to track preference structure changes
   batch_size: number;
+  fontSize: number; // Font size in pixels
 };
 
 export type Preset = { 

@@ -22,10 +22,10 @@
   <div class="top-bar-left">
     <button class="nav-link" on:click={() => openDatabase(false)}>
       <Database size={18} />
-      <span style="font-size: 24px;">
+      <span style="font-size: var(--font-size-xl);">
         {$databaseStore?.name || "Select Database"}
         {#if $databaseStore}
-          <span style="font-size: 14px;"
+          <span style="font-size: var(--font-size-md);"
             >{$databaseStore.size} total records</span
           >
         {/if}

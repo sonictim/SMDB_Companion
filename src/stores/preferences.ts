@@ -32,6 +32,7 @@ export const defaultPreferences: Preferences = {
     showToolbars: true,
     algorithms: defaultAlgorithms,
     batch_size: 1000,
+    fontSize: 16, // Default font size in pixels
     preservation_order: [
         {
             column: "Description",
@@ -446,6 +447,18 @@ export async function audiosuite_tag_remove(value: string) {
     if (currentPrefs.tags.includes(value)) {
         await updatePreference('tags', currentPrefs.tags.filter(item => item !== value));
     }
+}
+
+export async function updateFontSize(value: number) {
+    // Ensure the value is within the allowed range (12-20) with 1 decimal precision
+    const size = parseFloat(
+      Math.min(Math.max(value, 12), 20).toFixed(1)
+    );
+    await updatePreference('fontSize', size);
+    
+    // Import and use the applyFontSize function from colors.ts
+    const { applyFontSize } = await import('./colors');
+    await applyFontSize(size);
 }
 export async function filename_tag_remove(value: string) {
     const currentPrefs = get(preferencesStore);

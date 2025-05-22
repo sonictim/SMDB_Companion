@@ -14,6 +14,14 @@
   --warning-hover: #ff6a00;
   --warning-color: #b91c1c;
   --inactive-color: #888;
+  
+  /* Font size system */
+  --font-size: 16px; /* Default font size */
+  --font-size-xs: calc(var(--font-size) - 4px); /* 12px when default is 16px */
+  --font-size-sm: calc(var(--font-size) - 3px); /* 13px when default is 16px */
+  --font-size-md: calc(var(--font-size) - 2px); /* 14px when default is 16px */
+  --font-size-lg: calc(var(--font-size) + 2px); /* 18px when default is 16px */
+  --font-size-xl: calc(var(--font-size) + 8px); /* 24px when default is 16px */
 }
 
 :root.original {
@@ -84,6 +92,7 @@ body {
   overflow-x: hidden;
   overflow: hidden;
   font-family: Arial, sans-serif;
+  font-size: var(--font-size);
 }
 
 .app-container {
@@ -127,7 +136,7 @@ body {
 .nav-link {
   color: var(--primary-bg);
   text-decoration: none;
-  font-size: 16px;
+  font-size: var(--font-size);
   font-weight: bold;
   white-space: nowrap;
   padding: 5px 10px;
@@ -146,14 +155,16 @@ body {
   background-color: var(--primary-bg);
   color: var(--topbar-color);
 }
+
 .nav-link.active {
   background-color: var(--primary-bg);
   color: var(--topbar-color);
 }
+
 .nav-link-warn {
   color: var(--primary-bg);
   text-decoration: none;
-  font-size: 16px;
+  font-size: var(--font-size);
   font-weight: bold;
   white-space: nowrap;
   padding: 5px 10px;
@@ -172,6 +183,7 @@ body {
   background-color: var(--primary-bg);
   color: var(--text-color);
 }
+
 .nav-link-warn.active {
   background-color: var(--primary-bg);
   color: var(--text-color);
@@ -196,7 +208,7 @@ body {
   /* Ensures it doesn't take up full width */
   margin-left: 10px;
   color: var(--text-color);
-  font-size: 18px;
+  font-size: var(--font-size-lg);
   font-weight: normal;
 }
 
@@ -204,7 +216,7 @@ body {
 
 h2 {
   color: var(--accent-color);
-  font-size: 1.5rem;
+  font-size: calc(var(--font-size) * 1.5);
   margin-bottom: 1rem;
   font-family: Arial, sans-serif;
 }
@@ -222,7 +234,7 @@ h2 {
   /* border-color: var(--inactive-color); */
   /* border-style:none; */
   padding: 5px 10px;
-  font-size: 0.9rem;
+  font-size: var(--font-size-sm);
   /* font-weight: bold; */
   cursor: pointer;
   border-radius: 10px;
@@ -243,7 +255,7 @@ h2 {
   color: var(--primary-bg);
   border: none;
   padding: 10px 20px;
-  font-size: 1.1rem;
+  font-size: calc(var(--font-size) + 1px);
   font-weight: bold;
   cursor: pointer;
   border-radius: 5px;
@@ -257,7 +269,7 @@ h2 {
 
 .cta-button.small {
   padding: 6px 12px;
-  font-size: 0.9rem;
+  font-size: var(--font-size-sm);
   /* margin-right: 10px; */
 }
 
@@ -355,9 +367,9 @@ h2 {
 
 .input-field,
 .select-field {
-  font-size: 16px;
+  font-size: var(--font-size);
   padding: 8px;
-  height: 30px;
+  height: var(--font-size-xl);
   margin-left: 10px;
   /* border: 2px solid #ccc; */
   /* border-radius: 4px; */
@@ -367,7 +379,7 @@ h2 {
   /* Allows the input to take up the remaining space */
   background-color: var(--primary-bg);
   border-style: hidden;
-  
+
 
 
 
@@ -580,7 +592,7 @@ grid-container.selected {
 
 
 h2 {
-  font-size: 24px;
+  font-size: var(--font-size-xl);
   margin-bottom: 10px;
   display: flex;
   flex-wrap: wrap;
@@ -701,10 +713,13 @@ h2 {
   opacity: 1;
 }
 
-@media screen and (-ms-high-contrast: active), (-ms-high-contrast: none) {
+@media screen and (-ms-high-contrast: active),
+(-ms-high-contrast: none) {
   .select-field {
-    height: 36px; /* increased height for Windows */
-    padding: 3px 8px; /* adjusted padding for Windows */
+    height: 36px;
+    /* increased height for Windows */
+    padding: 3px 8px;
+    /* adjusted padding for Windows */
     line-height: 1.2;
     box-sizing: content-box;
   }

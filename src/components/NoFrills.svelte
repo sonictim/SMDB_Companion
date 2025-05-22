@@ -32,15 +32,17 @@
   <div class="top-bar-left">
     <button class="nav-link" on:click={() => openDatabase(false)}>
       <Database size={18} />
-      <span style="font-size: 24px;">
+      <span style="font-size: var(--font-size-xl);">
         {$databaseStore?.name || "Select Database"}
         {#if $databaseStore}
-          <span style="font-size: 14px;"
+          <span style="font-size: var(--font-size-md);"
             >{$databaseStore.size} total records</span
           >
         {/if}
         {#if selectedItems.size > 0}
-          <span style="font-size: 14px;">({selectedItems.size} selected)</span>
+          <span style="font-size: var(--font-size-md);"
+            >({selectedItems.size} selected)</span
+          >
         {/if}
       </span>
     </button>
@@ -99,7 +101,7 @@
       <Table />
     {:else}
       <div class="header">
-        <span style="font-size: 18px">
+        <span style="font-size: var(--font-size-lg)">
           <h2>Search Results:</h2>
           <p>
             {totalChecks} of {results.length} Records marked for Removal

@@ -202,6 +202,29 @@ export async function applyColors(colors: Colors): Promise<void> {
   }
 }
 
+// Function to apply font size from preferences
+export async function applyFontSize(fontSize: number): Promise<void> {
+  try {
+    if (!fontSize) return;
+    console.log("Applying font size:", fontSize);
+    
+    // Set CSS variable for font size
+    document.documentElement.style.setProperty('--font-size', `${fontSize}px`);
+    
+    // Update derived font size variables
+    document.documentElement.style.setProperty('--font-size-xs', `${fontSize - 4}px`);
+    document.documentElement.style.setProperty('--font-size-sm', `${fontSize - 3}px`);
+    document.documentElement.style.setProperty('--font-size-md', `${fontSize - 2}px`);
+    document.documentElement.style.setProperty('--font-size-lg', `${fontSize + 2}px`);
+    document.documentElement.style.setProperty('--font-size-xl', `${fontSize + 8}px`);
+    
+    // Emit event to update other windows
+    await emit("font-size-updated", { fontSize });
+  } catch (error) {
+    console.error("Error applying font size:", error);
+  }
+}
+
 // Function to apply a specific theme by name
 export async function applyTheme(themeName: keyof typeof colorThemes): Promise<void> {
   try {

@@ -41,7 +41,7 @@
     { id: "preservationOrder", label: "Preservation Order", icon: ListOrdered },
     { id: "audiosuiteTags", label: "Tags Manager", icon: Tags },
     { id: "hotkeys", label: "Keyboard Shortcuts", icon: Keyboard },
-    { id: "colors", label: "Colors", icon: Palette },
+    { id: "colors", label: "Appearance", icon: Palette },
   ];
 
   onMount(async () => {
@@ -59,6 +59,69 @@
           );
         });
       }
+
+      // Apply font size from preferences
+      if (currentPrefs?.fontSize) {
+        document.documentElement.style.setProperty(
+          "--font-size",
+          `${currentPrefs.fontSize}px`
+        );
+        // Set derived font size variables
+        document.documentElement.style.setProperty(
+          "--font-size-xs",
+          `${currentPrefs.fontSize - 4}px`
+        );
+        document.documentElement.style.setProperty(
+          "--font-size-sm",
+          `${currentPrefs.fontSize - 3}px`
+        );
+        document.documentElement.style.setProperty(
+          "--font-size-md",
+          `${currentPrefs.fontSize - 2}px`
+        );
+        document.documentElement.style.setProperty(
+          "--font-size-lg",
+          `${currentPrefs.fontSize + 2}px`
+        );
+        document.documentElement.style.setProperty(
+          "--font-size-xl",
+          `${currentPrefs.fontSize + 8}px`
+        );
+      }
+
+      // Listen for font size changes from other windows
+      await listen("font-size-updated", (event) => {
+        const { fontSize } = event.payload as { fontSize: number };
+        if (fontSize) {
+          // Update main font size
+          document.documentElement.style.setProperty(
+            "--font-size",
+            `${fontSize}px`
+          );
+
+          // Update derived font size variables
+          document.documentElement.style.setProperty(
+            "--font-size-xs",
+            `${fontSize - 4}px`
+          );
+          document.documentElement.style.setProperty(
+            "--font-size-sm",
+            `${fontSize - 3}px`
+          );
+          document.documentElement.style.setProperty(
+            "--font-size-md",
+            `${fontSize - 2}px`
+          );
+          document.documentElement.style.setProperty(
+            "--font-size-lg",
+            `${fontSize + 2}px`
+          );
+          document.documentElement.style.setProperty(
+            "--font-size-xl",
+            `${fontSize + 8}px`
+          );
+        }
+      });
 
       presetChangedListener = await listen(
         "preset-change",

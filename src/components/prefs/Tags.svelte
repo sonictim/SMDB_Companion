@@ -235,7 +235,7 @@
         {#if selectedItems.size === 0 && selectedTags.size == 0}
           <select
             class="select-field"
-            style="font-size: 10px; width: 100px; margin-left: -1px; text-align: center; text-align-last: center;"
+            style="font-size: calc(var(--font-size-xs) - 2px); width: 100px; margin-left: -1px; text-align: center; text-align-last: center;"
             bind:value={isMove}
           >
             <option value={true}>Move All</option>

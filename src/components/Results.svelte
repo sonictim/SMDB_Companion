@@ -119,7 +119,7 @@
 <div class="block">
   <div class="header">
     <h2>Search Results:</h2>
-    <span style="font-size: 18px">
+    <span style="font-size: var(--font-size-lg)">
       {#if $isRemove}
         {totalChecks} of {results.length} Records marked for Removal
       {:else}

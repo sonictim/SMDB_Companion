@@ -14,10 +14,18 @@
       --text-color: #ffffff;
       --topbar-color: #FFB81C;
       --accent-color: #f0a500;
+      --font-size: 16px; /* Default font size */
+      /* Relative font sizes */
+      --font-size-xs: calc(var(--font-size) - 4px); /* 12px when default is 16px */
+      --font-size-sm: calc(var(--font-size) - 3px); /* 13px when default is 16px */
+      --font-size-md: calc(var(--font-size) - 2px); /* 14px when default is 16px */
+      --font-size-lg: calc(var(--font-size) + 2px); /* 18px when default is 16px */
+      --font-size-xl: calc(var(--font-size) + 8px); /* 24px when default is 16px */
     }
 
     html,
     body {
+      font-size: var(--font-size);
       margin: 0;
       padding: 0;
       background-color: var(--primary-bg);
