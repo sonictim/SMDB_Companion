@@ -80,7 +80,7 @@
 
 html,
 body {
-  -webkit-app-region: drag;
+  -webkit-app-region: no-drag;
   -webkit-text-size-adjust: 100%;
   margin: 0;
   padding: 0;
