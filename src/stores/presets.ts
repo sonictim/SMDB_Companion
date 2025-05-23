@@ -1,6 +1,6 @@
 console.log('Loading module:', 'presets.ts');  // Add to each file
 import type { Preset } from './types';
-import { defaultPreferences, TJFPreferences, cleanPreferences } from './preferences';
+import { defaultPreferences, TJFPreferences, cleanPreferences, updateAlgorithmOrder } from './preferences';
 import { 
   lightModeColors, twilightColors, draculaColors, 
   nordColors, tokyoNightColors, monokaiProColors, 
@@ -61,6 +61,7 @@ export async function loadPreset(name: string | null) {
     
     // Call cleanPreferences for any additional cleaning
     cleanPreferences();
+    updateAlgorithmOrder();
     
     emit('preset-change', { 
         preset: {...preset, pref: mergedPreferences}
