@@ -11,6 +11,7 @@
     toggleSearch, // Import the moved functions
   } from "../stores/status";
   import Algorithms from "./search/Algorithms.svelte";
+  import SearchButton from "./search/SearchButton.svelte";
   import Status from "./Status.svelte";
   import Metadata from "./Metadata.svelte";
 
@@ -27,47 +28,20 @@
       unsubscribe();
     };
   });
-
-  function checkAnyAlgorithmEnabled() {
-    return $preferencesStore.algorithms.some((algo) => algo.enabled);
-  }
 </script>
 
 <div class="page-columns">
-  <div class="block" style="height: 45vh; margin-bottom: 0px">
+  <div class="block">
     <div class="header">
       <h2>Search Algorithms</h2>
-      {#if database == null || database.name == "" || database.name == "Select Database" || !checkAnyAlgorithmEnabled()}
-        <button class="cta-button inactive">
-          <SearchCheck size={18} />
-          <span>Search for Records</span>
-        </button>
-      {:else}
-        <button
-          class="cta-button {$showStatus ? 'cancel' : ''}"
-          on:click={async () => {
-            let result = await toggleSearch();
-          }}
-        >
-          <div class="flex items-center gap-2">
-            {#if $showStatus}
-              <X size={18} />
-              <span>Cancel</span>
-            {:else}
-              <SearchCheck size={18} />
-              <span>Search for Records</span>
-            {/if}
-          </div>
-        </button>
-      {/if}
+      <SearchButton />
+    </div>
+
+    <div class="grid">
+      <Algorithms />
     </div>
     {#if $showStatus}
       <Status />
-    {:else}
-      <div class="grid">
-        <Algorithms />
-      </div>
-      <span style="margin-left: 255px"> </span>
     {/if}
   </div>
 

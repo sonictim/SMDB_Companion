@@ -149,8 +149,8 @@ async fn run_search(
         total += 1;
     }
 
-    app.status("starting", counter * 100 / total, "Starting search...");
-    app.substatus("starting", 0, "Gathering records from database...");
+    app.status("Starting", counter * 100 / total, "Starting search...");
+    app.substatus("Starting", 0, "Gathering records from database...");
     counter += 1;
 
     let _ = db.fetch_all_filerecords(&enabled, &pref, &app).await;
@@ -162,7 +162,7 @@ async fn run_search(
     if enabled.dbcompare {
         counter += 1;
         app.status(
-            "compare",
+            "Compare Database",
             counter * 100 / total,
             &format!("Comparing records against {}", enabled.compare_db),
         );
@@ -177,21 +177,21 @@ async fn run_search(
     if enabled.basic {
         counter += 1;
         app.status(
-            "dupes",
+            "Duplicate Search",
             counter * 100 / total,
             "Performing Duplicate Search",
         );
 
         db.dupe_search(&pref, &enabled, &app);
 
-        app.substatus("starting", 10, "Sorting Records");
+        app.substatus("Duplicate Search", 10, "Sorting Records");
 
         db.records.sort_by(|a, b| a.root.cmp(&b.root));
     }
     if enabled.dual_mono {
         counter += 1;
         app.status(
-            "dualm",
+            "Dual Mono Search",
             counter * 100 / total,
             "Performing Dual Mono Search",
         );
@@ -205,7 +205,7 @@ async fn run_search(
     if enabled.waveform {
         counter += 1;
         app.status(
-            "waveform",
+            "Audio Content Search",
             counter * 100 / total,
             "Analyzing audio content for waveform analysis",
         );
@@ -213,7 +213,7 @@ async fn run_search(
         let _ = db.wave_search_chromaprint(&pref, &app).await;
     }
     {}
-    app.status("complete", 100, "Search completed! Gathering Results");
+    app.status("Final Checks", 100, "Search completed! Gathering Results");
 
     println!("Search Ended");
     Ok(db.records_2_frontend().await)
@@ -243,28 +243,28 @@ pub async fn remove_records(
     println!("Removing Records");
     println!("Dual Mono: {:?}", dual_mono);
     let mut state = state.lock().await;
-    app.substatus("starting", 0, "Nothing to report here...");
+    app.substatus("Starting", 0, "Nothing to report here...");
 
     if strip_dual_mono {
-        app.status("starting", 0, "Stripping Dual Mono Records...");
+        app.status("Dual Mono Processing", 0, "Stripping Dual Mono Records...");
 
         let _ = state.db.clean_multi_mono(&app, &dual_mono).await;
     }
 
     if clone {
         app.status(
-            "starting",
+            "Database Cloning",
             20,
             "Creating Safety Copy of Current Database...",
         );
 
         state.db = state.db.create_clone(&clone_tag).await;
     }
-    app.status("starting", 30, "Removing Records from Database...");
+    app.status("Record Removal", 30, "Removing Records from Database...");
 
     let _ = state.db.remove(&records, &app).await;
     app.status(
-        "starting",
+        "Audio File Management",
         70,
         match delete {
             Delete::Trash => "Moving files to Trash",
@@ -276,7 +276,7 @@ pub async fn remove_records(
     let _ = delete.delete_files(files, &app);
 
     println!("Remove Ended");
-    app.status("complete", 100, "Success! Removal is complete");
+    app.status("Final Checks", 100, "Success! Removal is complete");
 
     Ok(state.db.get_name().unwrap_or(Arc::from("Select Database")))
 }
@@ -318,7 +318,11 @@ pub async fn find(
         };
 
         println!("{} Rows Found", rows.len());
-        app.status("starting", 50, &format!("{} Records Found", rows.len()));
+        app.status(
+            "Record Retrieval",
+            50,
+            &format!("{} Records Found", rows.len()),
+        );
 
         // Add a timeout for processing to prevent hanging
         let processing_timeout = std::time::Duration::from_secs(60); // 60 second timeout
@@ -329,7 +333,7 @@ pub async fn find(
                 .enumerate()
                 .map(|(i, row)| {
                     app.substatus(
-                        "processing",
+                        "Processing Records",
                         i * 100 / rows.len(),
                         &format!("Processing: {}/{} Records", i, rows.len()),
                     );
@@ -506,5 +510,64 @@ pub async fn cancel_search(state: State<'_, Mutex<AppState>>) -> Result<String, 
 pub fn refresh_all_windows(app: AppHandle) {
     for (_label, window) in app.webview_windows() {
         let _ = window.eval("window.location.reload()");
+    }
+}
+
+#[tauri::command]
+pub fn open_database_folder() -> Result<String, String> {
+    // Get the user's home directory
+    let home_dir = match home_dir() {
+        Some(dir) => dir,
+        None => return Err("Could not determine home directory".to_string()),
+    };
+
+    // Create platform-specific paths
+    #[cfg(target_os = "windows")]
+    let db_dir = home_dir
+        .join("AppData")
+        .join("Roaming")
+        .join("SoundminerV6")
+        .join("Databases");
+
+    #[cfg(target_os = "macos")]
+    let db_dir = home_dir
+        .join("Library")
+        .join("Application Support")
+        .join("SoundminerV6")
+        .join("Databases");
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let db_dir = home_dir.join(".soundminer").join("databases"); // Fallback for other platforms
+
+    // Create the directory if it doesn't exist
+    if !db_dir.exists() {
+        match std::fs::create_dir_all(&db_dir) {
+            Ok(_) => println!("Created directory: {}", db_dir.display()),
+            Err(e) => return Err(format!("Failed to create directory: {}", e)),
+        }
+    }
+
+    // Open the directory with the default file explorer
+    #[cfg(target_os = "windows")]
+    {
+        use std::process::Command;
+        match Command::new("explorer").arg(&db_dir).spawn() {
+            Ok(_) => return Ok(format!("Opened folder: {}", db_dir.display())),
+            Err(e) => return Err(format!("Failed to open folder: {}", e)),
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        use std::process::Command;
+        match Command::new("open").arg(&db_dir).spawn() {
+            Ok(_) => Ok(format!("Opened folder: {}", db_dir.display())),
+            Err(e) => Err(format!("Failed to open folder: {}", e)),
+        }
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        return Err("Opening folders is not implemented for this platform".to_string());
     }
 }

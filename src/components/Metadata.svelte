@@ -27,7 +27,7 @@
   });
 </script>
 
-<div class="block" style="height: 100vh; margin-top: 20px">
+<div class="block" style="height: 100%; margin-top: 20px">
   <div class="header">
     <h2>Metadata Replacement</h2>
     <MetadataButton />

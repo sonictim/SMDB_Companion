@@ -7,7 +7,7 @@ impl Database {
         let mut cdb = Database::default();
         cdb.init(Some(PathBuf::from(&*enabled.compare_db)), true)
             .await;
-        app.substatus("compare", 0, "Loading Compare Database");
+        app.substatus("Compare Databases", 0, "Loading Compare Database");
 
         let _ = cdb.fetch_all_filerecords(enabled, pref, app).await;
         let mut total = cdb.get_size();
@@ -23,7 +23,7 @@ impl Database {
             .map(|(count, record)| {
                 if count % RECORD_DIVISOR == 0 {
                     app.substatus(
-                        "compare",
+                        "Compare Databases",
                         count * 100 / total,
                         &format!("Processing Records into Memory: {}/{}", count, total),
                     );
@@ -33,7 +33,7 @@ impl Database {
             })
             .collect();
         app.substatus(
-            "compare",
+            "Compare Databases",
             100,
             &format!("Processing Records into Memory: {}/{}", total, total),
         );
@@ -48,7 +48,7 @@ impl Database {
             .for_each(|(count, record)| {
                 if count % RECORD_DIVISOR == 0 {
                     app.substatus(
-                        "compare",
+                        "Compare Databases",
                         count * 100 / total,
                         &format!("Comparing against Database: {}/{}", count, total),
                     );
@@ -60,7 +60,7 @@ impl Database {
                 }
             });
         app.substatus(
-            "compare",
+            "Compare Databases",
             100,
             &format!("Comparing against Database: {}/{}", total, total),
         );
@@ -84,7 +84,7 @@ impl Database {
             count += 1;
             if count % RECORD_DIVISOR == 0 {
                 app.substatus(
-                    "dupes",
+                    "Duplicate Search",
                     count * 100 / total,
                     &format!("Oraginizing Records: {}/{}", count, total),
                 );
@@ -100,7 +100,7 @@ impl Database {
             file_groups.entry(key).or_default().push(record.clone());
         }
         app.substatus(
-            "dupes",
+            "Duplicate Search",
             100,
             &format!("Oraginizing Records: {}/{}", total, total),
         );
@@ -118,7 +118,7 @@ impl Database {
                 }
                 if count % RECORD_DIVISOR == 0 {
                     app.substatus(
-                        "dupes",
+                        "Duplicate Search",
                         count * 100 / total,
                         &format!("Marking Duplicates: {}/{}", count, total),
                     );
@@ -167,7 +167,7 @@ impl Database {
             })
             .collect();
         app.substatus(
-            "dupes",
+            "Duplicate Search",
             100,
             &format!("Marking Duplicates: {}/{}", total, total),
         );
@@ -217,7 +217,7 @@ impl Database {
         let mut chunks_completed = 0;
         let mut records_batch = Vec::with_capacity(pref.batch_size);
 
-        app.status("dual_mono", 0, "Starting Dual Mono Search");
+        app.status("Dual Mono Search", 0, "Starting Dual Mono Search");
         for chunk in self.records.chunks_mut(pref.batch_size) {
             if self.abort.load(Ordering::SeqCst) {
                 println!("Aborting dual mono search - early exit");
@@ -244,7 +244,7 @@ impl Database {
                         }
 
                         app.substatus(
-                            "dual_mono",
+                            "Dual Mono Search",
                             new_completed % pref.batch_size * 100 / pref.batch_size,
                             &format!("Dual Mono Search: {}/{}", new_completed, total),
                         );
@@ -263,7 +263,7 @@ impl Database {
             records_batch.extend(records_to_update);
 
             if pref.store_waveforms && records_batch.len() >= pref.batch_size {
-                app.substatus("dual_mono", 0, "storing chunk to database");
+                app.substatus("Dual Mono Search", 0, "storing chunk to database");
                 let to_db: Vec<(usize, &str)> = records_batch
                     .iter()
                     .map(|(id, is_identical)| (*id, if *is_identical { "1" } else { "0" }))
@@ -274,14 +274,14 @@ impl Database {
             }
             chunks_completed += pref.batch_size;
             app.status(
-                "dual_mono",
+                "Dual Mono Search",
                 100 * chunks_completed / total,
                 &format!("Dual Mono Search: {}/{}", chunks_completed, total),
             );
             // Then transform the results into the format needed for batch_store_data_optimized
         }
         if pref.store_waveforms && !records_batch.is_empty() {
-            app.substatus("dual_mono", 0, "storing chunk to database");
+            app.substatus("Dual Mono Search", 0, "storing chunk to database");
             let to_db: Vec<(usize, &str)> = records_batch
                 .iter()
                 .map(|(id, is_identical)| (*id, if *is_identical { "1" } else { "0" }))
@@ -337,7 +337,7 @@ impl Database {
                     if let Ok((path, should_mark)) = future.await {
                         completed += 1;
                         app.substatus(
-                            "dupes",
+                            "Duplicate Search",
                             completed * 100 / total,
                             &format!("Dual Mono Search: {}/{}", completed, total),
                         );

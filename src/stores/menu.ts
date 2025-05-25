@@ -11,7 +11,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { writable, get } from 'svelte/store';
 import { preferencesStore, toggle_ignore_filetype, toggle_remove_records_from, updateEraseFiles, toggle_fetch_waveforms, toggle_store_waveforms, toggle_strip_dual_mono, updateWaveformSearchType } from './preferences';
 import { presetsStore } from './presets';
-import { openDatabase, closeDatabase, recentDbStore, setDatabase, databaseStore } from './database';
+import { openDatabase, closeDatabase, recentDbStore, setDatabase, databaseStore, openDbFolder } from './database';
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Window } from '@tauri-apps/api/window';
 import { loadPreset } from './presets';
@@ -575,6 +575,7 @@ const algoMenu = await Submenu.new({
       hideOthers,
       showAll,
       separator,
+      closeWindow,
       quit,
     ],
   });
@@ -642,7 +643,18 @@ const algoMenu = await Submenu.new({
       separator,
       loadPresetMenu,
       separator,
-      closeWindow,
+      {
+        id: "openFolder",
+        text: "Reveal Database Folder",
+        accelerator: getHotkey("revealDbFolder"),
+        enabled: true,
+        action: () => {openDbFolder()},
+
+
+
+      },
+      
+      
     ],
   });
 

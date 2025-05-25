@@ -65,7 +65,8 @@ pub fn run() {
             pause_audio,
             resume_audio,
             clear_fingerprints,
-            refresh_all_windows
+            refresh_all_windows,
+            open_database_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -276,10 +277,27 @@ impl FileRecord {
             // Fix for Windows paths
             #[cfg(target_os = "windows")]
             let path_exists = {
-                // Normalize path separators
-                let normalized_path = path_str.replace('/', "\\");
-                let normalized_path_buf = PathBuf::from(normalized_path);
-                normalized_path_buf.exists()
+                // First try with the original PathBuf
+                let original_exists = path.exists();
+
+                if original_exists {
+                    true
+                } else {
+                    // If that fails, try normalizing path separators
+                    let normalized_path = path_str.replace('/', "\\");
+                    let normalized_path_buf = PathBuf::from(normalized_path);
+
+                    // Try one more time with normalized path
+                    let normalized_exists = normalized_path_buf.exists();
+
+                    // Debug info to help troubleshoot
+                    if !normalized_exists {
+                        println!("Path not found: {}", path_str);
+                        println!("Normalized path also not found: {}", normalized_path);
+                    }
+
+                    normalized_exists
+                }
             };
 
             #[cfg(not(target_os = "windows"))]
@@ -424,8 +442,10 @@ impl FileRecord {
         self.path.exists()
     }
 
-    pub fn get_filepath(&self) -> &str {
-        self.path.to_str().unwrap_or("Invalid Filepath")
+    pub fn get_filepath(&self) -> String {
+        // Use display() which handles both Windows and macOS paths correctly
+        // and converts to lossy UTF-8 representation when needed
+        self.path.display().to_string()
     }
 
     pub fn get_root(&self) -> String {
@@ -530,7 +550,7 @@ impl Database {
     async fn init(&mut self, path: Option<PathBuf>, is_compare: bool) {
         if let Some(path) = path {
             self.path = Some(path);
-            self.size = self.fetch_size().await.unwrap();
+            self.size = self.fetch_size().await.unwrap_or(0);
             self.records = Vec::with_capacity(self.size); // No need for .into()
             self.is_compare = is_compare;
         }
@@ -666,9 +686,9 @@ impl Database {
             // Iterate over chunks of IDs
             for chunk in ids.chunks(BATCH_SIZE) {
                 app.status(
-                    "removing",
+                    "Record Removal",
                     counter * 100 / ids.len(),
-                    &format!("removing records... {}/{}", counter, ids.len()),
+                    &format!("Removing Records... {}/{}", counter, ids.len()),
                 );
 
                 counter += BATCH_SIZE;
@@ -690,7 +710,7 @@ impl Database {
                 // Execute the query
                 query_builder.execute(&pool).await?;
             }
-            app.status("complete", 100, "Records successfully removed");
+            app.status("Final Checks", 100, "Records successfully removed");
         }
         Ok(())
     }
@@ -716,7 +736,7 @@ impl Database {
             let filename = path.file_name().unwrap_or_default().to_str().unwrap_or("");
 
             app.substatus(
-                "clean multi mono",
+                "Stripping Multi-Mono",
                 new_completed * 100 / records.len(),
                 filename,
             );
@@ -794,7 +814,7 @@ impl Database {
             {
                 Ok(_) => {
                     app.substatus(
-                        "complete with results",
+                        "Stripping Multi-Mono",
                         100,
                         &format!("Updated {} files to mono, {} failures", success, failed),
                     );
@@ -802,7 +822,7 @@ impl Database {
                 }
                 Err(e) => {
                     app.substatus(
-                        "database error",
+                        "Stripping Multi-Mono",
                         100,
                         &format!("Error updating database: {}", e),
                     );
@@ -810,7 +830,11 @@ impl Database {
                 }
             }
         } else {
-            app.substatus("complete", 100, "No files were successfully processed");
+            app.substatus(
+                "Stripping Multi-Mono",
+                100,
+                "No files were successfully processed",
+            );
             Ok(())
         }
     }
@@ -845,7 +869,7 @@ impl Database {
                 let new_completed = completed.fetch_add(1, Ordering::SeqCst) + 1;
                 if new_completed % RECORD_DIVISOR == 0 {
                     app.substatus(
-                        "gather",
+                        "Gathering File Records",
                         new_completed * 100 / rows.len(),
                         format!("Processing Records into Memory: {}/{}", count, rows.len())
                             .as_str(),
@@ -854,7 +878,7 @@ impl Database {
                 FileRecord::new(row, enabled, pref, self.is_compare)
             })
             .collect();
-        app.substatus("gather", 100, "Complete");
+        app.substatus("Gathering File Records", 100, "Complete");
 
         records.extend(new_records);
         self.records = records;
@@ -945,7 +969,7 @@ impl Database {
                 // Update progress
                 counter += chunk.len();
                 app.status(
-                    "updating",
+                    "Stripping Multi-Mono",
                     counter * 100 / record_ids.len(),
                     format!(
                         "Updating channel metadata: {}/{}",
@@ -961,7 +985,7 @@ impl Database {
 
             // Final status update
             app.status(
-                "complete",
+                "Stripping Multi-Mono",
                 100,
                 format!("Updated {} records to mono", record_ids.len()).as_str(),
             );
@@ -1009,13 +1033,33 @@ impl Delete {
         app: &AppHandle,
     ) -> Result<(), Box<dyn std::error::Error>> {
         println!("Removing Files");
-        app.substatus("remove", 0, "Preparing to remove files...");
+        app.substatus("Removing Files", 0, "Preparing to remove files...");
 
         // Filter valid files directly and collect them into a Vec
         let valid_files: Vec<&str> = files
             .par_iter()
             .filter(|&&file| {
-                let exists = Path::new(file).exists();
+                // First try with original path
+                let original_path = Path::new(file);
+                let exists = original_path.exists();
+
+                #[cfg(target_os = "windows")]
+                let exists = if exists {
+                    true
+                } else {
+                    // If the original path doesn't exist on Windows, try normalizing slashes
+                    let normalized_path = file.replace('/', "\\");
+                    let normalized_path_buf = Path::new(&normalized_path);
+                    let normalized_exists = normalized_path_buf.exists();
+
+                    if !normalized_exists {
+                        println!("File not found: {}", file);
+                        println!("Normalized path also not found: {}", normalized_path);
+                    }
+
+                    normalized_exists
+                };
+
                 if !exists {
                     println!("File does not exist: {}", file);
                 }
@@ -1030,13 +1074,13 @@ impl Delete {
             files.len()
         );
         app.substatus(
-            "remove",
+            "Removing Files",
             10,
             &format!("Processing {} valid files", valid_files.len()),
         );
 
         if valid_files.is_empty() {
-            app.substatus("remove", 100, "No valid files to process");
+            app.substatus("Removing Files", 100, "No valid files to process");
             return Ok(());
         }
 
@@ -1048,20 +1092,36 @@ impl Delete {
                     let total = valid_files.len();
                     for (i, file) in valid_files.iter().enumerate() {
                         app.substatus(
-                            "remove",
+                            "Removing Files",
                             10 + (i * 90 / total),
                             &format!("Moving to trash: {}/{}", i + 1, total),
                         );
 
-                        match trash::delete(file) {
-                            Ok(_) => {}
+                        // Try with normalized path on Windows
+                        let normalized_path = file.replace('/', "\\");
+                        let file_to_use = if Path::new(file).exists() {
+                            file
+                        } else if Path::new(&normalized_path).exists() {
+                            &normalized_path
+                        } else {
+                            println!(
+                                "Warning: Neither original nor normalized path exists: {}",
+                                file
+                            );
+                            file // Use original as fallback
+                        };
+
+                        match trash::delete(file_to_use) {
+                            Ok(_) => {
+                                println!("Successfully moved to trash: {}", file_to_use);
+                            }
                             Err(e) => {
                                 // Log error but continue with other files
-                                println!("Failed to move to trash: {}: {}", file, e);
+                                println!("Failed to move to trash: {}: {}", file_to_use, e);
                                 app.substatus(
-                                    "warning",
+                                    "Failed to move to Trash",
                                     10 + (i * 90 / total),
-                                    &format!("Warning: Failed to trash: {}", file),
+                                    &format!("Warning: Failed to trash: {}", file_to_use),
                                 );
                             }
                         }
@@ -1072,11 +1132,15 @@ impl Delete {
                 {
                     // macOS/Linux - use batch operation which is more efficient
                     if !valid_files.is_empty() {
-                        app.substatus("remove", 50, "Moving files to trash...");
+                        app.substatus("Removing Files", 50, "Moving files to trash...");
+                        println!("Attempting to move {} files to trash", valid_files.len());
+
                         match trash::delete_all(&valid_files) {
-                            Ok(_) => {}
+                            Ok(_) => {
+                                println!("Successfully moved all files to trash");
+                            }
                             Err(e) => {
-                                app.substatus("error", 100, &format!("Trash error: {}", e));
+                                app.substatus("Error", 100, &format!("Trash error: {}", e));
                                 eprintln!("Move to Trash Failed: {}", e);
                                 return Err(e.into());
                             }
@@ -1088,25 +1152,47 @@ impl Delete {
                 let total = valid_files.len();
                 for (i, file) in valid_files.iter().enumerate() {
                     app.substatus(
-                        "remove",
+                        "Removing Files",
                         10 + (i * 90 / total),
                         &format!("Permanently deleting: {}/{}", i + 1, total),
                     );
 
-                    if let Err(e) = fs::remove_file(file) {
-                        eprintln!("Failed to remove file {}: {}", file, e);
+                    #[cfg(target_os = "windows")]
+                    let file_to_use = {
+                        // Try with normalized path on Windows
+                        let normalized_path = file.replace('/', "\\");
+                        if Path::new(file).exists() {
+                            file
+                        } else if Path::new(&normalized_path).exists() {
+                            &normalized_path
+                        } else {
+                            println!(
+                                "Warning: Neither original nor normalized path exists: {}",
+                                file
+                            );
+                            file // Use original as fallback
+                        }
+                    };
+
+                    #[cfg(not(target_os = "windows"))]
+                    let file_to_use = file;
+
+                    if let Err(e) = fs::remove_file(file_to_use) {
+                        eprintln!("Failed to remove file {}: {}", file_to_use, e);
                         app.substatus(
-                            "warning",
+                            "Warning",
                             10 + (i * 90 / total),
-                            &format!("Warning: Failed to delete: {}", file),
+                            &format!("Warning: Failed to delete: {}", file_to_use),
                         );
+                    } else {
+                        println!("Successfully deleted file: {}", file_to_use);
                     }
                 }
             }
             _ => {}
         }
 
-        app.substatus("remove", 100, "File removal complete");
+        app.substatus("Removing Files", 100, "File removal complete");
         Ok(())
     }
 }
@@ -1146,7 +1232,7 @@ async fn batch_store_data_optimized(
     println!("Storing {} {} in database", data.len(), name);
 
     app.substatus(
-        "db-storage",
+        "Storing Batch to Database",
         0,
         format!("Storing {} {} in database...", name, data.len()).as_str(),
     );
@@ -1167,7 +1253,7 @@ async fn batch_store_data_optimized(
             for (i, (id, d)) in data.iter().enumerate() {
                 if i % 25 == 0 || i == total - 1 {
                     app.substatus(
-                        "db-storage",
+                        "Storing Batch to Database",
                         (i + 1) * 100 / total,
                         format!("Storing {}: {}/{}", name, i + 1, total).as_str(),
                     );
@@ -1200,7 +1286,7 @@ async fn batch_store_data_optimized(
                 }
             }
             app.substatus(
-                "db-storage",
+                "Storing Batch to Database",
                 99,
                 &format!(
                     "Committing all changes to database: {} {}s updated, {} errors",
@@ -1228,7 +1314,7 @@ async fn batch_store_data_optimized(
                 Err(e) => println!("ERROR: Transaction failed to commit: {}", e),
             }
             app.substatus(
-                "db-storage",
+                "Storing Batch to Database",
                 100,
                 format!(
                     "Database update complete: {} {} stored",
@@ -1240,7 +1326,7 @@ async fn batch_store_data_optimized(
         Err(e) => {
             println!("ERROR: Failed to start transaction: {}", e);
             app.substatus(
-                "db-storage",
+                "Storing Batch to Database",
                 100,
                 &format!("ERROR: Databaes update failed: {}", e),
             );

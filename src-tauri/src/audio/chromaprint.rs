@@ -7,7 +7,7 @@ use bit_set::BitSet;
 
 impl FileRecord {
     pub fn get_chromaprint_fingerprint(&mut self) -> Option<String> {
-        let fp = ffcodex_lib::get_fingerprint(self.get_filepath()).ok();
+        let fp = ffcodex_lib::get_fingerprint(&self.get_filepath()).ok();
         if let Some(fingerprint) = fp {
             // println!(
             //     "Generated fingerprint for: {} size; {}\n{}",
@@ -147,8 +147,8 @@ impl Database {
         if batch_size > total_records {
             batch_size = total_records;
         }
+        let started = AtomicUsize::new(0);
         let completed = AtomicUsize::new(0);
-        // const STORE_MIN_INTERVAL: usize = 200;
 
         let pool = self.get_pool().await;
 
@@ -176,24 +176,32 @@ impl Database {
                     {
                         return None;
                     }
-                    let new_completed = completed.fetch_add(1, Ordering::SeqCst) + 1;
-                    app.substatus(
-                        "fingerprinting",
-                        (new_completed % batch_size) * 100 / batch_size,
-                        record.get_filename(),
-                    );
+                    let new_started = started.fetch_add(1, Ordering::SeqCst) + 1;
+
                     app.status(
-                        "fingerprinting",
-                        new_completed * 100 / total_records,
+                        "Fingerprinting",
+                        new_started * 100 / total_records,
                         &format!(
-                            "Generating Audio Fingerprints: ({}/{})",
-                            new_completed, total_records
+                            "Generating Audio Fingerprint: ({}/{}) {}",
+                            new_started,
+                            total_records,
+                            record.get_filename()
                         ),
                     );
                     let fingerprint_result = record.get_chromaprint_fingerprint();
 
                     let fingerprint = fingerprint_result.unwrap_or("FAILED".to_string());
-
+                    let new_completed = completed.fetch_add(1, Ordering::SeqCst) + 1;
+                    app.substatus(
+                        "Fingerprinting",
+                        (new_completed % batch_size) * 100 / batch_size,
+                        &format!(
+                            "Completed Audio Fingerprint in Batch: ({}/{}) {}",
+                            (new_completed % batch_size),
+                            batch_size,
+                            record.get_filename()
+                        ),
+                    );
                     Some((record.id, fingerprint))
                 })
                 .collect();
@@ -217,7 +225,7 @@ impl Database {
     }
 
     // async fn subset_match_ai(&mut self, pref: &Preferences, app: &AppHandle) -> Result<(), String> {
-    //     app.substatus("subset", 0, "Starting audio subset detection...");
+    //     app.substatus("Subset Search", 0, "Starting audio subset detection...");
 
     //     // OPTIMIZATION 1: Cache durations to avoid repeated calculation
     //     let duration_cache: HashMap<usize, f64> = self
@@ -237,7 +245,7 @@ impl Database {
     //             None => std::cmp::Ordering::Equal,
     //         }
     //     });
-    //     app.substatus("subset", 5, "Decoding fingerprints...");
+    //     app.substatus("Subset Search", 5, "Decoding fingerprints...");
 
     //     // Decode fingerprints once to avoid repeated work
     //     let decoded_fingerprints: HashMap<usize, Vec<u32>> = self
@@ -273,7 +281,7 @@ impl Database {
     //         // Update progress every 10 records or at milestones
     //         // if i % 10 == 0 || i == len - 1 {
     //         app.substatus(
-    //             "subset",
+    //             "Subset Search",
     //             10 + (i * 80 / len),
     //             &format!("Finding subset relationships ({}/{})", i + 1, len),
     //         );
@@ -350,7 +358,7 @@ impl Database {
     //         }
     //     }
     //     app.substatus(
-    //         "subset",
+    //         "Subset Search",
     //         90,
     //         "Organizing records by parent-child relationships...",
     //     );
@@ -383,7 +391,7 @@ impl Database {
 
     //     self.records = sorted_records;
     //     app.substatus(
-    //         "subset",
+    //         "Subset Search",
     //         100,
     //         &format!(
     //             "Subset detection complete: {} parent files, {} subset files",
@@ -396,7 +404,7 @@ impl Database {
     // }
 
     async fn subset_match(&mut self, pref: &Preferences, app: &AppHandle) -> Result<(), String> {
-        app.substatus("subset", 0, "Starting audio subset detection...");
+        app.substatus("Subset Search", 0, "Starting audio subset detection...");
 
         self.records.sort_by(|a, b| {
             let a_duration = a.get_duration().unwrap_or(0.0);
@@ -412,7 +420,11 @@ impl Database {
                 None => std::cmp::Ordering::Equal,
             }
         });
-        app.substatus("subset", 5, "Decoding fingerprints for subset analysis...");
+        app.substatus(
+            "Subset Search",
+            5,
+            "Decoding fingerprints for subset analysis...",
+        );
 
         let decoded_fingerprints: HashMap<usize, Vec<u32>> = self
             .records
@@ -440,7 +452,7 @@ impl Database {
                 return Err("Aborted".to_string());
             }
             app.substatus(
-                "subset",
+                "Subset Search",
                 10 + (i * 80 / len),
                 &format!("Finding subset relationships ({}/{})", i + 1, len),
             );
@@ -525,7 +537,7 @@ impl Database {
     //     pref: &Preferences,
     //     app: &AppHandle,
     // ) -> Result<(), String> {
-    //     app.substatus("subset", 0, "Starting audio subset detection...");
+    //     app.substatus("Subset Search", 0, "Starting audio subset detection...");
 
     //     // Filter records to only those with valid Chromaprint fingerprints
     //     let valid_records: Vec<&FileRecord> = self
@@ -549,7 +561,7 @@ impl Database {
     //     }
 
     //     // Step 1: Sort records by duration (longer files first)
-    //     app.substatus("subset", 5, "Preparing files for subset analysis...");
+    //     app.substatus("Subset Search", 5, "Preparing files for subset analysis...");
 
     //     // Create a sorted list of records by duration
     //     let mut records_by_duration = valid_records.clone();
@@ -562,7 +574,7 @@ impl Database {
     //     });
 
     //     // Step 2: Decode all fingerprints once to avoid repeated work
-    //     app.substatus("subset", 10, "Decoding fingerprints...");
+    //     app.substatus("Subset Search", 10, "Decoding fingerprints...");
 
     //     // Map of record ID to decoded fingerprint
     //     let decoded_fingerprints: HashMap<usize, Vec<u32>> = valid_records
@@ -583,7 +595,7 @@ impl Database {
     //     );
 
     //     // Step 3: Find subset relationships
-    //     app.substatus("subset", 20, "Finding subset relationships...");
+    //     app.substatus("Subset Search", 20, "Finding subset relationships...");
 
     //     // Track parent-child relationships
     //     let mut parent_children_map: HashMap<usize, Vec<usize>> = HashMap::new();
@@ -600,7 +612,7 @@ impl Database {
     //         let batch_start = batch_idx * batch_size;
     //         let batch_end = ((batch_idx + 1) * batch_size).min(records_by_duration.len());
     //         app.substatus(
-    //             "subset",
+    //             "Subset Search",
     //             20 + (batch_idx * 60 / total_batches),
     //             &format!(
     //                 "Processing batch {}/{} (files {}-{})",
@@ -665,7 +677,7 @@ impl Database {
     //             if (i - batch_start) % 50 == 0 {
     //                 let batch_progress = (i - batch_start) * 100 / (batch_end - batch_start);
     //                 app.substatus(
-    //                     "subset",
+    //                     "Subset Search",
     //                     20 + ((batch_idx * 100 + batch_progress) * 60 / (total_batches * 100)),
     //                     &format!(
     //                         "Batch {}/{}: {} subset relationships found",
@@ -679,7 +691,7 @@ impl Database {
     //     }
 
     //     // Step 4: Apply algorithm markings
-    //     app.substatus("subset", 85, "Applying algorithm markings...");
+    //     app.substatus("Subset Search", 85, "Applying algorithm markings...");
 
     //     let total_parents = parent_children_map.len();
     //     let total_children = child_parent_map.len();
@@ -704,7 +716,7 @@ impl Database {
     //         }
     //     });
     //     app.substatus(
-    //         "subset",
+    //         "Subset Search",
     //         100,
     //         &format!(
     //             "Subset detection complete: {} parent files, {} subset files",
@@ -717,7 +729,11 @@ impl Database {
 
     async fn exact_match(&mut self, pref: &Preferences, app: &AppHandle) -> Result<(), String> {
         println!("Starting Exact Audio fingerprint analysis");
-        app.substatus("grouping", 0, "Grouping identical audio fingerprints...");
+        app.substatus(
+            "Exact Fingerprint Match",
+            0,
+            "Grouping identical audio fingerprints...",
+        );
 
         let records_without_fingerprints: Vec<FileRecord> = self
             .records
@@ -739,7 +755,7 @@ impl Database {
         for (i, record) in self.records.iter().enumerate() {
             if i % RECORD_DIVISOR == 0 || i == 0 || i == self.records.len() - 1 {
                 app.substatus(
-                    "grouping",
+                    "Exact Fingerprint Match",
                     (i + 1) * 100 / self.records.len(),
                     &format!("Grouping by fingerprint: {}/{}", i + 1, self.records.len()),
                 );
@@ -754,7 +770,11 @@ impl Database {
         }
 
         println!("Marking duplicate audio files");
-        app.substatus("marking", 0, "Marking duplicate audio files...");
+        app.substatus(
+            "Exact Fingerprint Match",
+            0,
+            "Marking duplicate audio files...",
+        );
 
         // Process groups
         let group_count = file_groups.len();
@@ -764,7 +784,7 @@ impl Database {
             .flat_map(|(i, (_, mut records))| {
                 if i % RECORD_DIVISOR == 0 || i == 0 || i == group_count - 1 {
                     app.substatus(
-                        "marking",
+                        "Exact Fingerprint Match",
                         (i + 1) * 100 / group_count,
                         &format!("Processing group: {}/{}", i + 1, group_count),
                     );
@@ -790,7 +810,11 @@ impl Database {
         final_records.extend(records_without_fingerprints);
         self.records = final_records;
 
-        app.substatus("complete", 100, "Exact Audio fingerprint analysis complete");
+        app.substatus(
+            "Exact Fingerprint Match",
+            100,
+            "Exact Audio fingerprint analysis complete",
+        );
 
         Ok(())
     }
@@ -798,7 +822,11 @@ impl Database {
     async fn similar_match(&mut self, pref: &Preferences, app: &AppHandle) -> Result<(), String> {
         println!("Starting Similar Audio fingerprint analysis");
         let threshold = pref.similarity_threshold / 100.0;
-        app.substatus("similarity", 0, "Starting similarity analysis...");
+        app.substatus(
+            "Similar Fingerprint Match",
+            0,
+            "Starting similarity analysis...",
+        );
 
         // Keep track of all records, not just ones with fingerprints
         let all_records = self.records.clone();
@@ -832,7 +860,7 @@ impl Database {
         // STEP 2: Process PCM hashes with exact matching (similar to exact_match function)
         if !pcm_hash_records.is_empty() {
             app.substatus(
-                "pcm_hash",
+                "Similar Fingerprint Match",
                 0,
                 &format!("Processing {} PCM hash records...", pcm_hash_records.len()),
             );
@@ -843,7 +871,7 @@ impl Database {
             for (i, record) in pcm_hash_records.iter().enumerate() {
                 if i % RECORD_DIVISOR == 0 {
                     app.substatus(
-                        "pcm_hash",
+                        "Similar Fingerprint Match",
                         (i + 1) * 100 / pcm_hash_records.len(),
                         &format!("Grouping PCM hashes: {}/{}", i + 1, pcm_hash_records.len()),
                     );
@@ -863,7 +891,7 @@ impl Database {
             for (i, (_, mut records)) in hash_groups.into_iter().enumerate() {
                 if i % RECORD_DIVISOR == 0 {
                     app.substatus(
-                        "pcm_hash",
+                        "Similar Fingerprint Match",
                         50 + ((i + 1) * 50 / hash_group_count),
                         &format!("Processing hash groups: {}/{}", i + 1, hash_group_count),
                     );
@@ -901,7 +929,7 @@ impl Database {
         if !chromaprint_records.is_empty() {
             // Existing similarity match code...
             app.substatus(
-                "similarity",
+                "Similar Fingerprint Match",
                 10,
                 &format!(
                     "Decoding {} Chromaprint fingerprints...",
@@ -921,7 +949,7 @@ impl Database {
                         let update_interval = (total_records.max(20) / 100).max(1);
                         if i % update_interval == 0 {
                             app.substatus(
-                                "similarity",
+                                "Similar Fingerprint Match",
                                 10 + ((i * 30) / total_records),
                                 &format!("Decoding fingerprints: {}/{}", i, total_records),
                             );
@@ -948,7 +976,7 @@ impl Database {
 
                 // PROGRESS: Update before starting comparisons
                 app.substatus(
-                    "similarity",
+                    "Similar Fingerprint Match",
                     40,
                     "Comparing fingerprints for similarities...",
                 );
@@ -960,7 +988,7 @@ impl Database {
                 // Process in smaller batches and report progress
                 for i in 0..total_records {
                     app.substatus(
-                        "similarity",
+                        "Similar Fingerprint Match",
                         i * 100 / total_records,
                         &format!("Finding similar audio: {}/{}", i, total_records),
                     );
@@ -995,7 +1023,7 @@ impl Database {
                 groups
             };
             app.substatus(
-                "similarity",
+                "Similar Fingerprint Match",
                 70,
                 &format!(
                     "Processing {} similarity groups...",
@@ -1017,7 +1045,7 @@ impl Database {
                     // Update progress more frequently
                     if groups_processed % 10 == 0 || groups_processed == total_groups {
                         app.substatus(
-                            "similarity",
+                            "Similar Fingerprint Match",
                             70 + (groups_processed * 20 / total_groups),
                             &format!(
                                 "Processing group {}/{} ({} items)",
@@ -1092,7 +1120,7 @@ impl Database {
 
         // PROGRESS: Final completion update
         app.substatus(
-            "similarity",
+            "Similar Fingerprint Match",
             100,
             "Analysis complete: combined fingerprint and hash processing",
         );
@@ -1450,7 +1478,7 @@ async fn store_fingerprints_batch_optimized(
 
     println!("Storing {} fingerprints in database", fingerprints.len());
     app.substatus(
-        "db-storage",
+        "Writing to Database",
         0,
         &format!("Storing {} fingerprints in database...", fingerprints.len()),
     );
@@ -1471,7 +1499,7 @@ async fn store_fingerprints_batch_optimized(
             for (i, (id, fingerprint)) in fingerprints.iter().enumerate() {
                 if i % 25 == 0 || i == total - 1 {
                     app.substatus(
-                        "db-storage",
+                        "Writing to Database",
                         (i + 1) * 100 / total,
                         &format!("Storing fingerprints: {}/{}", i + 1, total),
                     );
@@ -1503,7 +1531,11 @@ async fn store_fingerprints_batch_optimized(
                     }
                 }
             }
-            app.substatus("db-storage", 90, "Committing changes to database...");
+            app.substatus(
+                "Writing to Database",
+                90,
+                "Committing changes to database...",
+            );
 
             match tx.commit().await {
                 Ok(_) => {
@@ -1525,7 +1557,7 @@ async fn store_fingerprints_batch_optimized(
                 Err(e) => println!("ERROR: Transaction failed to commit: {}", e),
             }
             app.substatus(
-                "db-storage",
+                "Writing to Database",
                 100,
                 &format!(
                     "Database update complete: {} fingerprints stored",
@@ -1536,7 +1568,7 @@ async fn store_fingerprints_batch_optimized(
         Err(e) => {
             println!("ERROR: Failed to start transaction: {}", e);
             app.substatus(
-                "db-storage",
+                "Writing to Database",
                 100,
                 &format!("ERROR: Failed to start transaction: {}", e),
             );

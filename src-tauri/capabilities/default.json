@@ -24,7 +24,9 @@
     "os:default",
     "global-shortcut:allow-is-registered",
     "global-shortcut:allow-register",
-    "global-shortcut:allow-unregister"
+    "global-shortcut:allow-unregister",
+    "opener:allow-open-path",
+    "opener:allow-open-url"
     
   ]
 }

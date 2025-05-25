@@ -538,5 +538,15 @@ export async function update_preservation_order(newOrder: PreservationLogic[]) {
 }
 
 export async function update_batch_size(value: number) {
+    console.log("📊 [STORE] Updating batch size preference to:", value);
     await updatePreference('batch_size', value);
+}
+
+export async function checkThinned(path: string) {
+    const p = get(preferencesStore);
+    if (path.includes(p.safety_db_tag))
+        await updatePreference('safety_db', false);
+    else
+        await updatePreference('safety_db', true);
+    
 }

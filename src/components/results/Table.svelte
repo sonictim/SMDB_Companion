@@ -112,7 +112,7 @@
   $: columnWidths = columnConfigs.map((config) => config.width);
 
   $: totalWidth =
-    columnWidths.reduce((acc, width) => acc + width, 0) + 100 + "px";
+    columnWidths.reduce((acc, width) => acc + width, 0) + 12 + "px";
 
   let containerElement: HTMLElement;
 
@@ -791,7 +791,11 @@
   }
 </script>
 
-<div class="virtual-table-container" bind:this={containerElement}>
+<div
+  class="virtual-table-container"
+  style="--total-width: {totalWidth}"
+  bind:this={containerElement}
+>
   <div
     bind:this={parentRef}
     class="virtual-table-viewport"
@@ -812,10 +816,10 @@
       }
     }}
   >
-    <div class="virtual-table-header" style="width: 100%;">
+    <div class="virtual-table-header">
       <div
         class="grid-container rheader"
-        style="grid-template-columns: {gridTemplateColumns};"
+        style="grid-template-columns: {gridTemplateColumns}"
       >
         {#each columnConfigs as key, i}
           <div class="grid-item header {i === 0 ? 'sticky-column' : ''}">
@@ -845,7 +849,7 @@
 
     <div
       class="virtual-table-body"
-      style="height: {$rowVirtualizer.getTotalSize()}px; width: 100%;"
+      style="height: {$rowVirtualizer.getTotalSize()}px;"
     >
       {#each $rowVirtualizer.getVirtualItems() as virtualRow (virtualRow.index)}
         <div
@@ -863,7 +867,7 @@
                       ? 'alt-shift-range-deselect'
                       : ''}"
           data-index={virtualRow.index}
-          style="transform: translateY({virtualRow.start}px); height: {virtualRow.size}px; width: 100%;"
+          style="transform: translateY({virtualRow.start}px); height: {virtualRow.size}px; "
         >
           <div
             class="list-item {filteredItems[
@@ -971,7 +975,6 @@
   .virtual-table-container {
     position: relative;
     overflow: hidden;
-    width: 100%;
     min-height: 100%;
     height: 100%;
     display: flex;
@@ -981,15 +984,13 @@
   .virtual-table-viewport {
     overflow: auto;
     flex: 1;
-    width: 100%;
     min-height: 100%;
     will-change: transform;
     position: relative;
   }
 
   .virtual-table-header {
-    /* width: max(var(--total-width), 100vw); */
-    width: 100%;
+    width: max(var(--total-width), 100%);
     position: sticky;
     top: 0;
     z-index: 10;
@@ -1000,7 +1001,6 @@
   }
   .virtual-table-header2 {
     /* width: max(var(--total-width), 100vw); */
-    width: 100%;
     position: sticky;
     top: 0;
     z-index: 10;
@@ -1011,18 +1011,13 @@
 
   .virtual-table-body {
     position: relative;
-    width: 100%;
-
-    width: 100%;
   }
 
   .virtual-row {
     position: absolute;
     top: 0;
     left: 0;
-    width: 100%;
 
-    width: 100%;
     user-select: none;
     cursor: pointer;
   }
@@ -1077,7 +1072,6 @@
     font-size: var(--font-size);
     background-color: var(--secondary-bg);
     margin-top: 0px;
-    width: 100%;
   }
 
   .rheader {
@@ -1093,7 +1087,7 @@
     ); /* Adjust height based on font size */
     text-align: bottom;
     align-items: end;
-    width: 100%;
+    width: max(100%, var(--total-width));
   }
 
   .header {

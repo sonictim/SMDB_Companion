@@ -2,13 +2,16 @@ console.log('Loading module:', 'database.ts');  // Add to each file
 
 import { get } from 'svelte/store';
 import { invoke } from '@tauri-apps/api/core';
-import { preferencesStore } from './preferences';
+import { preferencesStore, checkThinned } from './preferences';
 import { createLocalStore, createSessionStore } from './utils';
-import { clearResults } from './results';
+import { clearResults, currentFilterStore } from './results';
 import type { Database } from './types';
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, } from "@tauri-apps/plugin-dialog";
+import { openPath } from "@tauri-apps/plugin-opener";
 import { viewStore, showSearchView } from './menu';
 import { platform } from '@tauri-apps/plugin-os';
+import { homeDir } from '@tauri-apps/api/path';
+import { showStatus, resetSearchProgress } from './status';
 
 
 
@@ -16,6 +19,7 @@ export const databaseStore = createSessionStore<Database | null>('database', nul
 
 
 export async function setDatabase(path: string | null, is_compare: boolean) {
+    // Immediately signal loading state
     databaseStore.set({
         path: '',
         name: 'Select Database',
@@ -24,9 +28,12 @@ export async function setDatabase(path: string | null, is_compare: boolean) {
         isLoading: true,
         error: null
     });
+    
     if (!path) return;
 
     try {
+        console.log("Opening database:", path);
+        
         // Get database path from Tauri
         const name = await invoke<string>("open_db", {path: path, isCompare: is_compare });
         const size = await invoke<number>("get_db_size");
@@ -41,12 +48,36 @@ export async function setDatabase(path: string | null, is_compare: boolean) {
             error: null
         }
         
+        // Set the database in the store
         databaseStore.set(db);
+        
+        // Add to recent databases
         addRecentDatabase({name: name, path: path});
+        
+        // Run various initialization tasks
+        await checkThinned(path);
+        
+        // Reset all search-related state
+        // 1. Clear results to avoid stale data
         clearResults();
+        
+        // 2. Reset search status
+        showStatus.set(false);
+        resetSearchProgress();
+        
+        // 3. Reset any filter selections
+        currentFilterStore.set("Relevant");
+        
+        // Reset view if needed
         if (get(viewStore) === "results") {
             showSearchView();
         }
+        
+        // Try to refresh the UI without a full window reload
+        await invoke("refresh_all_windows");
+        
+        console.log("Database successfully initialized:", name);
+        return db;
         
     } catch (error) {
         console.error("Error setting database:", error);
@@ -164,14 +195,23 @@ export function getDatabasePath(): string | null {
 
 
  export async function openSqliteFile(): Promise<string | null> {
-    let defaultPath = "~/Library/Application Support/SoundminerV6/Databases";
-    if (platform() === "windows") {
-      defaultPath = "%AppData%\\SoundminerV6\\Databases";}
     try {
+      // Get the user's home directory
+      const home = await homeDir();
+      
+      // Construct the absolute path based on platform
+      let defaultPath: string;
+      if (platform() === "windows") {
+        defaultPath = `${home}\\AppData\\Roaming\\SoundminerV6\\Databases`;
+      } else {
+        defaultPath = `${home}/Library/Application Support/SoundminerV6/Databases`;
+      }
+      
+      console.log("Opening file picker at:", defaultPath);
       let db = await open({
         multiple: false,
         directory: false,
-        defaultPath: "~/Library/Application Support/SoundminerV6/Databases",
+        defaultPath,
         filters: [{ name: "SQLite Database", extensions: ["sqlite"] }],
       });
       if (Array.isArray(db)) {
@@ -182,6 +222,18 @@ export function getDatabasePath(): string | null {
     catch (error) {
       console.error("Error opening SQLite file:", error);
       return null;
+    }
+  }
+ export async function openDbFolder() {
+    try {
+      // Call our Rust command to open the database folder
+      const result = await invoke<string>("open_database_folder");
+      console.log(result);
+      return true;
+    }
+    catch (error) {
+      console.error("Error opening folder:", error);
+      return false;
     }
   }
 

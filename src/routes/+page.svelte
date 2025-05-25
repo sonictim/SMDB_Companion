@@ -134,6 +134,33 @@
         }
       });
 
+      // Listen for preference changes to sync between windows
+      preferencesChangedListener = await listen(
+        "preference-change",
+        async () => {
+          console.log(
+            "🔔 [MAIN] Preference change event received in main window"
+          );
+          // Load the latest preferences from localStorage
+          const storedPrefs = localStorage.getItem("preferencesInfo");
+          if (storedPrefs) {
+            try {
+              const latestPrefs = JSON.parse(storedPrefs);
+              console.log(
+                "🔄 [MAIN] Updating preferences store with new batch_size:",
+                latestPrefs.batch_size
+              );
+              preferencesStore.set(latestPrefs);
+              console.log(
+                "✅ [MAIN] Main window preferences updated successfully"
+              );
+            } catch (error) {
+              console.error("Error parsing stored preferences:", error);
+            }
+          }
+        }
+      );
+
       // Listen for hotkey changes to sync between windows
       hotkeyChangeListener = await listen("hotkey-change", async () => {
         console.log("Hotkey change detected in main window");
@@ -182,8 +209,8 @@
   onDestroy(() => {
     if (view === "results") view = "search";
     if (presetChangedListener) presetChangedListener();
+    if (preferencesChangedListener) preferencesChangedListener();
     if (hotkeyChangeListener) hotkeyChangeListener();
-    // Remove the call to preferencesChangedListener since it's never initialized
   });
 </script>
 

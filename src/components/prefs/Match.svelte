@@ -113,7 +113,9 @@
   }
 
   function handleBatchSizeChange(event: Event): void {
-    update_batch_size(parseFloat((event.target as HTMLInputElement).value));
+    const newValue = parseFloat((event.target as HTMLInputElement).value);
+    console.log("🔧 [PREFS] Batch size changed in UI to:", newValue);
+    update_batch_size(newValue);
   }
 
   function handleSimilarityThresholdChange(event: Event): void {
@@ -304,17 +306,5 @@
     grid-template-rows: 2fr 1fr;
     gap: 0px;
     margin-bottom: 0px;
-  }
-
-  .algorithm-help {
-    font-size: 10px;
-    /* margin-top: 8px; */
-    /* margin-left: 70px; */
-    /* padding: 8px; */
-    /* background-color: #f5f5f5; */
-    /* border-left: 3px solid #007bff; */
-    /* font-size: 13px; */
-    /* color: #555; */
-    /* max-width: 400px; */
   }
 </style>
