@@ -1,6 +1,7 @@
 pub mod commands;
 pub mod preferences;
 pub mod search;
+pub mod windows;
 pub use crate::audio::*;
 pub mod audio;
 pub use dirs::home_dir;
@@ -67,6 +68,7 @@ pub fn run() {
             clear_fingerprints,
             refresh_all_windows,
             open_database_folder,
+            reveal_files,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -263,8 +265,14 @@ impl FileRecord {
         let _ = is_compare;
         let id = row.get::<u32, _>(0) as usize;
         let path_str: &str = row.get(1);
-        let path = PathBuf::from(path_str);
-        // let path_exists = path.exists();
+        let mut path = PathBuf::from(path_str);
+        #[cfg(target_os = "windows")]
+        {
+            if let Some(p) = windows::auto_convert_macos_path_to_windows(path_str) {
+                path = p;
+            }
+        }
+
         let duration_str: &str = row.get(2);
         let description: &str = row.get(4);
         let channels = row.get(5);

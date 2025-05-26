@@ -5,6 +5,8 @@ import { createSessionStore } from './utils';
 import { writable, derived, get } from 'svelte/store';
 import { preferencesStore } from './preferences';
 import { getHotkey } from './hotkeys';
+import { invoke } from "@tauri-apps/api/core";
+
 
 // Main results store
 // Change from using createSessionStore
@@ -328,3 +330,29 @@ const noResults = {
     bitdepth: '', 
     channels: '', 
     description: "no results", }
+
+
+      export async function revealSelectedFiles() {
+    const selectedItems = get(selectedItemsStore);
+    if (selectedItems.size === 0) {
+      console.warn("No items selected to reveal.");
+      return;
+    }
+
+    const pathsToReveal = Array.from(selectedItems).map(id => {
+      const item = get(filteredItemsStore).find(i => i.id === id);
+      return item ? item.path + "/" + item.filename : null;
+    }).filter(path => path !== null);
+
+    if (pathsToReveal.length > 0) {
+      try {
+        await invoke("reveal_files", { paths: pathsToReveal });
+        console.log("Revealed files:", pathsToReveal);
+      } catch (error) {
+        console.error("Error revealing files:", error);
+      }
+    } else {
+      console.warn("No valid paths to reveal.");
+    }
+
+  }

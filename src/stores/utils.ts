@@ -3,16 +3,11 @@ console.log('Loading module:', 'utils.ts');  // Add to each file
   import { invoke } from "@tauri-apps/api/core";
   import { basename, extname } from "@tauri-apps/api/path";
 
-import { getAllWindows, Window } from "@tauri-apps/api/window";
-import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { writable } from 'svelte/store';
 
-import { listen } from "@tauri-apps/api/event";
-import { applyColors } from "./colors";
 import { preferencesStore } from "./preferences";
-import type { Colors } from "./types";
+// import { selectedItemsStore, filteredItemsStore } from "./results";
 import { get } from "svelte/store";
-  import { onMount, onDestroy } from "svelte";
   import { platform } from "@tauri-apps/plugin-os";
   
   // Detect platform and return a promise that resolves to true if on macOS
@@ -246,3 +241,4 @@ export async function checkForUpdates(): Promise<{
     
     return name; // Fallback in case something goes wrong
   }
+

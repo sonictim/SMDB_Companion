@@ -571,3 +571,81 @@ pub fn open_database_folder() -> Result<String, String> {
         return Err("Opening folders is not implemented for this platform".to_string());
     }
 }
+
+#[tauri::command]
+pub fn reveal_files(paths: Vec<&str>) -> Result<String, String> {
+    let mut success_count = 0;
+    let mut errors = Vec::new();
+
+    for path_str in paths {
+        let path = PathBuf::from(path_str);
+        println!("Revealing file: {}", path.display());
+
+        if !path.exists() {
+            errors.push(format!("File does not exist: {}", path.display()));
+            continue;
+        }
+
+        let result = reveal_single_file(&path);
+        match result {
+            Ok(_) => success_count += 1,
+            Err(e) => errors.push(e),
+        }
+    }
+
+    if !errors.is_empty() {
+        return Err(format!("Some files failed to open: {}", errors.join("; ")));
+    }
+
+    Ok(format!("Successfully revealed {} file(s)", success_count))
+}
+
+fn reveal_single_file(path: &Path) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::process::Command;
+        // Use /select to highlight the file in Explorer
+        match Command::new("explorer")
+            .args(["/select,", &path.display().to_string()])
+            .spawn()
+        {
+            Ok(_) => Ok(()),
+            Err(e) => Err(format!("Failed to reveal file {}: {}", path.display(), e)),
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        use std::process::Command;
+        // Use -R flag to reveal the file in Finder
+        match Command::new("open")
+            .args(["-R", &path.display().to_string()])
+            .spawn()
+        {
+            Ok(_) => Ok(()),
+            Err(e) => Err(format!("Failed to reveal file {}: {}", path.display(), e)),
+        }
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        // For Linux, try to use the file manager to show the parent directory
+        use std::process::Command;
+
+        let parent_dir = path.parent().unwrap_or(path);
+
+        // Try different file managers in order of preference
+        let file_managers = ["nautilus", "dolphin", "thunar", "pcmanfm", "xdg-open"];
+
+        for fm in &file_managers {
+            if let Ok(_) = Command::new("which").arg(fm).output() {
+                match Command::new(fm).arg(parent_dir).spawn() {
+                    Ok(_) => return Ok(()),
+                    Err(_) => continue,
+                }
+            }
+        }
+
+        Err("No supported file manager found for this platform".to_string())
+    }
+}

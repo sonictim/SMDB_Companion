@@ -26,6 +26,8 @@ export const defaultHotKeys: HashMap[] = [
   {"toggleSelected": "T"},
   {"invertSelected": "I"},
   {"clearSelected": "Backspace"},
+  {"revealSelectedFiles": "CmdOrCtrl+R"},
+  {"revealDatabaseFolder": "Shift+CmdOrCtrl+R"},
   {"helpMenu": "F1"},
   
   // Mouse modifiers for table selection

@@ -1,6 +1,6 @@
 [package]
 name = "SMDB_Companion"
-version = "1.1.23"
+version = "1.1.24"
 description = "Soundminer Database Cleanup Tool"
 authors = ["Tim Farrell"]
 edition = "2024"
@@ -62,6 +62,9 @@ metaflac = "0.2.8"
 FFcodex = { path = "submodules/FFcodex" }
 tauri-plugin-os = "2"
 # lame = "0.1.3"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+winapi = { version = "0.3", features = ["fileapi", "winnt"] }
 
 
 [profile.dev]

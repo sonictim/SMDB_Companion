@@ -8,6 +8,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { preferencesStore } from './preferences';
 import { resultsStore } from './results';
 import { viewStore, showResultsView, isRemove } from './menu';
+import { confirm, message } from "@tauri-apps/plugin-dialog";
 
 
 export const showStatus = writable(false);
@@ -180,6 +181,10 @@ export async function search(): Promise<boolean> {
             
             return true;
         }
+        if (result.length === 0) {
+            message("No results found for the current search criteria in this database.");
+        }
+
     } catch (error) {
         console.error("Search error:", error);
         showStatus.set(false); // Make sure to reset on error

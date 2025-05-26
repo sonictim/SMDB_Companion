@@ -6,7 +6,7 @@ import {
   Submenu,
   CheckMenuItem,
 } from "@tauri-apps/api/menu";
-import { createLocalStore, createSessionStore } from "./utils";
+import { createLocalStore, createSessionStore,  } from "./utils";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { writable, get } from 'svelte/store';
 import { preferencesStore, toggle_ignore_filetype, toggle_remove_records_from, updateEraseFiles, toggle_fetch_waveforms, toggle_store_waveforms, toggle_strip_dual_mono, updateWaveformSearchType } from './preferences';
@@ -36,6 +36,7 @@ import {removeRecords} from './remove';
     filterItems,
     filtersStore,
     manualFiltersStore,
+    revealSelectedFiles
   } from "../stores/results";
     import {
     showStatus,
@@ -644,14 +645,18 @@ const algoMenu = await Submenu.new({
       loadPresetMenu,
       separator,
       {
+        id: "openFiles",
+        text: "Reveal Selected Files",
+        accelerator: getHotkey("revealSelectedFiles"),
+        enabled: true,
+        action: async () => {revealSelectedFiles()},
+      },
+      {
         id: "openFolder",
         text: "Reveal Database Folder",
-        accelerator: getHotkey("revealDbFolder"),
+        accelerator: getHotkey("revealDatabaseFolder"),
         enabled: true,
-        action: () => {openDbFolder()},
-
-
-
+        action: async () => {openDbFolder()},
       },
       
       
