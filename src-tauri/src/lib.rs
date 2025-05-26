@@ -285,7 +285,7 @@ impl FileRecord {
                 } else {
                     // If that fails, try normalizing path separators
                     let normalized_path = path_str.replace('/', "\\");
-                    let normalized_path_buf = PathBuf::from(normalized_path);
+                    let normalized_path_buf = PathBuf::from(normalized_path.clone());
 
                     // Try one more time with normalized path
                     let normalized_exists = normalized_path_buf.exists();
@@ -1102,7 +1102,7 @@ impl Delete {
                         let file_to_use = if Path::new(file).exists() {
                             file
                         } else if Path::new(&normalized_path).exists() {
-                            &normalized_path
+                            normalized_path.as_str()
                         } else {
                             println!(
                                 "Warning: Neither original nor normalized path exists: {}",
@@ -1164,7 +1164,7 @@ impl Delete {
                         if Path::new(file).exists() {
                             file
                         } else if Path::new(&normalized_path).exists() {
-                            &normalized_path
+                            normalized_path.as_str()
                         } else {
                             println!(
                                 "Warning: Neither original nor normalized path exists: {}",

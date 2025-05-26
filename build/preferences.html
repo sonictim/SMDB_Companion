@@ -15,10 +15,17 @@
       --topbar-color: #FFB81C;
       --accent-color: #f0a500;
       --font-size: 16px; /* Default font size */
+      /* Relative font sizes */
+      --font-size-xs: calc(var(--font-size) - 4); /* 12px when default is 16px */
+      --font-size-sm: calc(var(--font-size) - 3); /* 13px when default is 16px */
+      --font-size-md: calc(var(--font-size) - 2); /* 14px when default is 16px */
+      --font-size-lg: calc(var(--font-size) + 2); /* 18px when default is 16px */
+      --font-size-xl: calc(var(--font-size) + 8); /* 24px when default is 16px */
     }
 
     html,
     body {
+      font-size: var(--font-size);
       margin: 0;
       padding: 0;
       background-color: var(--primary-bg);
@@ -36,15 +43,12 @@
   </style>
 
   
-		<link rel="modulepreload" href="./_app/immutable/entry/start.DjoXckMC.js">
-		<link rel="modulepreload" href="./_app/immutable/chunks/BVpg3s53.js">
-		<link rel="modulepreload" href="./_app/immutable/chunks/COpeckN3.js">
-		<link rel="modulepreload" href="./_app/immutable/chunks/CLJ_qsYr.js">
-		<link rel="modulepreload" href="./_app/immutable/entry/app.BivsC74s.js">
-		<link rel="modulepreload" href="./_app/immutable/chunks/Dp1pzeXC.js">
-		<link rel="modulepreload" href="./_app/immutable/chunks/CPHa2MFs.js">
-		<link rel="modulepreload" href="./_app/immutable/chunks/BzCeUW-T.js">
-		<link rel="modulepreload" href="./_app/immutable/chunks/CSFr5mnp.js">
+		<link rel="modulepreload" href="./_app/immutable/entry/start.9d6d1544.js">
+		<link rel="modulepreload" href="./_app/immutable/chunks/365aa69c.js">
+		<link rel="modulepreload" href="./_app/immutable/chunks/3b269efe.js">
+		<link rel="modulepreload" href="./_app/immutable/chunks/bf312f3f.js">
+		<link rel="modulepreload" href="./_app/immutable/entry/app.350aa409.js">
+		<link rel="modulepreload" href="./_app/immutable/chunks/a4192956.js">
 
 </head>
 
@@ -53,15 +57,15 @@
   <div style="display: contents">
 			<script>
 				{
-					__sveltekit_k6f3a1 = {
+					__sveltekit_vx49cm = {
 						base: new URL(".", location).pathname.slice(0, -1)
 					};
 
 					const element = document.currentScript.parentElement;
 
 					Promise.all([
-						import("./_app/immutable/entry/start.DjoXckMC.js"),
-						import("./_app/immutable/entry/app.BivsC74s.js")
+						import("./_app/immutable/entry/start.9d6d1544.js"),
+						import("./_app/immutable/entry/app.350aa409.js")
 					]).then(([kit, app]) => {
 						kit.start(app, element);
 					});
