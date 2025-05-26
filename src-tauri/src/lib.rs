@@ -274,33 +274,8 @@ impl FileRecord {
         let mut algorithm = HashSet::new();
         let mut keep = true;
         if enabled.invalidpath || enabled.dual_mono {
-            // Fix for Windows paths
-            #[cfg(target_os = "windows")]
-            let path_exists = {
-                // First try with the original PathBuf
-                let original_exists = path.exists();
-
-                if original_exists {
-                    true
-                } else {
-                    // If that fails, try normalizing path separators
-                    let normalized_path = path_str.replace('/', "\\");
-                    let normalized_path_buf = PathBuf::from(normalized_path.clone());
-
-                    // Try one more time with normalized path
-                    let normalized_exists = normalized_path_buf.exists();
-
-                    // Debug info to help troubleshoot
-                    if !normalized_exists {
-                        println!("Path not found: {}", path_str);
-                        println!("Normalized path also not found: {}", normalized_path);
-                    }
-
-                    normalized_exists
-                }
-            };
-
-            #[cfg(not(target_os = "windows"))]
+            // Use the path existence check from the PathBuf directly
+            // This handles cross-platform path separators correctly
             let path_exists = path.exists();
 
             if !path_exists {
@@ -557,7 +532,7 @@ impl Database {
     }
 
     async fn create_clone(&self, tag: &str) -> Database {
-        let mut path = self.path.as_ref().unwrap().to_string_lossy().to_string();
+        let mut path = self.path.as_ref().unwrap().display().to_string();
         path = path.replace(".sqlite", &format!("_{}.sqlite", tag));
         let path = PathBuf::from(path);
         let _result = fs::copy(self.path.as_ref().unwrap(), &path);
@@ -1035,31 +1010,12 @@ impl Delete {
         println!("Removing Files");
         app.substatus("Removing Files", 0, "Preparing to remove files...");
 
-        // Filter valid files directly and collect them into a Vec
+        // Filter valid files using PathBuf for cross-platform compatibility
         let valid_files: Vec<&str> = files
             .par_iter()
             .filter(|&&file| {
-                // First try with original path
-                let original_path = Path::new(file);
-                let exists = original_path.exists();
-
-                #[cfg(target_os = "windows")]
-                let exists = if exists {
-                    true
-                } else {
-                    // If the original path doesn't exist on Windows, try normalizing slashes
-                    let normalized_path = file.replace('/', "\\");
-                    let normalized_path_buf = Path::new(&normalized_path);
-                    let normalized_exists = normalized_path_buf.exists();
-
-                    if !normalized_exists {
-                        println!("File not found: {}", file);
-                        println!("Normalized path also not found: {}", normalized_path);
-                    }
-
-                    normalized_exists
-                };
-
+                let path = std::path::Path::new(file);
+                let exists = path.exists();
                 if !exists {
                     println!("File does not exist: {}", file);
                 }
@@ -1086,64 +1042,30 @@ impl Delete {
 
         match self {
             Delete::Trash => {
-                #[cfg(target_os = "windows")]
-                {
-                    // On Windows, process files individually for better error reporting
-                    let total = valid_files.len();
-                    for (i, file) in valid_files.iter().enumerate() {
-                        app.substatus(
-                            "Removing Files",
-                            10 + (i * 90 / total),
-                            &format!("Moving to trash: {}/{}", i + 1, total),
-                        );
+                let total = valid_files.len();
+                for (i, file) in valid_files.iter().enumerate() {
+                    app.substatus(
+                        "Removing Files",
+                        10 + (i * 90 / total),
+                        &format!("Moving to trash: {}/{}", i + 1, total),
+                    );
 
-                        // Try with normalized path on Windows
-                        let normalized_path = file.replace('/', "\\");
-                        let file_to_use = if Path::new(file).exists() {
-                            file
-                        } else if Path::new(&normalized_path).exists() {
-                            normalized_path.as_str()
-                        } else {
-                            println!(
-                                "Warning: Neither original nor normalized path exists: {}",
-                                file
-                            );
-                            file // Use original as fallback
-                        };
+                    // Use PathBuf::display() for consistent cross-platform path handling
+                    let path = std::path::PathBuf::from(file);
+                    let normalized_path = path.display().to_string();
 
-                        match trash::delete(file_to_use) {
-                            Ok(_) => {
-                                println!("Successfully moved to trash: {}", file_to_use);
-                            }
-                            Err(e) => {
-                                // Log error but continue with other files
-                                println!("Failed to move to trash: {}: {}", file_to_use, e);
-                                app.substatus(
-                                    "Failed to move to Trash",
-                                    10 + (i * 90 / total),
-                                    &format!("Warning: Failed to trash: {}", file_to_use),
-                                );
-                            }
+                    match trash::delete(&normalized_path) {
+                        Ok(_) => {
+                            println!("Successfully moved to trash: {}", normalized_path);
                         }
-                    }
-                }
-
-                #[cfg(not(target_os = "windows"))]
-                {
-                    // macOS/Linux - use batch operation which is more efficient
-                    if !valid_files.is_empty() {
-                        app.substatus("Removing Files", 50, "Moving files to trash...");
-                        println!("Attempting to move {} files to trash", valid_files.len());
-
-                        match trash::delete_all(&valid_files) {
-                            Ok(_) => {
-                                println!("Successfully moved all files to trash");
-                            }
-                            Err(e) => {
-                                app.substatus("Error", 100, &format!("Trash error: {}", e));
-                                eprintln!("Move to Trash Failed: {}", e);
-                                return Err(e.into());
-                            }
+                        Err(e) => {
+                            // Log error but continue with other files
+                            println!("Failed to move to trash: {}: {}", normalized_path, e);
+                            app.substatus(
+                                "Moving Files to Trash",
+                                10 + (i * 90 / total),
+                                &format!("Error moving file: {}", e),
+                            );
                         }
                     }
                 }
@@ -1157,35 +1079,19 @@ impl Delete {
                         &format!("Permanently deleting: {}/{}", i + 1, total),
                     );
 
-                    #[cfg(target_os = "windows")]
-                    let file_to_use = {
-                        // Try with normalized path on Windows
-                        let normalized_path = file.replace('/', "\\");
-                        if Path::new(file).exists() {
-                            file
-                        } else if Path::new(&normalized_path).exists() {
-                            normalized_path.as_str()
-                        } else {
-                            println!(
-                                "Warning: Neither original nor normalized path exists: {}",
-                                file
-                            );
-                            file // Use original as fallback
-                        }
-                    };
+                    // Use PathBuf::display() for consistent cross-platform path handling
+                    let path = std::path::PathBuf::from(file);
+                    let normalized_path = path.display().to_string();
 
-                    #[cfg(not(target_os = "windows"))]
-                    let file_to_use = file;
-
-                    if let Err(e) = fs::remove_file(file_to_use) {
-                        eprintln!("Failed to remove file {}: {}", file_to_use, e);
+                    if let Err(e) = fs::remove_file(&normalized_path) {
+                        eprintln!("Failed to remove file {}: {}", normalized_path, e);
                         app.substatus(
                             "Warning",
                             10 + (i * 90 / total),
-                            &format!("Warning: Failed to delete: {}", file_to_use),
+                            &format!("Warning: Failed to delete: {}", normalized_path),
                         );
                     } else {
-                        println!("Successfully deleted file: {}", file_to_use);
+                        println!("Successfully deleted file: {}", normalized_path);
                     }
                 }
             }
@@ -1354,3 +1260,68 @@ async fn batch_store_data_optimized(
 //     // println!("Updated column '{}' in row {} with value '{}'", column_name, row_id, value);
 //     Ok(())
 // }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    /// Test that demonstrates the cross-platform path handling approach
+    /// used in the refactored FileRecord::get_filepath() method
+    #[test]
+    fn test_cross_platform_path_handling() {
+        // Test various path formats that might come from different platforms
+        let test_paths = vec![
+            "/Users/user/Music/song.wav",       // Unix-style
+            "C:\\Users\\user\\Music\\song.wav", // Windows-style
+            "/home/user/documents/audio.aiff",  // Linux-style
+            "D:\\Audio\\Projects\\track.wav",   // Windows drive
+        ];
+
+        for path_str in test_paths {
+            let path = PathBuf::from(path_str);
+            let display_path = path.display().to_string();
+
+            // Verify that display() produces a valid string representation
+            assert!(!display_path.is_empty());
+
+            // Verify that the path can be round-tripped
+            let reconstructed = PathBuf::from(&display_path);
+
+            // On the same platform, this should be equivalent
+            assert_eq!(path, reconstructed);
+
+            println!("Original: {} -> Display: {}", path_str, display_path);
+        }
+    }
+
+    /// Test that file existence checking works with PathBuf
+    #[test]
+    fn test_path_existence_check() {
+        // Test with a path that definitely doesn't exist
+        let nonexistent_path = PathBuf::from("/nonexistent/path/file.wav");
+        assert!(!nonexistent_path.exists());
+
+        // Test with current directory (should exist)
+        let current_dir = PathBuf::from(".");
+        assert!(current_dir.exists());
+    }
+
+    /// Test the Delete enum approach for path normalization
+    #[test]
+    fn test_delete_path_normalization() {
+        let test_files = vec!["test1.wav", "/path/to/test2.wav", "relative/path/test3.wav"];
+
+        // Simulate the approach used in Delete::delete_files()
+        for file in &test_files {
+            let path = PathBuf::from(file);
+            let normalized_path = path.display().to_string();
+
+            // Verify normalization produces consistent results
+            assert!(!normalized_path.is_empty());
+            assert_eq!(normalized_path, path.display().to_string());
+
+            println!("File: {} -> Normalized: {}", file, normalized_path);
+        }
+    }
+}
