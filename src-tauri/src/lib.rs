@@ -1008,7 +1008,11 @@ impl Delete {
         app: &AppHandle,
     ) -> Result<(), Box<dyn std::error::Error>> {
         println!("Removing Files");
-        app.substatus("Removing Files", 0, "Preparing to remove files...");
+        app.substatus(
+            "Removing Files",
+            0,
+            "Preparing to remove files... Checking Validity",
+        );
 
         // Filter valid files using PathBuf for cross-platform compatibility
         let valid_files: Vec<&str> = files
@@ -1042,33 +1046,22 @@ impl Delete {
 
         match self {
             Delete::Trash => {
-                let total = valid_files.len();
-                for (i, file) in valid_files.iter().enumerate() {
-                    app.substatus(
-                        "Removing Files",
-                        10 + (i * 90 / total),
-                        &format!("Moving to trash: {}/{}", i + 1, total),
-                    );
-
-                    // Use PathBuf::display() for consistent cross-platform path handling
-                    let path = std::path::PathBuf::from(file);
-                    let normalized_path = path.display().to_string();
-
-                    match trash::delete(&normalized_path) {
-                        Ok(_) => {
-                            println!("Successfully moved to trash: {}", normalized_path);
-                        }
-                        Err(e) => {
-                            // Log error but continue with other files
-                            println!("Failed to move to trash: {}: {}", normalized_path, e);
-                            app.substatus(
-                                "Moving Files to Trash",
-                                10 + (i * 90 / total),
-                                &format!("Error moving file: {}", e),
-                            );
-                        }
+                match trash::delete_all(&valid_files) {
+                    Ok(_) => {
+                        println!("Successfully moved all files to trash");
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to move files to trash: {}", e);
+                        app.substatus(
+                            "Removing Files",
+                            100,
+                            &format!("Error moving files to trash: {}", e),
+                        );
+                        return Err(Box::new(e));
                     }
                 }
+                app.substatus("Removing Files", 100, "All files moved to trash");
+                return Ok(());
             }
             Delete::Delete => {
                 let total = valid_files.len();
@@ -1086,7 +1079,7 @@ impl Delete {
                     if let Err(e) = fs::remove_file(&normalized_path) {
                         eprintln!("Failed to remove file {}: {}", normalized_path, e);
                         app.substatus(
-                            "Warning",
+                            "Removeing Files",
                             10 + (i * 90 / total),
                             &format!("Warning: Failed to delete: {}", normalized_path),
                         );
