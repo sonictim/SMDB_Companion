@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # Run necessary setup scripts
+./scripts/release_up.sh
 ./scripts/update_cargo.toml.sh
 ./scripts/make_public.sh
 
