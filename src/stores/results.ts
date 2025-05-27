@@ -1,7 +1,6 @@
 console.log('Loading module:', 'results.ts');  // Fixed module name
 
 import type { FileRecord } from './types';
-import { createSessionStore } from './utils';
 import { writable, derived, get } from 'svelte/store';
 import { preferencesStore } from './preferences';
 import { getHotkey } from './hotkeys';
@@ -112,6 +111,27 @@ export function updateResultsStore(newResults: any): void {
 export function clearResults(): void {
     resultsStore.set([]);
     clearSelected();
+}
+
+// Remove specific IDs from results
+export function removeIdsFromResults(idsToRemove: number[]): void {
+    if (!idsToRemove || idsToRemove.length === 0) {
+        return;
+    }
+    
+    const idsSet = new Set(idsToRemove);
+    
+    // Remove records with matching IDs from the results store
+    resultsStore.update(items => {
+        return items.filter(item => !idsSet.has(item.id));
+    });
+    
+    // Clear any selections for the removed items
+    selectedItemsStore.update(currentSelected => {
+        const newSelected = new Set(currentSelected);
+        idsToRemove.forEach(id => newSelected.delete(id));
+        return newSelected;
+    });
 }
 
 // Selection-related functions

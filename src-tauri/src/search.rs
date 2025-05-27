@@ -209,7 +209,14 @@ impl Database {
     }
 
     pub async fn dual_mono_search(&mut self, pref: &Preferences, app: &AppHandle) {
-        let pool = self.get_pool().await.unwrap();
+        println!(
+            "Dual Mono Search started for db: {}",
+            self.get_name().unwrap_or_default()
+        );
+        let Some(pool) = self.get_pool().await else {
+            println!("No database pool available for dual mono search");
+            return;
+        };
         println!("Starting Dual Mono Search");
         let total = self.records.len();
         let completed = AtomicUsize::new(0);

@@ -7,6 +7,7 @@ import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { preferencesStore } from './preferences';
 import { resultsStore } from './results';
+import { databaseStore, setDatabase } from './database';
 import { viewStore, showResultsView, isRemove } from './menu';
 import { confirm, message } from "@tauri-apps/plugin-dialog";
 
@@ -114,6 +115,9 @@ export async function toggleSearch(): Promise<boolean> {
  * @returns {Promise<string>} The next active tab to navigate to
  */
 export async function search(): Promise<boolean> {
+    let db = get(databaseStore);
+    if (db === null) return false;
+    await setDatabase(db.path, false)
     // Set showStatus to true at the start of the search process
     showStatus.set(true);
     
@@ -164,10 +168,18 @@ export async function search(): Promise<boolean> {
     try {
         // Log the search start for debugging
         console.log("Invoking backend search with params:", { algorithmState, preferences });
+        const db = get(databaseStore);
+        if (!db || !db.path) {
+            console.error("No database loaded or database path is invalid");
+            message("No database loaded. Please open a database before searching.");
+            showStatus.set(false); // Make sure to reset on error
+            return false;
+        }
         
         const result = await invoke<FileRecord[]>("search", {
             enabled: algorithmState,
             pref: preferences,
+            path: db.path,
         });
         
         console.log("Search Results:", result);
@@ -181,7 +193,7 @@ export async function search(): Promise<boolean> {
             
             return true;
         }
-        if (result.length === 0) {
+        else{
             message("No results found for the current search criteria in this database.");
         }
 

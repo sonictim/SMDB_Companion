@@ -80,6 +80,7 @@ pub fn get_volume_label(drive_letter: char) -> Option<String> {
 
     #[cfg(not(target_os = "windows"))]
     {
+        println!("Getting volume label for drive: {}", drive_letter);
         // For non-Windows platforms, return None
         None
     }
@@ -109,7 +110,7 @@ pub fn convert_macos_path_to_windows(macos_path: &str, drive_letter: char) -> Op
 
         // Find the first backslash to separate volume name from the rest of the path
         if let Some(first_slash_pos) = without_volumes.find('\\') {
-            let volume_name = &without_volumes[..first_slash_pos];
+            let _volume_name = &without_volumes[..first_slash_pos];
             let remaining_path = &without_volumes[first_slash_pos + 1..];
 
             // Construct the Windows path
@@ -195,7 +196,7 @@ pub fn convert_and_validate_path(macos_path: &str) -> Option<PathBuf> {
             Some(windows_path)
         } else {
             // If the auto-detected path doesn't exist, try all drives manually
-            if let Some(volume_name) = extract_volume_name(macos_path) {
+            if let Some(_volume_name) = extract_volume_name(macos_path) {
                 for drive_letter in 'A'..='Z' {
                     if let Some(test_path) = convert_macos_path_to_windows(macos_path, drive_letter)
                     {

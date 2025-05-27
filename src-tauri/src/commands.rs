@@ -118,8 +118,8 @@ pub async fn search(
                 Ok(result) => {
                    result
                 }
-                Err(_) => {
-                    Err("Fingerprinting task aborted or failed".to_string())
+                Err(e) => {
+                    Err(format!("Fingerprinting task aborted or failed: {}", e))
                 }
             }
         }
@@ -241,14 +241,27 @@ pub async fn remove_records(
     strip_dual_mono: bool,
 ) -> Result<Arc<str>, String> {
     println!("Removing Records");
+
     println!("Dual Mono: {:?}", dual_mono);
     let mut state = state.lock().await;
     app.substatus("Starting", 0, "Nothing to report here...");
 
     if strip_dual_mono {
         app.status("Dual Mono Processing", 0, "Stripping Dual Mono Records...");
-
-        let _ = state.db.clean_multi_mono(&app, &dual_mono).await;
+        match state.db.clean_multi_mono(&app, &dual_mono).await {
+            Ok(_) => {
+                app.status("Dual Mono Processing", 100, "Dual Mono Records Stripped");
+            }
+            Err(e) => {
+                let error_msg = format!("Failed to strip dual mono records: {}", e);
+                // Check if it's a permission error
+                if is_permission_error_sqlx(&e) {
+                    return Err(format!("PERMISSION_ERROR: {}", error_msg));
+                }
+                app.status("Dual Mono Processing", 100, &error_msg);
+                return Err(error_msg);
+            }
+        }
     }
 
     if clone {
@@ -258,11 +271,38 @@ pub async fn remove_records(
             "Creating Safety Copy of Current Database...",
         );
 
-        state.db = state.db.create_clone(&clone_tag).await;
+        match state.db.create_clone(&clone_tag).await {
+            Ok(cloned_db) => {
+                state.db = cloned_db;
+            }
+            Err(e) => {
+                let error_msg = format!("Failed to create database clone: {}", e);
+                // Check if it's a permission error
+                if is_permission_error(&e) {
+                    return Err(format!("PERMISSION_ERROR: {}", error_msg));
+                }
+                app.status("Database Cloning", 100, &error_msg);
+                return Err(error_msg);
+            }
+        }
     }
-    app.status("Record Removal", 30, "Removing Records from Database...");
 
-    let _ = state.db.remove(&records, &app).await;
+    app.status("Record Removal", 30, "Removing Records from Database...");
+    match state.db.remove(&records, &app).await {
+        Ok(_) => {
+            app.status("Record Removal", 100, "Records Removed Successfully");
+        }
+        Err(e) => {
+            let error_msg = format!("Failed to remove records: {}", e);
+            // Check if it's a permission error
+            if is_permission_error_sqlx(&e) {
+                return Err(format!("PERMISSION_ERROR: {}", error_msg));
+            }
+            app.status("Record Removal", 100, &error_msg);
+            return Err(error_msg);
+        }
+    }
+
     app.status(
         "Audio File Management",
         70,
@@ -273,12 +313,52 @@ pub async fn remove_records(
         },
     );
 
-    let _ = delete.delete_files(files, &app);
+    // Handle file deletion with permission checking
+    match delete.delete_files(files, &app) {
+        Ok(_) => {}
+        Err(e) => {
+            if is_permission_error_str(&e.to_string()) {
+                return Err(format!("PERMISSION_ERROR: Failed to delete files: {}", e));
+            } else {
+                return Err(format!("File operation failed: {}", e));
+            }
+        }
+    }
 
     println!("Remove Ended");
     app.status("Final Checks", 100, "Success! Removal is complete");
 
-    Ok(state.db.get_name().unwrap_or(Arc::from("Select Database")))
+    Ok(state.db.get_path().unwrap_or(Arc::from("Select Database")))
+}
+
+// Helper functions to detect permission errors
+fn is_permission_error(error: &std::io::Error) -> bool {
+    match error.kind() {
+        std::io::ErrorKind::PermissionDenied => true,
+        _ => {
+            let error_str = error.to_string().to_lowercase();
+            error_str.contains("permission")
+                || error_str.contains("access denied")
+                || error_str.contains("unauthorized")
+        }
+    }
+}
+
+fn is_permission_error_sqlx(error: &sqlx::Error) -> bool {
+    let error_str = error.to_string().to_lowercase();
+    error_str.contains("permission")
+        || error_str.contains("access denied")
+        || error_str.contains("unauthorized")
+        || error_str.contains("readonly")
+        || error_str.contains("database is locked")
+}
+
+fn is_permission_error_str(error_str: &str) -> bool {
+    let error_lower = error_str.to_lowercase();
+    error_lower.contains("permission")
+        || error_lower.contains("access denied")
+        || error_lower.contains("unauthorized")
+        || error_lower.contains("operation not permitted")
 }
 
 #[tauri::command]

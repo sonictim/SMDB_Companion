@@ -1,4 +1,4 @@
-  import { writable, derived, get } from 'svelte/store';
+  import { get } from 'svelte/store';
   import { invoke } from "@tauri-apps/api/core";
   import { message } from "@tauri-apps/plugin-dialog";
 import { preferencesStore } from "../stores/preferences";
@@ -6,21 +6,19 @@ import {
   resultsStore,
   filteredItemsStore,
   selectedItemsStore,
-
+  removeIdsFromResults,
 } from "../stores/results";
 import { metadataStore } from "../stores/metadata";
 import { ask } from "@tauri-apps/plugin-dialog";
-import { setDatabase } from "../stores/database";
+import { setDatabase, } from "../stores/database";
 import { showSearchView } from "../stores/menu";
 import { showStatus } from "../stores/status";
-import { show } from '@tauri-apps/api/app';
 
   
 
   export let isRemove: boolean;
   export let selectedDb: string | null = null;
 
-  export let processing = false;
 
 
   let idsToRemove: number[] = [];
@@ -66,7 +64,8 @@ import { show } from '@tauri-apps/api/app';
 
 
  export async function removeRecords() {
-    showStatus.set(true)
+    // let db = get(databaseStore);
+    // if (!db) return;
     let filteredItems = get(filteredItemsStore);
     let pref = get(preferencesStore);
     idsToRemove = filteredItems
@@ -86,7 +85,7 @@ import { show } from '@tauri-apps/api/app';
     if (idsToRemove.length > 0 || dualMono.length > 0) {
       const confirmed = await confirmDialog();
       if (confirmed) {
-        processing = true;
+        showStatus.set(true)
         try {
           const updatedDb = await invoke<string>("remove_records", {
             records: idsToRemove,
@@ -98,6 +97,7 @@ import { show } from '@tauri-apps/api/app';
             stripDualMono: pref.strip_dual_mono,
           });
           
+          removeIdsFromResults(idsToRemove);
           if (dualMono.length > 0 && pref.strip_dual_mono) {
             await message(
               "Dual Mono files converted to Mono!\n\nRecords marked as dirty in Soundminer. For safety, open Soundminer and run the following:\n'Database -> Show Dirty'\nPress: 'CMD + A' to select all\n'Database -> Embed Selected'\n'Database -> Rebuild Waveforms for Selected'"
@@ -105,14 +105,20 @@ import { show } from '@tauri-apps/api/app';
           }
           console.log("Successfully removed records with IDs:", idsToRemove);
           showStatus.set(false);
-          setDatabase(updatedDb, false);
-          showSearchView();
+          
+          
+          await setDatabase(updatedDb, false);
+          // let size = db.size - idsToRemove.length;
+          // setDbSize(size);
         } catch (error) {
-          console.error("Error removing records:", error);
+          console.error("Error removing selected records:", error);
+          if (String(error).includes("PERMISSION_ERROR:")) {
+            await message(String(error) + "\n\nThis operation requires administrator privileges. Please run the app with elevated access or contact your system administrator.", );
+        } else {
+            await message("Error: " + error);
+        }
+      } finally {
           showStatus.set(false);
-          await ask("An error occurred while removing records.");
-        } finally {
-          processing = false;
           
         }
       }
@@ -124,7 +130,6 @@ import { show } from '@tauri-apps/api/app';
   }
 
  export async function removeSelectedRecords() {
-    showStatus.set(true)
     let filteredItems = get(filteredItemsStore);
     let selectedItems = get(selectedItemsStore);
     let pref = get(preferencesStore);
@@ -154,7 +159,7 @@ import { show } from '@tauri-apps/api/app';
     if (idsToRemove.length > 0 || dualMono.length > 0) {
       const confirmed = await confirmDialog();
       if (confirmed) {
-        processing = true;
+        showStatus.set(true)
         try {
           const updatedDb = await invoke<string>("remove_records", {
             records: idsToRemove,
@@ -165,6 +170,7 @@ import { show } from '@tauri-apps/api/app';
             dualMono: dualMono,
             stripDualMono: pref.strip_dual_mono,
           });
+          removeIdsFromResults(idsToRemove);
           
           if (dualMono.length > 0 && pref.strip_dual_mono) {
             await message(
@@ -173,14 +179,17 @@ import { show } from '@tauri-apps/api/app';
           }
           console.log("Successfully removed records with IDs:", idsToRemove);
           showStatus.set(false);
-          processing = false;
-          setDatabase(updatedDb, false);
+          
+          await setDatabase(updatedDb, false);
         } catch (error) {
           console.error("Error removing selected records:", error);
-          await ask("An error occurred while removing selected records.");
+          if (String(error).includes("PERMISSION_ERROR:")) {
+            await message(String(error) + "\n\nThis operation requires administrator privileges. Please run the app with elevated access or contact your system administrator.", );
+        } else {
+            await message("Error: " + error);
+        }
+      } finally {
           showStatus.set(false);
-        } finally {
-          processing = false;
         }
       }
     } else {
@@ -200,7 +209,7 @@ import { show } from '@tauri-apps/api/app';
     });
 
     if (confirmed && metadata.find && metadata.replace) {
-      processing = true;
+      showStatus.set(true);
       try {
         await invoke("replace_metadata", {
           data: metadata,
@@ -213,13 +222,12 @@ import { show } from '@tauri-apps/api/app';
               replace: ""
             }));
             resultsStore.set([]);
-            showSearchView();
           });
       } catch (error) {
         console.error("Error replacing metadata:", error);
         await ask("An error occurred while replacing metadata.");
       } finally {
-        processing = false;
+        showStatus.set(false);
       }
     }
   }

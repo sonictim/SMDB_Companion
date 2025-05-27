@@ -6,6 +6,15 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{cmp::Ordering, collections::HashSet, sync::Arc};
 
+#[derive(Default, Serialize, Deserialize, Clone)]
+pub struct RemovePreferences {
+    pub clone: bool,
+    pub clone_tag: String,
+    pub records: Vec<usize>,
+    pub delete: crate::Delete,
+    pub strip_dual_mono: bool,
+}
+
 #[derive(Default, Debug, Serialize, Deserialize, Clone)]
 pub struct Preferences {
     pub columns: Vec<Arc<str>>,

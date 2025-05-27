@@ -36,8 +36,10 @@ export async function setDatabase(path: string | null, is_compare: boolean) {
         
         // Get database path from Tauri
         const name = await invoke<string>("open_db", {path: path, isCompare: is_compare });
-        const size = await invoke<number>("get_db_size");
-        const columns = await invoke<string[]>("get_columns");  
+        const size = await getSize();
+        console.log("Database opened:", name, "Size:", size);
+        const columns = await invoke<string[]>("get_columns"); 
+        const pref  = get(preferencesStore);
 
         let db = {
             path: path,
@@ -59,7 +61,7 @@ export async function setDatabase(path: string | null, is_compare: boolean) {
         
         // Reset all search-related state
         // 1. Clear results to avoid stale data
-        clearResults();
+        // clearResults();
         
         // 2. Reset search status
         showStatus.set(false);
@@ -69,12 +71,13 @@ export async function setDatabase(path: string | null, is_compare: boolean) {
         currentFilterStore.set("Relevant");
         
         // Reset view if needed
-        if (get(viewStore) === "results") {
-            showSearchView();
-        }
+        // let view = get(viewStore);
+        // if (view === "results") {
+        //     showSearchView();
+        // }
         
         // Try to refresh the UI without a full window reload
-        await invoke("refresh_all_windows");
+        // await invoke("refresh_all_windows");
         
         console.log("Database successfully initialized:", name);
         return db;
@@ -277,3 +280,4 @@ function addRecentDatabase(db: {name: string, path: string}) {
       console.error("Error selecting file:", error);
     }
   }
+

@@ -74,32 +74,6 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
-// fn menu(app: &mut App) -> Result<()> {
-//     let menu = MenuBuilder::new(app)
-//         .text("open", "Open")
-//         .text("close", "Close")
-//         .build()?;
-
-//     app.set_menu(menu)?;
-
-//     app.on_menu_event(move |app_handle: &tauri::AppHandle, event| {
-//         println!("menu event: {:?}", event.id());
-
-//         match event.id().0.as_str() {
-//             "open" => {
-//                 println!("open event");
-//             }
-//             "close" => {
-//                 println!("close event");
-//             }
-//             _ => {
-//                 println!("unexpected menu event");
-//             }
-//         }
-//     }); // Use Mutex to allow async access
-//     Ok(())
-// }
-
 // In your main.rs or lib.rs
 fn set_library_path() {
     use std::env;
@@ -265,12 +239,15 @@ impl FileRecord {
         let _ = is_compare;
         let id = row.get::<u32, _>(0) as usize;
         let path_str: &str = row.get(1);
+
+        #[cfg(not(target_os = "windows"))]
+        let path = PathBuf::from(path_str);
+
+        #[cfg(target_os = "windows")]
         let mut path = PathBuf::from(path_str);
         #[cfg(target_os = "windows")]
-        {
-            if let Some(p) = windows::auto_convert_macos_path_to_windows(path_str) {
-                path = p;
-            }
+        if let Some(p) = windows::auto_convert_macos_path_to_windows(path_str) {
+            path = p;
         }
 
         let duration_str: &str = row.get(2);
@@ -500,11 +477,28 @@ pub struct Database {
 // Change visibility of `Database` methods to private where possible
 impl Database {
     pub async fn new(path: &str, is_compare: bool) -> Self {
-        let mut d = Database::default();
-        d.path = Some(PathBuf::from(path));
-        d.size = d.fetch_size().await.unwrap();
+        println!("🆕 Creating new Database instance");
+        println!("📁 Path: {}", path);
+        println!("🔄 Is compare: {}", is_compare);
+
+        let mut d = Database {
+            path: Some(PathBuf::from(path)),
+            size: 0,
+            records: Vec::new(),
+            is_compare,
+            abort: Arc::new(AtomicBool::new(false)),
+        };
+
+        println!("📏 Fetching initial database size...");
+        d.size = d.fetch_size().await.unwrap_or_else(|e| {
+            println!("⚠️  Failed to fetch size, using 0: {}", e);
+            0
+        });
+
+        println!("💾 Initializing records vector with capacity: {}", d.size);
         d.records = Vec::with_capacity(d.size);
-        d.is_compare = is_compare;
+
+        println!("✅ Database instance created successfully");
         d
     }
 
@@ -539,22 +533,81 @@ impl Database {
         }
     }
 
-    async fn create_clone(&self, tag: &str) -> Database {
-        let mut path = self.path.as_ref().unwrap().display().to_string();
-        path = path.replace(".sqlite", &format!("_{}.sqlite", tag));
-        let path = PathBuf::from(path);
-        let _result = fs::copy(self.path.as_ref().unwrap(), &path);
+    async fn create_clone(&self, tag: &str) -> Result<Database, std::io::Error> {
+        let source_path = self.path.as_ref().ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::NotFound, "No source database path")
+        })?;
 
+        // Create the new path with proper cross-platform handling
+        let mut path_string = source_path.display().to_string();
+        path_string = path_string.replace(".sqlite", &format!("_{}.sqlite", tag));
+        let target_path = PathBuf::from(path_string);
+
+        // Check if source file exists and is readable
+        if !source_path.exists() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("Source database not found: {}", source_path.display()),
+            ));
+        }
+
+        // Check if target directory exists and is writable
+        if let Some(parent) = target_path.parent() {
+            if !parent.exists() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("Target directory not found: {}", parent.display()),
+                ));
+            }
+
+            // Test write permissions by attempting to create a temporary file
+            let test_file = parent.join(".write_test_tmp");
+            match std::fs::File::create(&test_file) {
+                Ok(_) => {
+                    let _ = std::fs::remove_file(&test_file); // Clean up
+                }
+                Err(e) => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::PermissionDenied,
+                        format!(
+                            "Cannot write to target directory {}: {}",
+                            parent.display(),
+                            e
+                        ),
+                    ));
+                }
+            }
+        }
+
+        // Perform the copy operation with proper error handling
+        fs::copy(source_path, &target_path).map_err(|e| {
+            std::io::Error::new(
+                e.kind(),
+                format!(
+                    "Failed to copy database from {} to {}: {}",
+                    source_path.display(),
+                    target_path.display(),
+                    e
+                ),
+            )
+        })?;
+
+        // Initialize the new database
         let mut db = Database::default();
-        db.init(Some(path), false).await;
-        db
+        db.init(Some(target_path), false).await;
+        Ok(db)
     }
 
     fn get_path(&self) -> Option<Arc<str>> {
         if let Some(path) = &self.path {
-            if let Some(path) = path.to_str() {
-                return Some(Arc::from(path));
+            if let Some(path_str) = path.to_str() {
+                println!("🛤️  Database path: {}", path_str);
+                return Some(Arc::from(path_str));
+            } else {
+                println!("❌ Failed to convert path to string");
             }
+        } else {
+            println!("❌ No database path set");
         }
         None
     }
@@ -582,9 +635,45 @@ impl Database {
 
     pub async fn get_pool(&self) -> Option<SqlitePool> {
         if let Some(path) = self.get_path() {
-            return SqlitePool::connect(&path).await.ok();
+            println!("🔌 Attempting to connect to database: {}", path);
+
+            // Check if file exists first
+            let path_buf = std::path::PathBuf::from(path.as_ref());
+            if !path_buf.exists() {
+                println!("❌ Database file does not exist: {}", path);
+                return None;
+            }
+
+            // Check file size
+            match std::fs::metadata(&path_buf) {
+                Ok(metadata) => {
+                    let file_size = metadata.len();
+                    println!("📊 Database file size: {} bytes", file_size);
+                    if file_size == 0 {
+                        println!("⚠️  Database file is empty (0 bytes)");
+                    }
+                }
+                Err(e) => {
+                    println!("❌ Failed to get database metadata: {}", e);
+                    return None;
+                }
+            }
+
+            // Attempt connection
+            match SqlitePool::connect(&path).await {
+                Ok(pool) => {
+                    println!("✅ Successfully connected to database");
+                    Some(pool)
+                }
+                Err(e) => {
+                    println!("❌ Failed to connect to database: {}", e);
+                    None
+                }
+            }
+        } else {
+            println!("❌ No database path available for connection");
+            None
         }
-        None
     }
 
     async fn remove_column(&self, remove: &str) -> Result<(), sqlx::Error> {
@@ -650,15 +739,29 @@ impl Database {
     }
 
     async fn fetch_size(&self) -> Result<usize, sqlx::Error> {
-        if let Some(pool) = self.get_pool().await {
-            // let pool = self.pool.as_ref().unwrap();
-            let count: (i64,) = sqlx::query_as(&format!("SELECT COUNT(*) FROM {}", TABLE))
-                .fetch_one(&pool)
-                .await?;
+        println!("📏 Attempting to fetch database size...");
 
-            return Ok(count.0 as usize);
+        if let Some(pool) = self.get_pool().await {
+            println!("🔍 Executing count query on table: {}", TABLE);
+
+            match sqlx::query_as::<_, (i64,)>(&format!("SELECT COUNT(*) FROM {}", TABLE))
+                .fetch_one(&pool)
+                .await
+            {
+                Ok(count) => {
+                    let size = count.0 as usize;
+                    println!("✅ Database size fetched successfully: {} records", size);
+                    Ok(size)
+                }
+                Err(e) => {
+                    println!("❌ Failed to fetch database size: {}", e);
+                    Err(e)
+                }
+            }
+        } else {
+            println!("❌ No database pool available for size fetch");
+            Ok(0)
         }
-        Ok(0)
     }
 
     pub async fn remove(&self, ids: &[usize], app: &AppHandle) -> Result<(), sqlx::Error> {
@@ -1237,92 +1340,6 @@ async fn batch_store_data_optimized(
                 100,
                 &format!("ERROR: Databaes update failed: {}", e),
             );
-        }
-    }
-}
-
-// async fn update_column(
-//     pool: &SqlitePool,
-//     row: usize,
-//     column: &str,
-//     value: &str,
-// ) -> Result<(), sqlx::Error> {
-//     // Create a parameterized query to update a specific column in a specific row
-//     let query = format!("UPDATE {} SET {} = ? WHERE rowid = ?", TABLE, column);
-//     println!("column: {}, Value: {}", column, value);
-
-//     // Execute the query with the provided parameters
-//     sqlx::query(&query)
-//         .bind(value)
-//         .bind(row as i64) // SQLite uses i64 for rowid
-//         .execute(pool)
-//         .await?;
-
-//     // println!("Updated column '{}' in row {} with value '{}'", column_name, row_id, value);
-//     Ok(())
-// }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::path::PathBuf;
-
-    /// Test that demonstrates the cross-platform path handling approach
-    /// used in the refactored FileRecord::get_filepath() method
-    #[test]
-    fn test_cross_platform_path_handling() {
-        // Test various path formats that might come from different platforms
-        let test_paths = vec![
-            "/Users/user/Music/song.wav",       // Unix-style
-            "C:\\Users\\user\\Music\\song.wav", // Windows-style
-            "/home/user/documents/audio.aiff",  // Linux-style
-            "D:\\Audio\\Projects\\track.wav",   // Windows drive
-        ];
-
-        for path_str in test_paths {
-            let path = PathBuf::from(path_str);
-            let display_path = path.display().to_string();
-
-            // Verify that display() produces a valid string representation
-            assert!(!display_path.is_empty());
-
-            // Verify that the path can be round-tripped
-            let reconstructed = PathBuf::from(&display_path);
-
-            // On the same platform, this should be equivalent
-            assert_eq!(path, reconstructed);
-
-            println!("Original: {} -> Display: {}", path_str, display_path);
-        }
-    }
-
-    /// Test that file existence checking works with PathBuf
-    #[test]
-    fn test_path_existence_check() {
-        // Test with a path that definitely doesn't exist
-        let nonexistent_path = PathBuf::from("/nonexistent/path/file.wav");
-        assert!(!nonexistent_path.exists());
-
-        // Test with current directory (should exist)
-        let current_dir = PathBuf::from(".");
-        assert!(current_dir.exists());
-    }
-
-    /// Test the Delete enum approach for path normalization
-    #[test]
-    fn test_delete_path_normalization() {
-        let test_files = vec!["test1.wav", "/path/to/test2.wav", "relative/path/test3.wav"];
-
-        // Simulate the approach used in Delete::delete_files()
-        for file in &test_files {
-            let path = PathBuf::from(file);
-            let normalized_path = path.display().to_string();
-
-            // Verify normalization produces consistent results
-            assert!(!normalized_path.is_empty());
-            assert_eq!(normalized_path, path.display().to_string());
-
-            println!("File: {} -> Normalized: {}", file, normalized_path);
         }
     }
 }
