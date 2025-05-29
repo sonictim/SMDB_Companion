@@ -10,7 +10,7 @@ import {
 } from "../stores/results";
 import { metadataStore } from "../stores/metadata";
 import { ask } from "@tauri-apps/plugin-dialog";
-import { setDatabase, } from "../stores/database";
+import { databaseStore, setDatabase, } from "../stores/database";
 import { showSearchView } from "../stores/menu";
 import { showStatus } from "../stores/status";
 
@@ -107,7 +107,9 @@ import { showStatus } from "../stores/status";
           showStatus.set(false);
           
           
-          await setDatabase(updatedDb, false);
+
+          const db = get(databaseStore);
+          if (db != null && db.path !== updatedDb) await setDatabase(updatedDb, false);
           // let size = db.size - idsToRemove.length;
           // setDbSize(size);
         } catch (error) {
@@ -178,9 +180,10 @@ import { showStatus } from "../stores/status";
             );
           }
           console.log("Successfully removed records with IDs:", idsToRemove);
-          showStatus.set(false);
           
-          await setDatabase(updatedDb, false);
+          showStatus.set(false);
+          const db = get(databaseStore);
+          if (db != null && db.path !== updatedDb) await setDatabase(updatedDb, false);
         } catch (error) {
           console.error("Error removing selected records:", error);
           if (String(error).includes("PERMISSION_ERROR:")) {

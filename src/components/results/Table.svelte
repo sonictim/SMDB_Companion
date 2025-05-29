@@ -1060,14 +1060,21 @@
 
   .algorithm-icons {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 8px;
+    overflow: hidden;
+    align-items: center;
+    height: calc(var(--font-size) * 1.8);
+    max-height: calc(var(--font-size) * 1.8);
   }
 
   .icon-wrapper {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    flex-shrink: 0;
+    min-width: 20px;
+    height: 20px;
   }
 
   .icon-wrapper:hover::after {
