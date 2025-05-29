@@ -808,7 +808,7 @@
       >
         {#each columnConfigs as column, i}
           <div class="resizer-cell">
-            {#if i > 0 && i < 5}
+            {#if i > 0 && i < 8}
               <div
                 class="resizer"
                 on:mousedown={(event) => startResize(i, event)}
@@ -1046,6 +1046,10 @@
     font-size: var(--font-size);
     background-color: var(--secondary-bg);
     margin-top: 0px;
+    /* text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center; */
   }
 
   .rheader {
@@ -1054,7 +1058,7 @@
     color: var(--accent-color);
     background-color: var(--secondary-bg);
     border-bottom: 1px solid var(--inactive-color);
-    margin-left: 0px;
+    margin-left: 4px;
     margin-top: 0px;
     height: calc(
       var(--font-size-xl) * 2
