@@ -6,6 +6,124 @@ import { preferencesStore } from './preferences';
 import { getHotkey } from './hotkeys';
 import { invoke } from "@tauri-apps/api/core";
 
+// Column configuration type
+export interface ColumnConfig {
+  minWidth: number;
+  width: number;
+  name: string;
+  header: string;
+}
+
+// Default column configurations
+const defaultColumnConfigs: ColumnConfig[] = [
+  { minWidth: 10, width: 30, name: "checkbox", header: "✔" },
+  { minWidth: 100, width: 250, name: "filename", header: "Filename" },
+  { minWidth: 150, width: 400, name: "path", header: "Path" },
+  { minWidth: 100, width: 300, name: "description", header: "Description" },
+  { minWidth: 20, width: 80, name: "algorithm", header: "Match" },
+  { minWidth: 10, width: 25, name: "channels", header: "CH" },
+  { minWidth: 10, width: 25, name: "bitdepth", header: "BD" },
+  { minWidth: 10, width: 50, name: "samplerate", header: "SR" },
+  { minWidth: 10, width: 80, name: "duration", header: "Duration" },
+  { minWidth: 8, width: 30, name: "audio", header: "" },
+];
+
+// Create persistent store for column configurations using localStorage
+function createColumnStore() {
+  const STORAGE_KEY = 'smdb-column-configs';
+  
+  // Load from localStorage or use defaults
+  const loadColumnConfigs = (): ColumnConfig[] => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        // Validate the stored data has required fields
+        if (Array.isArray(parsed) && parsed.every(col => 
+          typeof col.minWidth === 'number' && 
+          typeof col.width === 'number' && 
+          typeof col.name === 'string' && 
+          typeof col.header === 'string'
+        )) {
+          return parsed;
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to load column configs from localStorage:', error);
+    }
+    return [...defaultColumnConfigs];
+  };
+
+  const { subscribe, set, update } = writable<ColumnConfig[]>(loadColumnConfigs());
+
+  return {
+    subscribe,
+    set: (configs: ColumnConfig[]) => {
+      set(configs);
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(configs));
+      } catch (error) {
+        console.warn('Failed to save column configs to localStorage:', error);
+      }
+    },
+    update: (fn: (configs: ColumnConfig[]) => ColumnConfig[]) => {
+      update(configs => {
+        const newConfigs = fn(configs);
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(newConfigs));
+        } catch (error) {
+          console.warn('Failed to save column configs to localStorage:', error);
+        }
+        return newConfigs;
+      });
+    },
+    updateColumnWidth: (index: number, width: number) => {
+      update(configs => {
+        const newConfigs = [...configs];
+        if (newConfigs[index]) {
+          newConfigs[index] = { 
+            ...newConfigs[index], 
+            width: Math.max(newConfigs[index].minWidth, width) 
+          };
+        }
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(newConfigs));
+        } catch (error) {
+          console.warn('Failed to save column configs to localStorage:', error);
+        }
+        return newConfigs;
+      });
+    },
+    resetToDefaults: () => {
+      const configs = [...defaultColumnConfigs];
+      set(configs);
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(configs));
+      } catch (error) {
+        console.warn('Failed to save column configs to localStorage:', error);
+      }
+    }
+  };
+}
+
+// Column-related stores
+export const columnConfigStore = createColumnStore();
+
+// Derived stores for column calculations
+export const columnWidthsStore = derived(
+  columnConfigStore,
+  ($columnConfigs) => $columnConfigs.map(config => config.width)
+);
+
+export const totalWidthStore = derived(
+  columnWidthsStore,
+  ($columnWidths) => $columnWidths.reduce((acc, width) => acc + width, 0) + 12 + "px"
+);
+
+export const gridTemplateColumnsStore = derived(
+  columnWidthsStore,
+  ($columnWidths) => $columnWidths.map(width => `${width}px`).join(" ")
+);
 
 // Main results store
 // Change from using createSessionStore

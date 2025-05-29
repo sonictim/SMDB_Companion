@@ -11,6 +11,10 @@
     toggleSelect,
     toggleChecked,
     lastSelectedIndexStore,
+    columnConfigStore,
+    columnWidthsStore,
+    totalWidthStore,
+    gridTemplateColumnsStore,
   } from "../../stores/results";
   import { getHotkey } from "../../stores/hotkeys";
   import { createVirtualizer } from "@tanstack/svelte-virtual";
@@ -18,6 +22,12 @@
   $: filteredItems = $filteredItemsStore;
   $: selectedItems = $selectedItemsStore;
   $: enableSelections = $enableSelectionsStore;
+
+  // Use column configuration from store
+  $: columnConfigs = $columnConfigStore;
+  $: columnWidths = $columnWidthsStore;
+  $: totalWidth = $totalWidthStore;
+  $: gridTemplateColumns = $gridTemplateColumnsStore;
 
   let processing = false;
   let loading = true;
@@ -95,24 +105,6 @@
 
     return modifiersMatch;
   }
-
-  let columnConfigs = [
-    { minWidth: 10, width: 30, name: "checkbox", header: "✔" },
-    { minWidth: 100, width: 250, name: "filename", header: "Filename" },
-    { minWidth: 150, width: 400, name: "path", header: "Path" },
-    { minWidth: 100, width: 300, name: "description", header: "Description" },
-    { minWidth: 20, width: 80, name: "algorithm", header: "Match" },
-    { minWidth: 10, width: 25, name: "channels", header: "CH" },
-    { minWidth: 10, width: 25, name: "bitdepth", header: "BD" },
-    { minWidth: 10, width: 50, name: "samplerate", header: "SR" },
-    { minWidth: 10, width: 80, name: "duration", header: "Duration" },
-    { minWidth: 8, width: 30, name: "audio", header: "" },
-  ];
-
-  $: columnWidths = columnConfigs.map((config) => config.width);
-
-  $: totalWidth =
-    columnWidths.reduce((acc, width) => acc + width, 0) + 12 + "px";
 
   let containerElement: HTMLElement;
 
@@ -437,10 +429,8 @@
         startWidth + diff
       );
 
-      // Just update this single column's width
-      const newConfigs = [...columnConfigs];
-      newConfigs[index] = { ...newConfigs[index], width: newWidth };
-      columnConfigs = newConfigs;
+      // Update column width using store method
+      columnConfigStore.updateColumnWidth(index, newWidth);
     }
 
     function onMouseUp() {
@@ -756,13 +746,6 @@
     overscan,
     getScrollElement: () => parentRef,
   });
-
-  // Replace static grid-template-columns with dynamic version
-  $: gridTemplateColumns = columnWidths.map((width) => `${width}px`).join(" ");
-
-  $: {
-    console.log("Grid Template Columns:", gridTemplateColumns);
-  }
 </script>
 
 <div
@@ -973,15 +956,6 @@
     border-top: 1px solid var(--inactive-color);
     margin-top: 0px;
   }
-  .virtual-table-header2 {
-    /* width: max(var(--total-width), 100vw); */
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    background-color: var(--primary-bg);
-    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.1);
-    border-top: 1px solid var(--inactive-color);
-  }
 
   .virtual-table-body {
     position: relative;
@@ -1159,11 +1133,6 @@
     cursor: grabbing;
   }
 
-  /* Add a class that can be applied when in deselect mode */
-  .deselect-mode {
-    cursor: not-allowed;
-  }
-
   /* Cursor styles for different mouse modifiers - only change cursor without outlines */
   .alt-shift-range-deselect,
   .unselect-range-hover,
@@ -1184,12 +1153,5 @@
   }
 
   /* Style for when in deselect mode during a drag */
-  .deselect-drag-active .virtual-row .grid-item {
-    cursor: no-drop !important;
-  }
-
   /* Use a very subtle indicator in the status bar or other unobtrusive UI element instead */
-  .deselect-drag-active {
-    opacity: 0.9;
-  }
 </style>
