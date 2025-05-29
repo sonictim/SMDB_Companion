@@ -422,9 +422,6 @@
     // Remove global event listeners
     window.removeEventListener("mousemove", handleMouseMove);
     window.removeEventListener("mouseup", handleMouseUp);
-
-    // Update the virtualizer to reflect any changes in the selection
-    updateVirtualizer();
   }
 
   function startResize(index: number, event: MouseEvent) {
@@ -470,25 +467,6 @@
     }
   }
 
-  $: {
-    if ($selectedItemsStore) {
-      updateVirtualizer();
-    }
-  }
-
-  $: {
-    // This reactive statement watches for filter changes
-    const scrollElement = parentRef;
-    const scrollTop = scrollElement?.scrollTop;
-
-    queueMicrotask(() => {
-      if (scrollElement && scrollTop !== undefined) {
-        scrollElement.scrollTop = scrollTop;
-      }
-      updateVirtualizer();
-    });
-  }
-
   async function fetchData() {
     try {
       loading = true;
@@ -499,7 +477,7 @@
     }
   }
 
-  onMount(() => {
+  onMount(async () => {
     loading = false;
     fetchData();
 
@@ -510,8 +488,47 @@
       }
     });
 
+    // Add keyboard event listeners
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+
+    // Listen for remove status updates
+    unlistenRemoveFn = await listen<{
+      progress: number;
+      message: string;
+      stage: string;
+    }>("remove-status", (event) => {
+      const status = event.payload;
+      removeProgress = status.progress;
+      removeMessage = status.message;
+      removeStage = status.stage;
+      console.log(
+        `Remove status: ${status.stage} - ${status.progress}% - ${status.message}`
+      );
+      if (status.stage === "complete") {
+        processing = false;
+        fetchData();
+      }
+    });
+
+    // Set up ResizeObserver for the virtual table
+    const resizeObserver = new ResizeObserver((entries) => {
+      if (entries[0]) {
+        parentWidth = entries[0].contentRect.width;
+        parentHeight = entries[0].contentRect.height;
+        if ($rowVirtualizer) {
+          $rowVirtualizer.measure();
+        }
+      }
+    });
+
+    if (parentRef) {
+      resizeObserver.observe(parentRef);
+    }
+
     return () => {
       fontSizeListener.then((unsubscribe) => unsubscribe());
+      resizeObserver.disconnect();
     };
   });
 
@@ -551,26 +568,6 @@
   let removeStage = "";
   let unlistenRemoveFn: () => void;
 
-  onMount(async () => {
-    unlistenRemoveFn = await listen<{
-      progress: number;
-      message: string;
-      stage: string;
-    }>("remove-status", (event) => {
-      const status = event.payload;
-      removeProgress = status.progress;
-      removeMessage = status.message;
-      removeStage = status.stage;
-      console.log(
-        `Remove status: ${status.stage} - ${status.progress}% - ${status.message}`
-      );
-      if (status.stage === "complete") {
-        processing = false;
-        fetchData();
-      }
-    });
-  });
-
   onDestroy(() => {
     if (unlistenRemoveFn) unlistenRemoveFn();
 
@@ -597,12 +594,6 @@
     // For backward compatibility, still track Alt+Shift specifically
     isAltShiftPressed = event.altKey && event.shiftKey;
   }
-
-  onMount(() => {
-    // Add keyboard event listeners
-    window.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("keyup", handleKeyUp);
-  });
 
   // Track key states for UI feedback
   let activeHotkeyModifiers = {
@@ -755,32 +746,15 @@
   );
   export let overscan = 5;
 
-  // Create vertical virtualizer for rows
+  // Extract just the length to avoid virtualizer recreation on array reference changes
+  $: itemCount = filteredItems.length;
+
+  // Create vertical virtualizer for rows - only recreate when count actually changes
   $: rowVirtualizer = createVirtualizer({
-    count: filteredItems.length,
+    count: itemCount,
     estimateSize: () => estimatedItemSize,
     overscan,
     getScrollElement: () => parentRef,
-  });
-
-  onMount(() => {
-    const resizeObserver = new ResizeObserver((entries) => {
-      if (entries[0]) {
-        parentWidth = entries[0].contentRect.width;
-        parentHeight = entries[0].contentRect.height;
-        if ($rowVirtualizer) {
-          $rowVirtualizer.measure();
-        }
-      }
-    });
-
-    if (parentRef) {
-      resizeObserver.observe(parentRef);
-    }
-
-    return () => {
-      resizeObserver.disconnect();
-    };
   });
 
   // Replace static grid-template-columns with dynamic version
