@@ -8,6 +8,8 @@ import { get } from "svelte/store";
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from '@tauri-apps/api/event';
 import type { PreservationLogic } from './types';
+import { open } from "@tauri-apps/plugin-dialog";
+
 
 // Add version identifier - increment this when you change algorithm order
 const PREFERENCES_VERSION = 3;
@@ -33,6 +35,7 @@ export const defaultPreferences: Preferences = {
     algorithms: defaultAlgorithms,
     batch_size: 1000,
     fontSize: 16, // Default font size in pixels
+    safe_folders: [],
     preservation_order: [
         {
             column: "Description",
@@ -549,4 +552,25 @@ export async function checkThinned(path: string) {
     else
         await updatePreference('safety_db', true);
     
+}
+
+export   async function addSafeFolder() {
+    const p = get(preferencesStore);
+    let folder = await open({
+      multiple: true,
+      directory: true,
+    });
+
+    if (folder && folder.length > 0) {
+        const newSafeFolders = [...p.safe_folders, ...folder];
+        await updatePreference('safe_folders', newSafeFolders);
+    }
+  }
+
+  export async function safe_folder_remove(value: string) {
+    const currentPrefs = get(preferencesStore);
+    
+    if (currentPrefs.safe_folders.includes(value)) {
+        await updatePreference('safe_folders', currentPrefs.safe_folders.filter(item => item !== value));
+    }
 }

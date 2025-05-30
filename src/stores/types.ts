@@ -91,6 +91,7 @@ export type Preferences = {
   version?: number; // Add version field to track preference structure changes
   batch_size: number;
   fontSize: number; // Font size in pixels
+  safe_folders: string[];
 };
 
 export type Preset = { 

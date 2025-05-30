@@ -417,7 +417,7 @@ pub async fn find(
                         i * 100 / rows.len(),
                         &format!("Processing: {}/{} Records", i, rows.len()),
                     );
-                    let mut record = FileRecord::new(row, &Enabled::default(), &pref, true);
+                    let mut record = FileRecord::new(row, &Enabled::default(), &pref, true)?;
                     // Safely create record with error handling
                     record.algorithm.insert(A::Replace);
                     record.algorithm.remove(&A::Keep);

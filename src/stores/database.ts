@@ -227,6 +227,7 @@ export function getDatabasePath(): string | null {
       return null;
     }
   }
+  
  export async function openDbFolder() {
     try {
       // Call our Rust command to open the database folder

@@ -29,6 +29,7 @@ pub struct Preferences {
     pub fetch_waveforms: bool,
     pub similarity_threshold: f64,
     pub batch_size: usize,
+    pub safe_folders: Vec<String>,
 }
 
 impl Preferences {

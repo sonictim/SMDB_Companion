@@ -235,7 +235,12 @@ impl PartialEq for FileRecord {
 impl Eq for FileRecord {}
 
 impl FileRecord {
-    pub fn new(row: &SqliteRow, enabled: &Enabled, pref: &Preferences, is_compare: bool) -> Self {
+    pub fn new(
+        row: &SqliteRow,
+        enabled: &Enabled,
+        pref: &Preferences,
+        is_compare: bool,
+    ) -> Option<Self> {
         let _ = is_compare;
         let id = row.get::<u32, _>(0) as usize;
         let path_str: &str = row.get(1);
@@ -248,6 +253,15 @@ impl FileRecord {
         #[cfg(target_os = "windows")]
         if let Some(p) = windows::auto_convert_macos_path_to_windows(path_str) {
             path = p;
+        }
+
+        if pref.safe_folders.len() > 0 {
+            if pref.safe_folders.iter().any(|folder| {
+                path.starts_with(folder) || path.starts_with(folder.trim_end_matches('/'))
+            }) {
+                println!("Skipping record with ID {}: Path is in a safe folder", id);
+                return None;
+            }
         }
 
         let duration_str: &str = row.get(2);
@@ -334,7 +348,7 @@ impl FileRecord {
         };
 
         record.set_root(enabled, pref);
-        record
+        Some(record)
     }
 
     pub fn set_root(&mut self, _enabled: &Enabled, pref: &Preferences) {
@@ -951,7 +965,7 @@ impl Database {
         let new_records: Vec<FileRecord> = rows
             .par_iter()
             .enumerate()
-            .map(|(count, row)| {
+            .filter_map(|(count, row)| {
                 let new_completed = completed.fetch_add(1, Ordering::SeqCst) + 1;
                 if new_completed % RECORD_DIVISOR == 0 {
                     app.substatus(
