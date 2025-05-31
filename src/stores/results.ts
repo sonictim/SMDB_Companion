@@ -5,6 +5,7 @@ import { writable, derived, get } from 'svelte/store';
 import { preferencesStore } from './preferences';
 import { getHotkey } from './hotkeys';
 import { invoke } from "@tauri-apps/api/core";
+import { getIsMac } from './utils';
 
 // Column configuration type
 export interface ColumnConfig {
@@ -470,17 +471,26 @@ const noResults = {
     description: "no results", }
 
 
-      export async function revealSelectedFiles() {
+  export async function revealSelectedFiles() {
     const selectedItems = get(selectedItemsStore);
     if (selectedItems.size === 0) {
       console.warn("No items selected to reveal.");
       return;
     }
 
-    const pathsToReveal = Array.from(selectedItems).map(id => {
-      const item = get(filteredItemsStore).find(i => i.id === id);
-      return item ? item.path + "/" + item.filename : null;
-    }).filter(path => path !== null);
+    const isMac = await getIsMac();
+
+    
+
+       const pathsToReveal = Array.from(selectedItems)
+      .map(id => {
+        const item = get(filteredItemsStore).find(i => i.id === id);
+        if (!item) return null;
+        
+        const separator = isMac ? "/" : "\\";
+        return item.path + separator + item.filename;
+      })
+      .filter((path): path is string => path !== null);
 
     if (pathsToReveal.length > 0) {
       try {
