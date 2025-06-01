@@ -496,7 +496,7 @@ const noResults = {
 
     if (pathsToReveal.length > 0) {
       try {
-        message("Attempting to reveal the following files:\n" + pathsToReveal.join("\n"));
+        // message("Attempting to reveal the following files:\n" + pathsToReveal.join("\n"));
         await invoke("reveal_files", { paths: pathsToReveal });
         console.log("Revealed files:", pathsToReveal);
       } catch (error) {
