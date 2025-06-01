@@ -6,6 +6,8 @@ import { preferencesStore } from './preferences';
 import { getHotkey } from './hotkeys';
 import { invoke } from "@tauri-apps/api/core";
 import { getIsMac } from './utils';
+import { message, } from "@tauri-apps/plugin-dialog";
+
 
 // Column configuration type
 export interface ColumnConfig {
@@ -482,7 +484,7 @@ const noResults = {
 
     
 
-       const pathsToReveal = Array.from(selectedItems)
+    const pathsToReveal = Array.from(selectedItems)
       .map(id => {
         const item = get(filteredItemsStore).find(i => i.id === id);
         if (!item) return null;
@@ -494,6 +496,7 @@ const noResults = {
 
     if (pathsToReveal.length > 0) {
       try {
+        message("Attempting to reveal the following files:\n" + pathsToReveal.join("\n"));
         await invoke("reveal_files", { paths: pathsToReveal });
         console.log("Revealed files:", pathsToReveal);
       } catch (error) {
