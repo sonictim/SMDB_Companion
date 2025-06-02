@@ -38,57 +38,90 @@
   $: sortColumn = $sortColumnStore;
   $: sortDirection = $sortDirectionStore;
 
-  // Function to determine if a row is the start of a group
-  // This is used to add visual separation between groups
-  function isGroupStart(index: number): boolean {
-    if (index === 0) return true; // First item gets the class but CSS will hide its border
+  // Cache group position information for performance
+  let groupPositionCache = new Map<
+    number,
+    { isStart: boolean; isEnd: boolean; isGroupSizeOne: boolean }
+  >();
+  let rowSizeCache = new Map<number, number>();
 
-    // Get the current item from the flat filtered list
-    const currentItem = filteredItems[index];
+  // Rebuild caches when filtered groups change
+  $: {
+    groupPositionCache.clear();
+    rowSizeCache.clear();
+    let flatIndex = 0;
 
-    // Check if this item is the first item in any group
     for (const group of filteredGroups) {
-      if (group.length > 0 && group[0].id === currentItem.id) {
-        return true;
+      const groupSize = group.length;
+      const isGroupSizeOne = groupSize === 1;
+
+      for (let i = 0; i < groupSize; i++) {
+        const item = group[i];
+        const isStart = i === 0;
+        const isEnd = i === groupSize - 1;
+
+        groupPositionCache.set(item.id, {
+          isStart,
+          isEnd,
+          isGroupSizeOne,
+        });
+
+        // Pre-calculate row size based on group position
+        let size = baseItemSize;
+        if (isEnd) size += 8; // Add extra space for group-end items
+        if (isStart) size += 2; // Add extra space for group-start items
+        rowSizeCache.set(flatIndex, size);
+
+        flatIndex++;
       }
     }
-
-    return false;
   }
 
-  // Function to determine if a row is the end of a group
-  // This is used to add bottom padding to the last item in each group
+  // Optimized function to determine if a row is the start of a group
+  function isGroupStart(index: number): boolean {
+    if (index === 0) return true; // First item gets the class but CSS will hide its border
+    const currentItem = filteredItems[index];
+    return groupPositionCache.get(currentItem.id)?.isStart || false;
+  }
+
+  // Optimized function to determine if a row is the end of a group
   function isGroupEnd(index: number): boolean {
     // Last item in the entire list is always a group end
     if (index === filteredItems.length - 1) return true;
-
-    // Get the current item from the flat filtered list
     const currentItem = filteredItems[index];
-
-    // Check if this item is the last item in any group
-    for (const group of filteredGroups) {
-      if (group.length > 0 && group[group.length - 1].id === currentItem.id) {
-        return true;
-      }
-    }
-
-    return false;
+    return groupPositionCache.get(currentItem.id)?.isEnd || false;
   }
 
-  // Function to determine if a row is part of a single-item group
-  // This is used for groups that have only one item (both start and end)
+  // Optimized function to determine if a row is part of a single-item group
   function isGroupSizeOne(index: number): boolean {
-    // Get the current item from the flat filtered list
     const currentItem = filteredItems[index];
+    return groupPositionCache.get(currentItem.id)?.isGroupSizeOne || false;
+  }
 
-    // Check if this item is in a group of size 1
-    for (const group of filteredGroups) {
-      if (group.length === 1 && group[0].id === currentItem.id) {
-        return true;
-      }
-    }
+  // Ultra-fast inline functions for virtual row rendering (avoids function call overhead)
+  function getGroupClass(index: number): string {
+    const currentItem = filteredItems[index];
+    const groupData = groupPositionCache.get(currentItem.id);
+    if (!groupData) return "";
 
-    return false;
+    if (groupData.isGroupSizeOne) return "group-size-1";
+    if (groupData.isStart) return "group-start";
+    if (groupData.isEnd || index === filteredItems.length - 1)
+      return "group-end";
+    return "";
+  }
+
+  // Cache algorithm check results for performance
+  function getAlgorithmClass(index: number): string {
+    const item = filteredItems[index];
+    return item.algorithm.includes("Keep") ? "unselected-item" : "checked-item";
+  }
+
+  // Optimized background style calculation
+  function getBackgroundStyle(index: number): string {
+    const isSelected =
+      selectedItems.has(filteredItems[index].id) && enableSelections;
+    return isSelected ? "background-color: var(--accent-color); " : "";
   }
 
   let processing = false;
@@ -207,20 +240,20 @@
     // Set deselect mode if any deselect operation is active
     isDeselectMode = isLassoUnselect || isUnselectRange;
 
-    // Log detailed detection status for debugging
-    console.log("Modifier detection:", {
-      isLassoUnselect,
-      isLassoSelect,
-      isUnselectRange,
-      isSelectRange,
-      isDeselectMode,
-      modifierKeys: {
-        alt: event.altKey,
-        shift: event.shiftKey,
-        ctrl: event.ctrlKey,
-        meta: event.metaKey,
-      },
-    });
+    // Log detailed detection status for debugging (commented out for performance)
+    // console.log("Modifier detection:", {
+    //   isLassoUnselect,
+    //   isLassoSelect,
+    //   isUnselectRange,
+    //   isSelectRange,
+    //   isDeselectMode,
+    //   modifierKeys: {
+    //     alt: event.altKey,
+    //     shift: event.shiftKey,
+    //     ctrl: event.ctrlKey,
+    //     meta: event.metaKey,
+    //   },
+    // });
 
     // No longer apply global classes to the body element
     // The mode is tracked with the isDeselectMode variable
@@ -258,14 +291,14 @@
         isDeselectMode = true;
       }
 
-      console.log(
-        "Starting drag, deselect mode:",
-        isDeselectMode,
-        "lasso unselect:",
-        isLassoUnselect,
-        "distance:",
-        distanceMoved
-      );
+      // console.log(
+      //   "Starting drag, deselect mode:",
+      //   isDeselectMode,
+      //   "lasso unselect:",
+      //   isLassoUnselect,
+      //   "distance:",
+      //   distanceMoved
+      // );
     }
 
     // If we haven't started dragging yet, check if we should start
@@ -279,22 +312,22 @@
         const isLassoUnselect = checkMouseModifier(event, "lassoUnselect");
         const isLassoSelect = checkMouseModifier(event, "lassoSelect");
 
-        // Log detailed information about the drag start
-        console.log("Drag started with modifiers:", {
-          isLassoUnselect,
-          isLassoSelect,
-          currentModifiers: {
-            alt: event.altKey,
-            shift: event.shiftKey,
-            ctrl: event.ctrlKey,
-            meta: event.metaKey,
-          },
-        });
+        // Log detailed information about the drag start (commented out for performance)
+        // console.log("Drag started with modifiers:", {
+        //   isLassoUnselect,
+        //   isLassoSelect,
+        //   currentModifiers: {
+        //     alt: event.altKey,
+        //     shift: event.shiftKey,
+        //     ctrl: event.ctrlKey,
+        //     meta: event.metaKey,
+        //   },
+        // });
 
         // Set deselect mode if lasso unselect is active
         if (isLassoUnselect) {
           isDeselectMode = true;
-          console.log("Deselect mode activated at drag start");
+          // console.log("Deselect mode activated at drag start");
 
           // Add visual indicator for deselect mode
           document.body.classList.add("deselect-drag-active");
@@ -702,18 +735,18 @@
     // We no longer apply any global overlay classes
     // Just track the state internally for cursor changes
 
-    // Debug log for hotkey detection if needed
-    if (event.altKey || event.shiftKey || event.metaKey || event.ctrlKey) {
-      console.log("Active modifiers:", {
-        ...activeHotkeyModifiers,
-        keys: {
-          alt: event.altKey,
-          shift: event.shiftKey,
-          meta: event.metaKey || event.ctrlKey,
-        },
-        isDragging,
-      });
-    }
+    // Debug log for hotkey detection if needed (commented out for performance)
+    // if (event.altKey || event.shiftKey || event.metaKey || event.ctrlKey) {
+    //   console.log("Active modifiers:", {
+    //     ...activeHotkeyModifiers,
+    //     keys: {
+    //       alt: event.altKey,
+    //       shift: event.shiftKey,
+    //       meta: event.metaKey || event.ctrlKey,
+    //     },
+    //     isDragging,
+    //   });
+    // }
   }
 
   // Helper function to get modifiers from a hotkey name
@@ -803,22 +836,20 @@
 
   // Dynamic row height estimation that accounts for group positioning
   function estimateRowSize(index: number): number {
+    // Use cached row size if available for maximum performance
+    const cachedSize = rowSizeCache.get(index);
+    if (cachedSize !== undefined) {
+      return cachedSize;
+    }
+
+    // Fallback calculation if not in cache (shouldn't happen normally)
     let size = baseItemSize;
-
-    // Add extra space for group-end items (8px bottom padding)
-    if (isGroupEnd(index)) {
-      size += 8;
-    }
-
-    // Add extra space for group-start items (2px top padding)
-    if (isGroupStart(index)) {
-      size += 2;
-    }
-
+    if (isGroupEnd(index)) size += 8;
+    if (isGroupStart(index)) size += 2;
     return size;
   }
 
-  export let overscan = 5;
+  export let overscan = 20;
 
   // Extract just the length to avoid virtualizer recreation on array reference changes
   $: itemCount = filteredItems.length;
@@ -828,6 +859,7 @@
     count: itemCount,
     estimateSize: estimateRowSize,
     overscan,
+    paddingEnd: 50,
     getScrollElement: () => parentRef,
   });
 </script>
@@ -926,25 +958,15 @@
           style="transform: translateY({virtualRow.start}px); height: {virtualRow.size}px; "
         >
           <div
-            class="list-item {filteredItems[
+            class="list-item {getAlgorithmClass(
               virtualRow.index
-            ].algorithm.includes('Keep')
-              ? 'unselected-item'
-              : 'checked-item'} {isGroupSizeOne(virtualRow.index)
-              ? 'group-size-1'
-              : isGroupStart(virtualRow.index)
-                ? 'group-start'
-                : isGroupEnd(virtualRow.index)
-                  ? 'group-end'
-                  : ''}"
+            )} {getGroupClass(virtualRow.index)}"
           >
             <div
               class="grid-container"
-              style="{selectedItems.has(filteredItems[virtualRow.index].id) &&
-              enableSelections
-                ? 'background-color: var(--accent-color)'
-                : ''};
-                  grid-template-columns: {gridTemplateColumns};"
+              style="{getBackgroundStyle(
+                virtualRow.index
+              )}grid-template-columns: {gridTemplateColumns};"
             >
               {#each columnConfigs as column, i}
                 {#if column.name === "audio"}

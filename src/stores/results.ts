@@ -164,14 +164,6 @@ export const filtersStore = derived(
 export const filteredGroupsStore = derived(
   [resultsStore, currentFilterStore, preferencesStore, sortColumnStore, sortDirectionStore],
   ([$results, $currentFilter, $preferences, $sortColumn, $sortDirection]) => {
-    console.log('filteredGroupsStore - Input:', {
-      totalGroups: $results.length,
-      totalItems: $results.flat().length,
-      currentFilter: $currentFilter,
-      sortColumn: $sortColumn,
-      sortDirection: $sortDirection
-    });
-    
     let filteredGroups: FileRecord[][];
     
     if ($currentFilter === "Relevant") {
@@ -182,38 +174,14 @@ export const filteredGroupsStore = derived(
                              group[0].algorithm.length === 1 && 
                              group[0].algorithm[0] === "Keep";
         
-        console.log('Group relevance check:', {
-          groupSize: group.length,
-          algorithm: group[0]?.algorithm,
-          filename: group[0]?.filename,
-          isIrrelevant: isIrrelevant
-        });
-        
         return !isIrrelevant; // Return true to keep the group (filter out irrelevant ones)
       });
     } else {
       // For other filters, apply item-level filtering within each group
       filteredGroups = $results
-        .map(group => {
-          const filtered = filterItems(group, $currentFilter);
-          console.log('Group filtering:', {
-            originalSize: group.length,
-            filteredSize: filtered.length,
-            filter: $currentFilter,
-            sampleItems: group.slice(0, 2).map(item => ({
-              filename: item.filename,
-              algorithm: item.algorithm
-            }))
-          });
-          return filtered;
-        })
+        .map(group => filterItems(group, $currentFilter))
         .filter(group => group.length > 0);
     }
-    
-    console.log('filteredGroupsStore - Output:', {
-      filteredGroups: filteredGroups.length,
-      totalFilteredItems: filteredGroups.flat().length
-    });
     
     // Sort groups if a sort column is specified
     if ($sortColumn) {
@@ -240,34 +208,14 @@ export const filteredItemsStore = derived(
 
 // Helper function for filtering items
 export function filterItems(items: FileRecord[], filter: string): FileRecord[] {
-  console.log('filterItems called with:', {
-    filter,
-    itemCount: items.length,
-    sampleItem: items[0] ? {
-      filename: items[0].filename,
-      algorithm: items[0].algorithm
-    } : null
-  });
-  
   switch (filter) {
     case "All":
-      console.log('Applying "All" filter - returning all items');
       return items;
     case "Relevant":
-      console.log('Applying "Relevant" filter');
-      let result = items.filter(
-        (item) => {
-          const isRelevant = !item.algorithm.includes("Keep") || item.algorithm.length > 1;
-          console.log(`Item "${item.filename}": algorithm=${JSON.stringify(item.algorithm)}, isRelevant=${isRelevant}`);
-          return isRelevant;
-        }
+      const result = items.filter(
+        (item) => !item.algorithm.includes("Keep") || item.algorithm.length > 1
       );
-      console.log(`Relevant filter result: ${result.length} out of ${items.length} items`);
-      if (result.length === 0 && items.length > 0) { 
-        console.log('No relevant items found, returning all items as fallback');
-        return items; 
-      }
-      return result;
+      return result.length === 0 && items.length > 0 ? items : result;
 
     case "Keep":
       return items.filter((item) => item.algorithm.includes("Keep"));
@@ -693,7 +641,6 @@ const noResults = {
       try {
         // message("Attempting to reveal the following files:\n" + pathsToReveal.join("\n"));
         await invoke("reveal_files", { paths: pathsToReveal });
-        console.log("Revealed files:", pathsToReveal);
       } catch (error) {
         console.error("Error revealing files:", error);
       }
