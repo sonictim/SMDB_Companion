@@ -11,7 +11,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { writable, get } from 'svelte/store';
 import { preferencesStore, toggle_ignore_filetype, toggle_remove_records_from, updateEraseFiles, toggle_fetch_waveforms, toggle_store_waveforms, toggle_strip_dual_mono, updateWaveformSearchType } from './preferences';
 import { presetsStore } from './presets';
-import { openDatabase, closeDatabase, recentDbStore, setDatabase, databaseStore, openDbFolder } from './database';
+import { openDatabase, closeDatabase, recentDbStore, setDatabase, databaseStore, openDbFolder, clearAllFingerprints, clearSelectedFingerprints } from './database';
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Window } from '@tauri-apps/api/window';
 import { loadPreset } from './presets';
@@ -36,7 +36,7 @@ import {removeRecords} from './remove';
     filterItems,
     filtersStore,
     manualFiltersStore,
-    revealSelectedFiles
+    revealSelectedFiles,
   } from "../stores/results";
     import {
     showStatus,
@@ -466,6 +466,17 @@ async function setupMenu() {
             checked: get(preferencesStore).fetch_waveforms,
             action: async () => {await toggle_fetch_waveforms()},
           }),
+          separator,
+          {
+            id: "clear-fingerprints",
+            text: "Clear All Fingerprints",
+            action: () => clearAllFingerprints(),
+          },
+          {
+            id: "clear-selected-fingerprints",
+            text: "Clear Selected Fingerprints",
+            action: () => clearSelectedFingerprints(),
+          },
 
         ]
 
@@ -747,6 +758,8 @@ const selectionMenu = await Submenu.new({
         accelerator: getHotkey("clearSelected"),
         action: () => {clearSelected()}
       },
+    
+      
     
       separator,
      

@@ -227,6 +227,22 @@ pub async fn clear_fingerprints(state: State<'_, Mutex<AppState>>) -> Result<Arc
     println!("Fingerprints Cleared");
     Ok(state.db.get_name().unwrap_or(Arc::from("Select Database")))
 }
+#[tauri::command]
+pub async fn clear_selected_fingerprints(
+    app: AppHandle,
+    state: State<'_, Mutex<AppState>>,
+    pref: Preferences,
+    rows: Vec<usize>,
+) -> Result<(), String> {
+    println!("Clearing Fingerprints for selected records");
+    let state = state.lock().await;
+    let _ = state
+        .db
+        .batch_update_column(&app, &pref, &rows, "_fingerprint", "NULL")
+        .await;
+    println!("Fingerprints Cleared");
+    Ok(())
+}
 
 #[tauri::command]
 pub async fn remove_records(

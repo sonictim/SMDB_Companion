@@ -4,7 +4,7 @@ import { get } from 'svelte/store';
 import { invoke } from '@tauri-apps/api/core';
 import { preferencesStore, checkThinned } from './preferences';
 import { createLocalStore, createSessionStore } from './utils';
-import { clearResults, currentFilterStore } from './results';
+import { clearResults, currentFilterStore, selectedItemsStore } from './results';
 import type { Database } from './types';
 import { open, } from "@tauri-apps/plugin-dialog";
 import { openPath } from "@tauri-apps/plugin-opener";
@@ -12,6 +12,8 @@ import { viewStore, showSearchView } from './menu';
 import { platform } from '@tauri-apps/plugin-os';
 import { homeDir } from '@tauri-apps/api/path';
 import { showStatus, resetSearchProgress } from './status';
+import { message, ask } from "@tauri-apps/plugin-dialog";
+
 
 
 
@@ -227,7 +229,7 @@ export function getDatabasePath(): string | null {
       return null;
     }
   }
-  
+
  export async function openDbFolder() {
     try {
       // Call our Rust command to open the database folder
@@ -281,4 +283,37 @@ function addRecentDatabase(db: {name: string, path: string}) {
       console.error("Error selecting file:", error);
     }
   }
+
+  export async function clearAllFingerprints() {
+    let r = await ask("Are you sure you want to clear all fingerprints from database?\n\nThis is NOT undoable", )
+    if (!r) {
+      return;
+    }await invoke("clear_fingerprints")
+      .then(() => {
+        console.log("Successfully cleared fingerprints");
+        message("Selected fingerprints cleared successfully!");
+      })
+      .catch((error) => {
+        console.error("Error clearing fingerprints:", error);
+        message("Error clearing fingerprints: " + error);
+      });
+  }
+  export async function clearSelectedFingerprints() {
+    const pref = get(preferencesStore);
+    const selected = get(selectedItemsStore);
+    let r = await ask("Are you sure you want to clear selected fingerprints from database?\n\nThis is NOT undoable", )
+    if (!r) {
+      return;
+    }await invoke("clear_selected_fingerprints", {pref: pref, rows: Array.from(selected) })
+      .then(() => {
+        console.log("Successfully cleared fingerprints");
+        message("Selected fingerprints cleared successfully!");
+      })
+      .catch((error) => {
+        console.error("Error clearing fingerprints:", error);
+        message("Error clearing fingerprints: " + error);
+      });
+  }
+  
+
 

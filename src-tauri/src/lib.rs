@@ -66,6 +66,7 @@ pub fn run() {
             pause_audio,
             resume_audio,
             clear_fingerprints,
+            clear_selected_fingerprints,
             refresh_all_windows,
             open_database_folder,
             reveal_files,
@@ -1053,6 +1054,72 @@ impl Database {
                 let query = format!(
                     "UPDATE {} SET Channels = 1, _Dirty = 1 WHERE rowid IN ({})",
                     TABLE, placeholders
+                );
+
+                // Create query builder
+                let mut query_builder = sqlx::query(&query);
+
+                // Bind all IDs
+                for &id in chunk {
+                    query_builder = query_builder.bind(id as i64);
+                }
+
+                // Execute the query within transaction
+                query_builder.execute(&mut *tx).await?;
+
+                // Update progress
+                counter += chunk.len();
+                app.status(
+                    "Stripping Multi-Mono",
+                    counter * 100 / record_ids.len(),
+                    format!(
+                        "Updating channel metadata: {}/{}",
+                        counter,
+                        record_ids.len()
+                    )
+                    .as_str(),
+                );
+            }
+
+            // Commit the transaction
+            tx.commit().await?;
+
+            // Final status update
+            app.status(
+                "Stripping Multi-Mono",
+                100,
+                format!("Updated {} records to mono", record_ids.len()).as_str(),
+            );
+        }
+
+        Ok(())
+    }
+    pub async fn batch_update_column(
+        &self,
+        app: &AppHandle,
+        pref: &Preferences,
+        record_ids: &[usize],
+        column: &str,
+        value: &str,
+    ) -> Result<(), sqlx::Error> {
+        if let Some(pool) = self.get_pool().await {
+            let mut counter = 0;
+
+            // Begin a transaction for better performance
+            let mut tx = pool.begin().await?;
+
+            // Process in batches
+            for chunk in record_ids.chunks(pref.batch_size) {
+                // Create placeholders for SQL IN clause
+                let placeholders = std::iter::repeat("?")
+                    .take(chunk.len())
+                    .collect::<Vec<_>>()
+                    .join(",");
+
+                // Build update query
+                let query = format!(
+                    "UPDATE {} SET {} = {} WHERE rowid IN ({})",
+                    TABLE, column, value, placeholders
                 );
 
                 // Create query builder

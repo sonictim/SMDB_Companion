@@ -6,7 +6,7 @@ import { preferencesStore } from './preferences';
 import { getHotkey } from './hotkeys';
 import { invoke } from "@tauri-apps/api/core";
 import { getIsMac } from './utils';
-import { message, } from "@tauri-apps/plugin-dialog";
+import { message, ask } from "@tauri-apps/plugin-dialog";
 
 
 // Column configuration type
@@ -263,6 +263,9 @@ export function toggleEnableSelections(): void {
 export function clearSelected(): void {
   selectedItemsStore.set(new Set());
 }
+
+
+
 
 export function invertSelected(): void {
   const filtered = get(filteredItemsStore);
