@@ -143,7 +143,7 @@
   .block {
     background-color: var(--secondary-bg);
     padding: 0px 0px;
-    /* padding-bottom: 20px; */
+    padding-bottom: 30px;
     border-radius: 8px;
     flex: 1;
     /* Allow features to grow and shrink */

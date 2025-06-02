@@ -792,8 +792,7 @@
 
   let parentRef: Element;
   let parentWidth = 0;
-  let parentHeight = 0;
-  // Base row height calculation responsive to font size
+  let parentHeight = 0; // Base row height calculation responsive to font size
   $: baseItemSize = Math.round(
     parseFloat(
       getComputedStyle(document.documentElement).getPropertyValue("--font-size")
@@ -801,24 +800,24 @@
       1.0 +
       $preferencesStore.fontSize // Base font size + current font size setting
   );
-  
+
   // Dynamic row height estimation that accounts for group positioning
   function estimateRowSize(index: number): number {
     let size = baseItemSize;
-    
+
     // Add extra space for group-end items (8px bottom padding)
     if (isGroupEnd(index)) {
       size += 8;
     }
-    
+
     // Add extra space for group-start items (2px top padding)
     if (isGroupStart(index)) {
       size += 2;
     }
-    
+
     return size;
   }
-  
+
   export let overscan = 5;
 
   // Extract just the length to avoid virtualizer recreation on array reference changes
@@ -934,10 +933,10 @@
               : 'checked-item'} {isGroupSizeOne(virtualRow.index)
               ? 'group-size-1'
               : isGroupStart(virtualRow.index)
-              ? 'group-start'
-              : isGroupEnd(virtualRow.index)
-              ? 'group-end'
-              : ''}"
+                ? 'group-start'
+                : isGroupEnd(virtualRow.index)
+                  ? 'group-end'
+                  : ''}"
           >
             <div
               class="grid-container"
@@ -1190,7 +1189,6 @@
     padding-top: 2px;
     padding-bottom: 8px;
   }
-
 
   .algorithm-icons {
     display: flex;
