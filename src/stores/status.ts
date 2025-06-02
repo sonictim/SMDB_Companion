@@ -6,7 +6,7 @@ import { writable, type Writable, get } from 'svelte/store';
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { preferencesStore } from './preferences';
-import { resultsStore } from './results';
+import { resultsStore, updateResultsStore } from './results';
 import { databaseStore, setDatabase } from './database';
 import { viewStore, showResultsView, isRemove } from './menu';
 import { confirm, message } from "@tauri-apps/plugin-dialog";
@@ -135,7 +135,7 @@ export async function search(): Promise<boolean> {
     let algorithms = preferences.algorithms;
 
     console.log("Starting Search");
-    resultsStore.set([]);
+    updateResultsStore([]);
 
     let algorithmState = algorithms.reduce(
         (acc: Record<string, boolean | number | string>, algo: Algorithm) => {
@@ -176,7 +176,7 @@ export async function search(): Promise<boolean> {
             return false;
         }
         
-        const result = await invoke<FileRecord[]>("search", {
+        const result = await invoke<FileRecord[][]>("search", {
             enabled: algorithmState,
             pref: preferences,
             path: db.path,
@@ -188,7 +188,7 @@ export async function search(): Promise<boolean> {
         // If we have results, we'll navigate to the results page
         if (result && result.length > 0) {
             if (get(viewStore) === "search") showResultsView();
-            resultsStore.set(result);
+            updateResultsStore(result);
             showStatus.set(false);
             
             return true;

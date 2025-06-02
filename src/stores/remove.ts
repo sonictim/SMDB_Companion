@@ -7,6 +7,7 @@ import {
   filteredItemsStore,
   selectedItemsStore,
   removeIdsFromResults,
+  updateResultsStore,
 } from "../stores/results";
 import { metadataStore } from "../stores/metadata";
 import { ask } from "@tauri-apps/plugin-dialog";
@@ -224,7 +225,7 @@ import { showStatus } from "../stores/status";
               find: "",
               replace: ""
             }));
-            resultsStore.set([]);
+            updateResultsStore([]);
           });
       } catch (error) {
         console.error("Error replacing metadata:", error);

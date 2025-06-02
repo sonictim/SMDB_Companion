@@ -23,6 +23,9 @@
   $: totalChecks = $totalChecksStore;
   $: selectedChecks = $selectedChecksStore; // Create a reactive reference to selected checks
 
+  // Calculate total count across all groups
+  $: totalResultsCount = results.reduce((sum, group) => sum + group.length, 0);
+
   let loading = false;
 
   import { CheckSquare, Square, OctagonX, Loader } from "lucide-svelte";
@@ -69,7 +72,7 @@
     {/if}
     {#if !$isRegistered}
       <RemoveButton />
-    {:else if $resultsStore.length > 0}
+    {:else if totalResultsCount > 0}
       <button
         class="nav-link"
         on:click={() => {
@@ -96,7 +99,7 @@
     <p class="ellipsis">Loading data...</p>
   {:else if $showStatus}
     <Status />
-  {:else if $resultsStore.length > 0}
+  {:else if totalResultsCount > 0}
     {#if $isRegistered}
       <Table />
     {:else}
@@ -104,7 +107,7 @@
         <span style="font-size: var(--font-size-lg)">
           <h2>Search Results:</h2>
           <p>
-            {totalChecks} of {results.length} Records marked for Removal
+            {totalChecks} of {totalResultsCount} Records marked for Removal
           </p>
           <p>Registration Required to View Full Results</p>
         </span>

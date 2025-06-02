@@ -6,7 +6,7 @@ import {createSessionStore } from './utils';
 import { get } from "svelte/store";
 import { invoke } from "@tauri-apps/api/core";
 import { preferencesStore } from "./preferences";
-import { resultsStore, clearResults } from "./results";
+import { resultsStore, clearResults, updateResultsStore } from "./results";
 import { showResultsView, showSearchView, isRemove } from "./menu";
 import { ask } from "@tauri-apps/plugin-dialog";
 
@@ -49,7 +49,7 @@ export async function findMetadata() {
     })
       .then((result) => {
         console.log(result);
-        resultsStore.set(result); // ✅ Store the results in session storage
+        updateResultsStore(result); // ✅ Store the results in session storage
       })
       .catch((error) => console.error(error));
     showResultsView();

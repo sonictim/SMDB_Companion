@@ -39,6 +39,9 @@
 
   $: totalChecks = $totalChecksStore;
 
+  // Calculate total count across all groups
+  $: totalResultsCount = results.reduce((sum, group) => sum + group.length, 0);
+
   // UI state variables
   let processing = false;
   let loading = true;
@@ -121,9 +124,9 @@
     <h2>Search Results:</h2>
     <span style="font-size: var(--font-size-lg)">
       {#if $isRemove}
-        {totalChecks} of {results.length} Records marked for Removal
+        {totalChecks} of {totalResultsCount} Records marked for Removal
       {:else}
-        {results.length} Records found
+        {totalResultsCount} Records found
       {/if}
     </span>
     <RemoveButton />

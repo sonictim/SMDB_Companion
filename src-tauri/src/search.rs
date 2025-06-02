@@ -177,8 +177,9 @@ impl Database {
         println!("all done!");
     }
 
-    pub async fn records_2_frontend(&self) -> Vec<FileRecordFrontend> {
-        let results: Vec<FileRecordFrontend> = self
+    pub async fn records_2_frontend(&self) -> Vec<Vec<FileRecordFrontend>> {
+        // First convert all records to frontend format
+        let frontend: Vec<FileRecordFrontend> = self
             .records
             .par_iter()
             .map(|record| {
@@ -205,6 +206,32 @@ impl Database {
                 }
             })
             .collect();
+
+        // Group records efficiently
+        let mut results = Vec::new();
+        let mut current_group = Vec::new();
+        let mut first_in_group = true;
+
+        for record in frontend {
+            // If this record has Keep and isn't the first record being processed
+            // (which would make current_group empty), end the current group
+            if record.algorithm.contains(&A::Keep) && !first_in_group {
+                // Only push non-empty groups
+                if !current_group.is_empty() {
+                    results.push(std::mem::take(&mut current_group));
+                }
+            }
+
+            // Add record to current group
+            current_group.push(record);
+            first_in_group = false;
+        }
+
+        // Don't forget to add the last group
+        if !current_group.is_empty() {
+            results.push(current_group);
+        }
+
         results
     }
 

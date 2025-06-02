@@ -6,6 +6,7 @@
   import type { FileRecord } from "../../stores/types";
   import {
     filteredItemsStore,
+    filteredGroupsStore,
     selectedItemsStore,
     enableSelectionsStore,
     toggleSelect,
@@ -15,11 +16,15 @@
     columnWidthsStore,
     totalWidthStore,
     gridTemplateColumnsStore,
+    sortColumnStore,
+    sortDirectionStore,
+    handleHeaderClick,
   } from "../../stores/results";
   import { getHotkey } from "../../stores/hotkeys";
   import { createVirtualizer } from "@tanstack/svelte-virtual";
 
   $: filteredItems = $filteredItemsStore;
+  $: filteredGroups = $filteredGroupsStore;
   $: selectedItems = $selectedItemsStore;
   $: enableSelections = $enableSelectionsStore;
 
@@ -28,6 +33,63 @@
   $: columnWidths = $columnWidthsStore;
   $: totalWidth = $totalWidthStore;
   $: gridTemplateColumns = $gridTemplateColumnsStore;
+
+  // Sort state
+  $: sortColumn = $sortColumnStore;
+  $: sortDirection = $sortDirectionStore;
+
+  // Function to determine if a row is the start of a group
+  // This is used to add visual separation between groups
+  function isGroupStart(index: number): boolean {
+    if (index === 0) return true; // First item gets the class but CSS will hide its border
+
+    // Get the current item from the flat filtered list
+    const currentItem = filteredItems[index];
+
+    // Check if this item is the first item in any group
+    for (const group of filteredGroups) {
+      if (group.length > 0 && group[0].id === currentItem.id) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  // Function to determine if a row is the end of a group
+  // This is used to add bottom padding to the last item in each group
+  function isGroupEnd(index: number): boolean {
+    // Last item in the entire list is always a group end
+    if (index === filteredItems.length - 1) return true;
+
+    // Get the current item from the flat filtered list
+    const currentItem = filteredItems[index];
+
+    // Check if this item is the last item in any group
+    for (const group of filteredGroups) {
+      if (group.length > 0 && group[group.length - 1].id === currentItem.id) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  // Function to determine if a row is part of a single-item group
+  // This is used for groups that have only one item (both start and end)
+  function isGroupSizeOne(index: number): boolean {
+    // Get the current item from the flat filtered list
+    const currentItem = filteredItems[index];
+
+    // Check if this item is in a group of size 1
+    for (const group of filteredGroups) {
+      if (group.length === 1 && group[0].id === currentItem.id) {
+        return true;
+      }
+    }
+
+    return false;
+  }
 
   let processing = false;
   let loading = true;
@@ -682,6 +744,8 @@
     FileX2,
     Tag,
     AudioWaveform,
+    ChevronUp,
+    ChevronDown,
     Clock,
     GitCompareArrowsIcon,
     Hash,
@@ -690,6 +754,7 @@
     Activity,
     ArrowLeftRight,
   } from "lucide-svelte";
+  import { preferencesStore } from "../../stores/preferences";
   function getAlgorithmIcon(algoName: string) {
     const iconMap: Record<
       string,
@@ -728,12 +793,32 @@
   let parentRef: Element;
   let parentWidth = 0;
   let parentHeight = 0;
-  // Make row height responsive to font size
-  $: estimatedItemSize = Math.round(
+  // Base row height calculation responsive to font size
+  $: baseItemSize = Math.round(
     parseFloat(
       getComputedStyle(document.documentElement).getPropertyValue("--font-size")
-    ) * 2.5
+    ) *
+      1.0 +
+      $preferencesStore.fontSize // Base font size + current font size setting
   );
+  
+  // Dynamic row height estimation that accounts for group positioning
+  function estimateRowSize(index: number): number {
+    let size = baseItemSize;
+    
+    // Add extra space for group-end items (8px bottom padding)
+    if (isGroupEnd(index)) {
+      size += 8;
+    }
+    
+    // Add extra space for group-start items (2px top padding)
+    if (isGroupStart(index)) {
+      size += 2;
+    }
+    
+    return size;
+  }
+  
   export let overscan = 5;
 
   // Extract just the length to avoid virtualizer recreation on array reference changes
@@ -742,7 +827,7 @@
   // Create vertical virtualizer for rows - only recreate when count actually changes
   $: rowVirtualizer = createVirtualizer({
     count: itemCount,
-    estimateSize: () => estimatedItemSize,
+    estimateSize: estimateRowSize,
     overscan,
     getScrollElement: () => parentRef,
   });
@@ -779,8 +864,23 @@
         style="grid-template-columns: {gridTemplateColumns}"
       >
         {#each columnConfigs as key, i}
-          <div class="grid-item header {i === 0 ? 'sticky-column' : ''}">
-            {key.header}
+          <div
+            class="grid-item header {i === 0
+              ? 'sticky-column'
+              : ''} sortable-header"
+            on:click={() => handleHeaderClick(key.name)}
+            role="button"
+            tabindex="0"
+            on:keydown={(e) => e.key === "Enter" && handleHeaderClick(key.name)}
+          >
+            {#if sortColumn === key.name}
+              {#if sortDirection === "asc"}
+                <ChevronUp size={16} />
+              {:else}
+                <ChevronDown size={16} />
+              {/if}
+            {/if}
+            <span>{key.header}</span>
           </div>
         {/each}
       </div>
@@ -831,7 +931,13 @@
               virtualRow.index
             ].algorithm.includes('Keep')
               ? 'unselected-item'
-              : 'checked-item'}"
+              : 'checked-item'} {isGroupSizeOne(virtualRow.index)
+              ? 'group-size-1'
+              : isGroupStart(virtualRow.index)
+              ? 'group-start'
+              : isGroupEnd(virtualRow.index)
+              ? 'group-end'
+              : ''}"
           >
             <div
               class="grid-container"
@@ -936,6 +1042,7 @@
     height: 100%;
     display: flex;
     flex-direction: column;
+    font-weight: bold; /* Add this line */
   }
 
   .virtual-table-viewport {
@@ -1013,7 +1120,8 @@
     -moz-user-select: none;
     -ms-user-select: none;
     width: 100%;
-    min-height: var(--font-size); /* Ensure minimum height for cell contents */
+    min-height: var(--font-size);
+    font-weight: bold; /* Add this line */ /* Ensure minimum height for cell contents */
   }
 
   .grid-item.header {
@@ -1024,6 +1132,14 @@
     display: flex;
     align-items: center;
     justify-content: center; */
+  }
+
+  .sortable-header {
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 6px;
   }
 
   .rheader {
@@ -1040,6 +1156,7 @@
     text-align: bottom;
     align-items: end;
     width: max(100%, var(--total-width));
+    font-weight: bold; /* Add this line */
   }
 
   .header {
@@ -1056,7 +1173,24 @@
     -moz-user-select: none;
     -ms-user-select: none;
     width: 100%;
+    padding: 0px;
+    margin: 0px;
+    border-bottom: none;
   }
+
+  .list-item.group-start {
+    border-top: 1px solid var(--inactive-color);
+    padding-top: 2px;
+  }
+  .list-item.group-end {
+    padding-bottom: 8px;
+  }
+  .list-item.group-size-1 {
+    border-top: 1px solid var(--inactive-color);
+    padding-top: 2px;
+    padding-bottom: 8px;
+  }
+
 
   .algorithm-icons {
     display: flex;

@@ -77,7 +77,7 @@ pub async fn search(
     state: State<'_, Mutex<AppState>>,
     enabled: Enabled,
     pref: Preferences,
-) -> Result<Vec<FileRecordFrontend>, String> {
+) -> Result<Vec<Vec<FileRecordFrontend>>, String> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     let app = app.clone();
     let enabled = enabled.clone();
@@ -131,7 +131,7 @@ async fn run_search(
     mut db: Database,
     enabled: Enabled,
     pref: Preferences,
-) -> Result<Vec<FileRecordFrontend>, String> {
+) -> Result<Vec<Vec<FileRecordFrontend>>, String> {
     println!("Starting Search");
 
     let _ = db.add_column("_fingerprint").await;

@@ -182,7 +182,7 @@ impl StatusEmitter for AppHandle {
     }
 }
 
-#[derive(Serialize, Deserialize)] // Need Deserialize to receive it back
+#[derive(Serialize, Deserialize, Clone)] // Need Deserialize to receive it back
 pub struct FileRecordFrontend {
     id: usize,
     path: Arc<str>,
