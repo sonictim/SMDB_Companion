@@ -19,6 +19,9 @@
     sortColumnStore,
     sortDirectionStore,
     handleHeaderClick,
+    scrollPositionStore,
+    saveScrollPosition,
+    restoreScrollPosition,
   } from "../../stores/results";
   import { getHotkey } from "../../stores/hotkeys";
   import { createVirtualizer } from "@tanstack/svelte-virtual";
@@ -825,7 +828,44 @@
 
   let parentRef: Element;
   let parentWidth = 0;
-  let parentHeight = 0; // Base row height calculation responsive to font size
+  let parentHeight = 0;
+
+  // Scroll position management
+  let isRestoringScroll = false;
+
+  // Save scroll position when user scrolls
+  function handleScroll() {
+    if (parentRef && !isRestoringScroll) {
+      saveScrollPosition(parentRef.scrollTop);
+    }
+  }
+
+  // Restore scroll position when data changes
+  function restoreScrollPositionIfNeeded() {
+    if (parentRef && !isRestoringScroll) {
+      const savedPosition = restoreScrollPosition();
+      if (savedPosition > 0) {
+        isRestoringScroll = true;
+
+        // Use requestAnimationFrame to ensure DOM is updated
+        requestAnimationFrame(() => {
+          if (parentRef) {
+            parentRef.scrollTop = savedPosition;
+
+            // Reset flag after a short delay
+            setTimeout(() => {
+              isRestoringScroll = false;
+            }, 100);
+          }
+        });
+      }
+    }
+  }
+
+  // Watch for changes in filtered items to restore scroll position
+  $: if (filteredItems && parentRef) {
+    restoreScrollPositionIfNeeded();
+  } // Base row height calculation responsive to font size
   $: baseItemSize = Math.round(
     parseFloat(
       getComputedStyle(document.documentElement).getPropertyValue("--font-size")
@@ -872,6 +912,7 @@
   <div
     bind:this={parentRef}
     class="virtual-table-viewport"
+    on:scroll={handleScroll}
     on:wheel={(e) => {
       // Let the browser handle the native scrolling behavior
       // This approach is more compatible across different platforms

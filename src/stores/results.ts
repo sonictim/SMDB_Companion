@@ -142,6 +142,26 @@ export const selectedItemsStore = writable<Set<number>>(new Set());
 export const lastSelectedIndexStore = writable<number>(-1);
 export const enableSelectionsStore = writable<boolean>(true);
 
+// Scroll position store to preserve table position during data changes
+export const scrollPositionStore = writable<number>(0);
+
+// Functions to manage scroll position
+export function saveScrollPosition(position: number): void {
+  scrollPositionStore.set(position);
+}
+
+export function getScrollPosition(): number {
+  return get(scrollPositionStore);
+}
+
+export function restoreScrollPosition(): number {
+  return get(scrollPositionStore);
+}
+
+export function clearScrollPosition(): void {
+  scrollPositionStore.set(0);
+}
+
 // Filter-related stores
 export const currentFilterStore = writable<string>("Relevant");
 export const manualFiltersStore = writable([
@@ -364,7 +384,7 @@ export function clearResults(): void {
     clearSelected();
 }
 
-// Remove specific IDs from results (now works with groups)
+// Remove specific IDs from results (now works with groups) with scroll position preservation
 export function removeIdsFromResults(idsToRemove: number[]): void {
     if (!idsToRemove || idsToRemove.length === 0) {
         return;
@@ -385,6 +405,9 @@ export function removeIdsFromResults(idsToRemove: number[]): void {
         idsToRemove.forEach(id => newSelected.delete(id));
         return newSelected;
     });
+    
+    // Note: Scroll position is preserved through the scrollPositionStore
+    // The Table component will automatically restore the position after data updates
 }
 
 // Selection-related functions

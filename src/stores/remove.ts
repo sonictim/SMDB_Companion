@@ -8,6 +8,7 @@ import {
   selectedItemsStore,
   removeIdsFromResults,
   updateResultsStore,
+  scrollPositionStore,
 } from "../stores/results";
 import { metadataStore } from "../stores/metadata";
 import { ask } from "@tauri-apps/plugin-dialog";
