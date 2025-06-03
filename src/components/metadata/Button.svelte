@@ -1,18 +1,17 @@
 <script lang="ts">
   import { SearchCode } from "lucide-svelte";
   import { databaseStore } from "../../stores/database";
+  import { showStatus } from "../../stores/status";
   $: database = $databaseStore;
-
-  let isFinding = false;
 
   import { metadataStore, findMetadata } from "../../stores/metadata";
 
   $: metadata = metadataStore;
 
-  function searchForMetadata() {
-    isFinding = true;
-    findMetadata();
-    isFinding = false;
+  async function searchForMetadata() {
+    showStatus.set(true);
+    await findMetadata();
+    showStatus.set(false);
   }
 </script>
 

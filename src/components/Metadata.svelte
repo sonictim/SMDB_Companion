@@ -4,8 +4,6 @@
   import MetadataButton from "./metadata/Button.svelte";
   import MetadataFields from "./metadata/Fields.svelte";
 
-  let isFinding = false;
-
   import {
     showStatus,
     searchProgressStore,
@@ -32,7 +30,7 @@
     <h2>Metadata Replacement</h2>
     <MetadataButton />
   </div>
-  {#if isFinding}
+  {#if $showStatus}
     <div class="block inner">
       <span>
         <Loader

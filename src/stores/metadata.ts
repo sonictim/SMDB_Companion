@@ -7,8 +7,9 @@ import { get } from "svelte/store";
 import { invoke } from "@tauri-apps/api/core";
 import { preferencesStore } from "./preferences";
 import { resultsStore, clearResults, updateResultsStore } from "./results";
-import { showResultsView, showSearchView, isRemove } from "./menu";
+import { showResultsView, showSearchView, isRemove, viewStore } from "./menu";
 import { ask } from "@tauri-apps/plugin-dialog";
+import {showStatus} from "./status";
 
 
 
@@ -36,6 +37,7 @@ export const metadataStore = createSessionStore<Metadata>('metadata', initialMet
 
 export async function findMetadata() {
     isRemove.set(false);
+ 
     const metaValue = get(metadataStore);
     console.log(
       `Finding: ${metaValue.find}, Replacing: ${metaValue.replace}, Case Sensitive: ${metaValue.case_sensitive}, Column: ${metaValue.column}`
@@ -52,7 +54,7 @@ export async function findMetadata() {
         updateResultsStore(result); // ✅ Store the results in session storage
       })
       .catch((error) => console.error(error));
-    showResultsView();
+    if (get(viewStore) == "search") showResultsView();
   }
 
 
@@ -64,8 +66,9 @@ export async function findMetadata() {
       cancelLabel: "Cancel",
     });
     const metadata = get(metadataStore);
-
+    
     if (confirmed && metadata.find && metadata.replace) {
+      showStatus.set(true);
       await invoke("replace_metadata", {
         data: metadata,
       })
@@ -80,6 +83,7 @@ export async function findMetadata() {
           console.error("Error replacing metadata:", error);
         });
     }
+    showStatus.set(false);
   }
 
   export function toggleMarkDirty() {

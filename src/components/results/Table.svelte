@@ -117,12 +117,12 @@
     return item.algorithm.includes("Keep") ? "unselected-item" : "checked-item";
   }
 
-  // Optimized background style calculation
-  function getBackgroundStyle(index: number): string {
+  // Reactive background style calculation that updates when selections change
+  $: getBackgroundStyle = (index: number): string => {
     const isSelected =
       selectedItems.has(filteredItems[index].id) && enableSelections;
     return isSelected ? "background-color: var(--accent-color); " : "";
-  }
+  };
 
   let processing = false;
   let loading = true;
