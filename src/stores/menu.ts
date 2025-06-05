@@ -11,7 +11,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { writable, get } from 'svelte/store';
 import { preferencesStore, toggle_ignore_filetype, toggle_remove_records_from, updateEraseFiles, toggle_fetch_waveforms, toggle_store_waveforms, toggle_strip_dual_mono, updateWaveformSearchType } from './preferences';
 import { presetsStore } from './presets';
-import { openDatabase, closeDatabase, recentDbStore, setDatabase, databaseStore, openDbFolder, clearAllFingerprints, clearSelectedFingerprints } from './database';
+import { openDatabase, closeDatabase, serverDatabase, recentDbStore, setDatabase, databaseStore, openDbFolder, clearAllFingerprints, clearSelectedFingerprints } from './database';
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Window } from '@tauri-apps/api/window';
 import { loadPreset } from './presets';
@@ -623,7 +623,13 @@ const algoMenu = await Submenu.new({
         text: "Close Database",
         accelerator: getHotkey("closeDatabase"),
         enabled: get(databaseStore) !== null, 
-        action: () => closeDatabase() },
+        action: () => closeDatabase() 
+      },
+      { id: "server", 
+        text: "Server Database",
+        accelerator: getHotkey("serverDatabase"),
+        action: () => serverDatabase() 
+      },
       
       
       

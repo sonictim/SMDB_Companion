@@ -117,7 +117,7 @@ export async function toggleSearch(): Promise<boolean> {
 export async function search(): Promise<boolean> {
     let db = get(databaseStore);
     if (db === null) return false;
-    await setDatabase(db.path, false)
+    // await setDatabase(db.path, false)
     // Set showStatus to true at the start of the search process
     showStatus.set(true);
     

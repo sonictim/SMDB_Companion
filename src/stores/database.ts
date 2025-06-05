@@ -107,10 +107,68 @@ export async function openDatabase(is_compare: boolean){
     let path = await openSqliteFile();
     if (path) {
         setDatabase(path, is_compare);
-        
+    }
+}
 
+export async function serverDatabase() {
+  databaseStore.set({
+    path: '',
+    name: 'Select Database',
+    size: 0,
+    columns: [],
+    isLoading: true,
+    error: null
+});
+
+const server = {
+  url: "192.168.1.240",
+  port: 3306,
+  username: "soundminer",
+  password: "opensesame",
+  database: "sonictimDB",
+}
+
+try {
+    console.log("Opening Server database");
+    
+    const name = await invoke<string>("open_server_db", {server: server, isCompare: false });
+    const size = await getSize();
+    console.log("Database opened:", name, "Size:", size);
+    const columns = await invoke<string[]>("get_columns"); 
+    const pref  = get(preferencesStore);
+
+    let db = {
+        path: "mysql://" + server.username + ":" + server.password + "@" + server.url + ":" + server.port + "/" + server.database,
+        name: name,
+        size: size,
+        columns: columns,
+        isLoading: false,
+        error: null
     }
     
+    databaseStore.set(db);
+    showStatus.set(false);
+    resetSearchProgress();
+    currentFilterStore.set("Relevant");
+    console.log("Database successfully initialized:", name);
+    return db;
+    
+} catch (error) {
+    console.error("Error setting database:", error);
+    databaseStore.set({
+        path: '',
+        name: null,
+        size: 0,
+        columns: [],
+        isLoading: false,
+        error: String(error)
+    });
+    
+    return null;
+}
+
+
+
 }
 
 export async function closeDatabase(): Promise<boolean> {

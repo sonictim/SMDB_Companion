@@ -236,6 +236,15 @@ impl Database {
     }
 
     pub async fn dual_mono_search(&mut self, pref: &Preferences, app: &AppHandle) {
+        let table = match &self.path {
+            Some(DbPath::Local(_)) => LOCAL_TABLE,
+            Some(DbPath::Server(_)) => SERVER_TABLE,
+            None => {
+                println!("❌ No database path set, returning default table name");
+                LOCAL_TABLE
+            }
+        };
+
         println!(
             "Dual Mono Search started for db: {}",
             self.get_name().unwrap_or_default()
@@ -303,7 +312,7 @@ impl Database {
                     .map(|(id, is_identical)| (*id, if *is_identical { "1" } else { "0" }))
                     .collect();
 
-                crate::batch_store_data_optimized(&pool, &to_db, "_DualMono", app).await;
+                crate::batch_store_data_optimized(&pool, &to_db, "_DualMono", app, table).await;
                 records_batch.clear();
             }
             chunks_completed += pref.batch_size;
@@ -321,7 +330,7 @@ impl Database {
                 .map(|(id, is_identical)| (*id, if *is_identical { "1" } else { "0" }))
                 .collect();
 
-            crate::batch_store_data_optimized(&pool, &to_db, "_DualMono", app).await;
+            crate::batch_store_data_optimized(&pool, &to_db, "_DualMono", app, table).await;
             records_batch.clear();
         }
     }

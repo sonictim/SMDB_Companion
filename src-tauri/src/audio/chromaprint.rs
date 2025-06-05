@@ -131,6 +131,14 @@ impl Database {
         pref: &Preferences,
         app: &AppHandle,
     ) -> Result<(), String> {
+        let table = match &self.path {
+            Some(DbPath::Local(_)) => LOCAL_TABLE,
+            Some(DbPath::Server(_)) => SERVER_TABLE,
+            None => {
+                println!("❌ No database path set, returning default table name");
+                LOCAL_TABLE
+            }
+        };
         let mut batch_size: usize = pref.batch_size;
         println!("Batch size: {}", batch_size);
         let total_records = self
@@ -210,14 +218,14 @@ impl Database {
 
             if pref.store_waveforms && record_ids_to_store.len() >= pref.batch_size {
                 // Store fingerprints in batches to avoid memory issues
-                store_fingerprints_batch_optimized(&pool, &record_ids_to_store, app).await;
+                store_fingerprints_batch_optimized(&pool, &record_ids_to_store, app, table).await;
                 record_ids_to_store.clear(); // Clear after storing
             }
         }
 
         if pref.store_waveforms {
             // Store fingerprints in batches to avoid memory issues
-            store_fingerprints_batch_optimized(&pool, &record_ids_to_store, app).await;
+            store_fingerprints_batch_optimized(&pool, &record_ids_to_store, app, table).await;
             record_ids_to_store.clear(); // Clear after storing
         }
 
@@ -1467,9 +1475,10 @@ fn approximate_lcs(seq1: &[u16], seq2: &[u16]) -> usize {
 // Helper function to decode a Chromaprint fingerprint from base64 to u32 vector
 
 async fn store_fingerprints_batch_optimized(
-    pool: &SqlitePool,
+    pool: &AnyPool,
     fingerprints: &[(usize, String)],
     app: &AppHandle,
+    table: &str,
 ) {
     if fingerprints.is_empty() {
         println!("No fingerprints to store");
@@ -1506,8 +1515,8 @@ async fn store_fingerprints_batch_optimized(
                 }
 
                 let result = sqlx::query(&format!(
-                    "UPDATE {} SET _fingerprint = ? WHERE rowid = ?",
-                    TABLE
+                    "UPDATE {} SET _fingerprint = ? WHERE recid = ?",
+                    table
                 ))
                 .bind(fingerprint)
                 .bind(*id as i64)

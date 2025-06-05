@@ -41,6 +41,20 @@ pub async fn open_db(
     Ok(Arc::from("Select Database"))
 }
 #[tauri::command]
+pub async fn open_server_db(
+    state: State<'_, Mutex<AppState>>,
+    server: ServerDb,
+    is_compare: bool,
+) -> Result<Arc<str>, String> {
+    let mut state = state.lock().await;
+    state.db = Database::new_server(&server, is_compare).await;
+    if let Some(name) = state.db.get_name() {
+        return Ok(name);
+    }
+    Ok(Arc::from("Select Database"))
+}
+
+#[tauri::command]
 pub async fn close_db(state: State<'_, Mutex<AppState>>) -> Result<Arc<str>, String> {
     let mut state = state.lock().await;
     state.db = Database::default();
@@ -51,11 +65,11 @@ pub async fn close_db(state: State<'_, Mutex<AppState>>) -> Result<Arc<str>, Str
 pub async fn get_db_name(state: State<'_, Mutex<AppState>>) -> Result<Arc<str>, String> {
     println!("Get DB Name");
     let state = state.lock().await;
-    if let Some(path) = &state.db.path {
-        return Ok(path.file_stem().unwrap().to_str().unwrap().into());
-    }
 
-    Ok(Arc::from("Select Database"))
+    Ok(state
+        .db
+        .get_name()
+        .unwrap_or_else(|| Arc::from("Select Database")))
 }
 
 #[tauri::command]
@@ -393,10 +407,11 @@ pub async fn find(
     // Use a scope to ensure the mutex is released promptly
     let _ = {
         let mut state = state.lock().await;
+        let table = state.db.get_table();
         let case = if case_sensitive { "GLOB" } else { "LIKE" };
         let query =
-            // format!("SELECT rowid, filepath, duration FROM {TABLE} WHERE {column} {case} ?");
-            format!("SELECT rowid, filepath, duration, _fingerprint, description, channels, bitdepth, samplerate, _DualMono  FROM {TABLE} WHERE {column} {case} ?");
+            // format!("SELECT recid, filepath, duration FROM {TABLE} WHERE {column} {case} ?");
+            format!("SELECT recid, filepath, duration, _fingerprint, description, channels, bitdepth, samplerate, _DualMono  FROM {table} WHERE {column} {case} ?");
 
         // Get pool with error handling
         let pool = state.db.get_pool().await.unwrap();
@@ -498,6 +513,7 @@ pub async fn replace_metadata(
 ) -> Result<String, String> {
     println!("Starting Replace");
     let state = state.lock().await;
+    let table = state.db.get_table();
     app.status(
         "Metadata Replacement",
         0,
@@ -528,7 +544,7 @@ pub async fn replace_metadata(
     if data.column == "Filename" || data.column == "FilePath" || data.column == "Pathname" {
         // First update the file paths
         let query = format!(
-            "UPDATE {TABLE} SET 
+            "UPDATE {table} SET 
                 FilePath = REPLACE(FilePath, '{}', '{}'),
                 Filename = REPLACE(Filename, '{}', '{}'),
                 Pathname = REPLACE(Pathname, '{}', '{}'){} 
@@ -573,11 +589,11 @@ pub async fn replace_metadata(
 
         // Finally, update the file path hashes
         app.substatus("Metadata Replacement", 50, "Updating file path hashes...");
-        update_filepath_hash(&app, &data.find, &data.replace, case_text, &pool).await?;
+        update_filepath_hash(&app, &data.find, &data.replace, case_text, &pool, table).await?;
     } else {
         // For non-file path columns, use the original simple update
         let query = format!(
-            "UPDATE {TABLE} SET {} = REPLACE({}, '{}', '{}'){} WHERE {} {} ?",
+            "UPDATE {table} SET {} = REPLACE({}, '{}', '{}'){} WHERE {} {} ?",
             data.column, data.column, data.find, data.replace, dirty_text, data.column, case_text,
         );
 
@@ -610,7 +626,8 @@ async fn update_filepath_hash(
     find: &str,
     replace: &str,
     case_text: &str,
-    pool: &SqlitePool,
+    pool: &AnyPool,
+    table: &str,
 ) -> Result<(), String> {
     use sha1::{Digest, Sha1};
 
@@ -627,7 +644,7 @@ async fn update_filepath_hash(
     };
 
     let select_query = format!(
-        "SELECT rowid, FilePath FROM {TABLE} WHERE Filename {} ? OR FilePath {} ? OR Pathname {} ?",
+        "SELECT recid, FilePath FROM {table} WHERE Filename {} ? OR FilePath {} ? OR Pathname {} ?",
         case_text, case_text, case_text
     );
 
@@ -669,7 +686,7 @@ async fn update_filepath_hash(
     let hashes: Vec<(i64, String)> = affected_rows
         .par_iter()
         .map(|row| {
-            let rowid: i64 = row.get(0);
+            let recid: i64 = row.get(0);
             let file_path: String = row.get(1);
 
             // Generate SHA-1 hash of the NEW file path
@@ -677,7 +694,7 @@ async fn update_filepath_hash(
             hasher.update(file_path.as_bytes());
             let hash = format!("{:x}", hasher.finalize());
 
-            (rowid, hash)
+            (recid, hash)
         })
         .collect();
 
@@ -700,17 +717,17 @@ async fn update_filepath_hash(
             ),
         );
 
-        let mut update_query = format!("UPDATE {TABLE} SET _FilePathHash = CASE rowid ");
+        let mut update_query = format!("UPDATE {table} SET _FilePathHash = CASE recid ");
 
-        for (rowid, hash) in chunk {
-            update_query.push_str(&format!("WHEN {} THEN '{}' ", rowid, hash));
+        for (recid, hash) in chunk {
+            update_query.push_str(&format!("WHEN {} THEN '{}' ", recid, hash));
         }
 
-        update_query.push_str("END WHERE rowid IN (");
+        update_query.push_str("END WHERE recid IN (");
         update_query.push_str(
             &chunk
                 .iter()
-                .map(|(rowid, _)| rowid.to_string())
+                .map(|(recid, _)| recid.to_string())
                 .collect::<Vec<_>>()
                 .join(", "),
         );
