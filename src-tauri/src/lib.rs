@@ -59,7 +59,7 @@ pub fn run() {
             greet,
             get_current_version,
             open_db,
-            open_server_db,
+            // open_server_db,
             close_db,
             get_db_name,
             get_db_size,

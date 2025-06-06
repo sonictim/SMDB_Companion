@@ -120,25 +120,29 @@ export async function serverDatabase() {
     error: null
 });
 
+
 const server = {
   url: "192.168.1.240",
   port: 3306,
   username: "soundminer",
   password: "opensesame",
   database: "sonictimDB",
+
 }
+
+const path = "mysql://" + server.username + ":" + server.password + "@" + server.url + ":" + server.port + "/" + server.database;
 
 try {
     console.log("Opening Server database");
     
-    const name = await invoke<string>("open_server_db", {server: server, isCompare: false });
+    const name = await invoke<string>("open_db", {path: path, isCompare: false });
     const size = await getSize();
     console.log("Database opened:", name, "Size:", size);
     const columns = await invoke<string[]>("get_columns"); 
     const pref  = get(preferencesStore);
 
     let db = {
-        path: "mysql://" + server.username + ":" + server.password + "@" + server.url + ":" + server.port + "/" + server.database,
+        path: path,
         name: name,
         size: size,
         columns: columns,

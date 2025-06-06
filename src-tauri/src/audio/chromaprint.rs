@@ -1475,7 +1475,7 @@ fn approximate_lcs(seq1: &[u16], seq2: &[u16]) -> usize {
 // Helper function to decode a Chromaprint fingerprint from base64 to u32 vector
 
 async fn store_fingerprints_batch_optimized(
-    pool: &AnyPool,
+    pool: &SqlitePool,
     fingerprints: &[(usize, String)],
     app: &AppHandle,
     table: &str,

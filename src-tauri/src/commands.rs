@@ -40,19 +40,19 @@ pub async fn open_db(
     }
     Ok(Arc::from("Select Database"))
 }
-#[tauri::command]
-pub async fn open_server_db(
-    state: State<'_, Mutex<AppState>>,
-    server: ServerDb,
-    is_compare: bool,
-) -> Result<Arc<str>, String> {
-    let mut state = state.lock().await;
-    state.db = Database::new_server(&server, is_compare).await;
-    if let Some(name) = state.db.get_name() {
-        return Ok(name);
-    }
-    Ok(Arc::from("Select Database"))
-}
+// #[tauri::command]
+// pub async fn open_server_db(
+//     state: State<'_, Mutex<AppState>>,
+//     server: ServerDb,
+//     is_compare: bool,
+// ) -> Result<Arc<str>, String> {
+//     let mut state = state.lock().await;
+//     state.db = Database::new_server(&server, is_compare).await;
+//     if let Some(name) = state.db.get_name() {
+//         return Ok(name);
+//     }
+//     Ok(Arc::from("Select Database"))
+// }
 
 #[tauri::command]
 pub async fn close_db(state: State<'_, Mutex<AppState>>) -> Result<Arc<str>, String> {
@@ -456,7 +456,7 @@ pub async fn find(
                         i * 100 / rows.len(),
                         &format!("Processing: {}/{} Records", i, rows.len()),
                     );
-                    let mut record = FileRecord::new(row, &Enabled::default(), &pref, true)?;
+                    let mut record = FileRecord::new_sqlite(row, &Enabled::default(), &pref, true)?;
                     // Safely create record with error handling
                     record.algorithm.insert(A::Replace);
                     record.algorithm.remove(&A::Keep);
@@ -626,7 +626,7 @@ async fn update_filepath_hash(
     find: &str,
     replace: &str,
     case_text: &str,
-    pool: &AnyPool,
+    pool: &sqlx::sqlite::SqlitePool,
     table: &str,
 ) -> Result<(), String> {
     use sha1::{Digest, Sha1};

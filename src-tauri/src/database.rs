@@ -1,23 +1,126 @@
 pub use crate::prelude::*;
-use sqlx::{AnyPool, MySqlPool, Row, SqlitePool};
 
+#[derive(Debug, Clone)]
 pub enum Pool {
     Sqlite(SqlitePool),
     MySql(MySqlPool),
 }
 
+impl Default for Pool {
+    fn default() -> Self {
+        // Create a dummy SQLite pool - this is just a placeholder
+        // In practice, you should handle this case appropriately
+        panic!("Pool::default() should not be called - use Pool::connect() instead")
+    }
+}
+
 impl Pool {
+    pub async fn add_column(&self, add: &str) -> Result<(), sqlx::Error> {
+        match self {
+            Pool::Sqlite(pool) => {
+                let query = format!(
+                    "ALTER TABLE {} ADD COLUMN {} TEXT;",
+                    self.get_table_name(),
+                    add
+                );
+                sqlx::query(&query).execute(pool).await?;
+                Ok(())
+            }
+            Pool::MySql(pool) => {
+                let query = format!(
+                    "ALTER TABLE {} ADD COLUMN {} TEXT;",
+                    self.get_table_name(),
+                    add
+                );
+                sqlx::query(&query).execute(pool).await?;
+                Ok(())
+            }
+        }
+    }
+
+    pub async fn fetch_columns(&self) -> Result<Vec<Arc<str>>, sqlx::Error> {
+        let query = format!("PRAGMA table_info({});", &self.get_table_name());
+        let mut columns = match self {
+            Pool::Sqlite(pool) => sqlx::query(query.as_str())
+                .fetch_all(pool)
+                .await?
+                .into_iter()
+                .filter_map(|row| {
+                    let column_name: &str = row.try_get("name").ok()?; // Extract "name" column
+                    if !column_name.starts_with('_') {
+                        Some(column_name.into())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<Arc<str>>>(),
+            Pool::MySql(pool) => sqlx::query(query.as_str())
+                .fetch_all(pool)
+                .await?
+                .into_iter()
+                .filter_map(|row| {
+                    let column_name: &str = row.try_get("name").ok()?; // Extract "name" column
+                    if !column_name.starts_with('_') {
+                        Some(column_name.into())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<Arc<str>>>(),
+        };
+
+        columns.sort();
+
+        Ok(columns)
+    }
+
+    fn get_type(&self) -> &'static str {
+        match self {
+            Pool::MySql(_) => "MySQL",
+            Pool::Sqlite(_) => "SQLite",
+        }
+    }
+
+    fn get_table_name(&self) -> &'static str {
+        match self {
+            Pool::MySql(_) => "metadata",
+            Pool::Sqlite(_) => "justinmetadata",
+        }
+    }
     pub async fn connect(url: &str) -> Result<Self, sqlx::Error> {
         if url.starts_with("sqlite://") {
+            println!("🔌 Attempting to connect to SQLite database: {}", url);
             let pool = SqlitePool::connect(url).await?;
+            println!("✅ Success");
             Ok(Pool::Sqlite(pool))
         } else if url.starts_with("mysql://") {
+            println!("🔌 Attempting to connect to SQLite database: {}", url);
             let pool = MySqlPool::connect(url).await?;
+            println!("✅ Success");
             Ok(Pool::MySql(pool))
         } else {
             Err(sqlx::Error::Configuration(
                 "Unsupported database URL".into(),
             ))
+        }
+    }
+
+    pub async fn fetch_size(&self) -> Result<usize, sqlx::Error> {
+        match self {
+            Pool::Sqlite(pool) => {
+                let count: (i64,) =
+                    sqlx::query_as(&format!("SELECT COUNT(*) FROM {}", self.get_table_name()))
+                        .fetch_one(pool)
+                        .await?;
+                Ok(count.0 as usize)
+            }
+            Pool::MySql(pool) => {
+                let count: (i64,) =
+                    sqlx::query_as(&format!("SELECT COUNT(*) FROM {}", self.get_table_name()))
+                        .fetch_one(pool)
+                        .await?;
+                Ok(count.0 as usize)
+            }
         }
     }
 
@@ -28,225 +131,429 @@ impl Pool {
     pub fn is_mysql(&self) -> bool {
         matches!(self, Pool::MySql(_))
     }
-    pub async fn fetch_filerecords(&self, query: &str) -> Result<Vec<FileRecord>, sqlx::Error> {
+
+    pub async fn execute(&self, query: &str) -> Result<(), sqlx::Error> {
         match self {
             Pool::Sqlite(pool) => {
+                sqlx::query(query).execute(pool).await?;
+                Ok(())
+            }
+            Pool::MySql(pool) => {
+                sqlx::query(query).execute(pool).await?;
+                Ok(())
+            }
+        }
+    }
+    pub async fn fetch_filerecords(
+        &self,
+        query: &str,
+        enabled: &Enabled,
+        pref: &Preferences,
+        is_compare: bool,
+        app: &AppHandle,
+    ) -> Result<Vec<FileRecord>, sqlx::Error> {
+        match self {
+            Pool::Sqlite(pool) => {
+                let completed = AtomicUsize::new(0);
+
                 let rows = sqlx::query(query).fetch_all(pool).await?;
                 let results = rows
                     .par_iter()
-                    .map(|row| {
-                        let map = FileRecord::new(&row);
-                        map
+                    .filter_map(|row| {
+                        let new_completed = completed.fetch_add(1, Ordering::SeqCst) + 1;
+                        if new_completed % RECORD_DIVISOR == 0 {
+                            app.substatus(
+                                "Gathering File Records",
+                                new_completed * 100 / rows.len(),
+                                format!(
+                                    "Processing Records into Memory: {}/{}",
+                                    new_completed,
+                                    rows.len()
+                                )
+                                .as_str(),
+                            );
+                        }
+                        FileRecord::new_sqlite(row, enabled, pref, is_compare)
                     })
                     .collect::<Vec<_>>();
+                app.substatus("Gathering File Records", 100, "Complete");
                 Ok(results)
             }
 
             Pool::MySql(pool) => {
+                let completed = AtomicUsize::new(0);
+
                 let rows = sqlx::query(query).fetch_all(pool).await?;
                 let results = rows
                     .par_iter()
-                    .map(|row| {
-                        let map = FileRecord::new(&row);
-                        map
+                    .filter_map(|row| {
+                        let new_completed = completed.fetch_add(1, Ordering::SeqCst) + 1;
+                        if new_completed % RECORD_DIVISOR == 0 {
+                            app.substatus(
+                                "Gathering File Records",
+                                new_completed * 100 / rows.len(),
+                                format!(
+                                    "Processing Records into Memory: {}/{}",
+                                    new_completed,
+                                    rows.len()
+                                )
+                                .as_str(),
+                            );
+                        }
+                        FileRecord::new_mysql(row, enabled, pref, is_compare)
                     })
                     .collect::<Vec<_>>();
+                app.substatus("Gathering File Records", 100, "Complete");
                 Ok(results)
             }
         }
     }
-}
+    pub async fn update_channel_count_to_mono(
+        &self,
+        app: &AppHandle,
+        record_ids: &[usize],
+    ) -> Result<(), sqlx::Error> {
+        const BATCH_SIZE: usize = 1000; // Smaller batch size for updates
 
-#[derive(Default, Clone, Serialize, Deserialize)]
+        let mut counter = 0;
 
-pub struct ServerDb {
-    url: String,
-    port: u16,
-    username: String,
-    password: String,
-    database: String,
-}
-
-impl ServerDb {
-    pub fn new(
-        url: String,
-        port: u16,
-        username: String,
-        password: String,
-        database: String,
-    ) -> Self {
-        ServerDb {
-            url,
-            port,
-            username,
-            password,
-            database,
-        }
-    }
-
-    pub fn get_connection_string(&self) -> Arc<str> {
-        format!(
-            "mysql://{}:{}@{}:{}/{}",
-            self.username, self.password, self.url, self.port, self.database
-        )
-        .into()
-    }
-}
-
-#[derive(Clone)]
-
-pub enum DbPath {
-    Server(ServerDb),
-    Local(PathBuf),
-}
-
-impl DbPath {
-    pub fn new_server(server: ServerDb) -> Self {
-        DbPath::Server(server)
-    }
-
-    pub fn new_local(path: PathBuf) -> Self {
-        DbPath::Local(path)
-    }
-
-    pub fn get_path(&self) -> Option<Arc<str>> {
+        // Begin a transaction and process based on pool type
         match self {
-            DbPath::Local(path) => {
-                if let Some(path_str) = path.to_str() {
-                    println!("🛤️  Database path: {}", path_str);
-                    Some(Arc::from(path_str))
-                } else {
-                    println!("❌ Failed to convert path to string");
-                    None
-                }
-            }
-            DbPath::Server(server_db) => Some(server_db.get_connection_string()),
-        }
-    }
+            Pool::Sqlite(pool) => {
+                let mut tx = pool.begin().await?;
 
-    pub fn get_name(&self) -> Option<Arc<str>> {
-        match self {
-            DbPath::Local(path) => {
-                if let Some(name) = path.file_stem() {
-                    if let Some(name_str) = name.to_str() {
-                        return Some(Arc::from(name_str));
+                // Process in batches
+                for chunk in record_ids.chunks(BATCH_SIZE) {
+                    // Create placeholders for SQL IN clause
+                    let placeholders = std::iter::repeat("?")
+                        .take(chunk.len())
+                        .collect::<Vec<_>>()
+                        .join(",");
+
+                    // Build update query
+                    let query = format!(
+                        "UPDATE {} SET Channels = 1, _Dirty = 1 WHERE recid IN ({})",
+                        &self.get_table_name(),
+                        placeholders
+                    );
+
+                    // Create query builder
+                    let mut query_builder = sqlx::query(&query);
+
+                    // Bind all IDs
+                    for &id in chunk {
+                        query_builder = query_builder.bind(id as i64);
                     }
+
+                    // Execute the query within transaction
+                    query_builder.execute(&mut *tx).await?;
+
+                    // Update progress
+                    counter += chunk.len();
+                    app.status(
+                        "Stripping Multi-Mono",
+                        counter * 100 / record_ids.len(),
+                        format!(
+                            "Updating channel metadata: {}/{}",
+                            counter,
+                            record_ids.len()
+                        )
+                        .as_str(),
+                    );
                 }
-                None
+
+                // Commit the transaction
+                tx.commit().await?;
             }
-            DbPath::Server(server_db) => Some(Arc::from(server_db.database.as_str())),
+            Pool::MySql(pool) => {
+                let mut tx = pool.begin().await?;
+
+                // Process in batches
+                for chunk in record_ids.chunks(BATCH_SIZE) {
+                    // Create placeholders for SQL IN clause
+                    let placeholders = std::iter::repeat("?")
+                        .take(chunk.len())
+                        .collect::<Vec<_>>()
+                        .join(",");
+
+                    // Build update query
+                    let query = format!(
+                        "UPDATE {} SET Channels = 1, _Dirty = 1 WHERE recid IN ({})",
+                        &self.get_table_name(),
+                        placeholders
+                    );
+
+                    // Create query builder
+                    let mut query_builder = sqlx::query(&query);
+
+                    // Bind all IDs
+                    for &id in chunk {
+                        query_builder = query_builder.bind(id as i64);
+                    }
+
+                    // Execute the query within transaction
+                    query_builder.execute(&mut *tx).await?;
+
+                    // Update progress
+                    counter += chunk.len();
+                    app.status(
+                        "Stripping Multi-Mono",
+                        counter * 100 / record_ids.len(),
+                        format!(
+                            "Updating channel metadata: {}/{}",
+                            counter,
+                            record_ids.len()
+                        )
+                        .as_str(),
+                    );
+                }
+
+                // Commit the transaction
+                tx.commit().await?;
+            }
         }
+
+        // Final status update
+        app.status(
+            "Stripping Multi-Mono",
+            100,
+            format!("Updated {} records to mono", record_ids.len()).as_str(),
+        );
+
+        Ok(())
+    }
+    pub async fn batch_update_column(
+        &self,
+        app: &AppHandle,
+        pref: &Preferences,
+        record_ids: &[usize],
+        column: &str,
+        value: &str,
+    ) -> Result<(), sqlx::Error> {
+        let mut counter = 0;
+
+        // Begin a transaction and process based on pool type
+        match self {
+            Pool::Sqlite(pool) => {
+                let mut tx = pool.begin().await?;
+
+                // Process in batches
+                for chunk in record_ids.chunks(pref.batch_size) {
+                    // Create placeholders for SQL IN clause
+                    let placeholders = std::iter::repeat("?")
+                        .take(chunk.len())
+                        .collect::<Vec<_>>()
+                        .join(",");
+
+                    // Build update query
+                    let query = format!(
+                        "UPDATE {} SET {} = {} WHERE recid IN ({})",
+                        &self.get_table_name(),
+                        column,
+                        value,
+                        placeholders
+                    );
+
+                    // Create query builder
+                    let mut query_builder = sqlx::query(&query);
+
+                    // Bind all IDs
+                    for &id in chunk {
+                        query_builder = query_builder.bind(id as i64);
+                    }
+
+                    // Execute the query within transaction
+                    query_builder.execute(&mut *tx).await?;
+
+                    // Update progress
+                    counter += chunk.len();
+                    app.status(
+                        "Stripping Multi-Mono",
+                        counter * 100 / record_ids.len(),
+                        format!(
+                            "Updating channel metadata: {}/{}",
+                            counter,
+                            record_ids.len()
+                        )
+                        .as_str(),
+                    );
+                }
+
+                // Commit the transaction
+                tx.commit().await?;
+            }
+            Pool::MySql(pool) => {
+                let mut tx = pool.begin().await?;
+
+                // Process in batches
+                for chunk in record_ids.chunks(pref.batch_size) {
+                    // Create placeholders for SQL IN clause
+                    let placeholders = std::iter::repeat("?")
+                        .take(chunk.len())
+                        .collect::<Vec<_>>()
+                        .join(",");
+
+                    // Build update query
+                    let query = format!(
+                        "UPDATE {} SET {} = {} WHERE recid IN ({})",
+                        &self.get_table_name(),
+                        column,
+                        value,
+                        placeholders
+                    );
+
+                    // Create query builder
+                    let mut query_builder = sqlx::query(&query);
+
+                    // Bind all IDs
+                    for &id in chunk {
+                        query_builder = query_builder.bind(id as i64);
+                    }
+
+                    // Execute the query within transaction
+                    query_builder.execute(&mut *tx).await?;
+
+                    // Update progress
+                    counter += chunk.len();
+                    app.status(
+                        "Stripping Multi-Mono",
+                        counter * 100 / record_ids.len(),
+                        format!(
+                            "Updating channel metadata: {}/{}",
+                            counter,
+                            record_ids.len()
+                        )
+                        .as_str(),
+                    );
+                }
+
+                // Commit the transaction
+                tx.commit().await?;
+            }
+        }
+
+        // Final status update
+        app.status(
+            "Stripping Multi-Mono",
+            100,
+            format!("Updated {} records to mono", record_ids.len()).as_str(),
+        );
+
+        Ok(())
     }
 }
+
+// #[derive(Default, Clone, Serialize, Deserialize, Clone)]
+
+// pub enum DbPath {
+//     Local(PathBuf),
+// }
+
+// impl DbPath {
+//     pub fn get_path(&self) -> Option<Arc<str>> {
+//         match self {
+//             DbPath::Local(path) => {
+//                 if let Some(path_str) = path.to_str() {
+//                     println!("🛤️  Database path: {}", path_str);
+//                     Some(Arc::from(path_str))
+//                 } else {
+//                     println!("❌ Failed to convert path to string");
+//                     None
+//                 }
+//             }
+//             DbPath::Server(server_db) => Some(server_db.get_connection_string()),
+//         }
+//     }
+
+//     pub fn get_name(&self) -> Option<Arc<str>> {
+//         match self {
+//             DbPath::Local(path) => {
+//                 if let Some(name) = path.file_stem() {
+//                     if let Some(name_str) = name.to_str() {
+//                         return Some(Arc::from(name_str));
+//                     }
+//                 }
+//                 None
+//             }
+//             DbPath::Server(server_db) => Some(Arc::from(server_db.database.as_str())),
+//         }
+//     }
+// }
 
 #[derive(Default, Clone)]
 pub struct Database {
-    pub path: Option<DbPath>,
+    pub url: String,
     pub size: usize,
     pub records: Vec<FileRecord>,
     pub is_compare: bool,
     pub abort: Arc<AtomicBool>,
+    pub pool: Pool,
 }
 
 // Change visibility of `Database` methods to private where possible
 impl Database {
-    pub async fn new_server(server: &ServerDb, is_compare: bool) -> Self {
-        println!("🆕 Creating new Database instance for server");
-        println!("🌐 URL: {}", server.url);
-        println!("🔄 Is compare: {}", is_compare);
-
-        let mut d = Database {
-            path: Some(DbPath::new_server(server.clone())),
-            size: 0,
-            records: Vec::new(),
-            is_compare,
-            abort: Arc::new(AtomicBool::new(false)),
-        };
-        println!("📏 Fetching initial database size...");
-        d.size = d.fetch_size().await.unwrap_or_else(|e| {
-            println!("⚠️  Failed to fetch size, using 0: {}", e);
-            0
-        });
-
-        println!("💾 Initializing records vector with capacity: {}", d.size);
-        d.records = Vec::with_capacity(d.size);
-
-        println!("✅ Database instance created successfully");
-        d
-    }
-
-    pub async fn new(path: &str, is_compare: bool) -> Self {
+    pub async fn new(path: String, is_compare: bool) -> Result<Self, sqlx::Error> {
         println!("🆕 Creating new Database instance");
         println!("📁 Path: {}", path);
         println!("🔄 Is compare: {}", is_compare);
 
         let mut d = Database {
-            path: Some(DbPath::new_local(PathBuf::from(path))),
+            pool: Pool::connect(&path).await?,
+            url: path,
             size: 0,
             records: Vec::new(),
             is_compare,
             abort: Arc::new(AtomicBool::new(false)),
         };
 
-        println!("📏 Fetching initial database size...");
-        d.size = d.fetch_size().await.unwrap_or_else(|e| {
-            println!("⚠️  Failed to fetch size, using 0: {}", e);
-            0
-        });
+        d.size = d.pool.fetch_size().await?;
 
         println!("💾 Initializing records vector with capacity: {}", d.size);
         d.records = Vec::with_capacity(d.size);
 
         println!("✅ Database instance created successfully");
-        d
+        Ok(d)
     }
 
-    pub async fn open(&mut self, is_compare: bool) -> Option<Self> {
-        let home_dir = home_dir();
-        match home_dir {
-            Some(home_dir) => {
-                println!("Found SMDB dir");
-                let db_dir = home_dir.join("Library/Application Support/SoundminerV6/Databases");
-                let path = FileDialog::new()
-                    .add_filter("SQLite Database", &["sqlite"])
-                    .set_directory(db_dir)
-                    .pick_file();
-                self.init(path, is_compare).await;
-            }
-            None => {
-                let path = FileDialog::new()
-                    .add_filter("SQLite Database", &["sqlite"])
-                    .pick_file();
-                self.init(path, is_compare).await;
-            }
-        }
-        None
-    }
+    // pub async fn open(&mut self, is_compare: bool) -> Option<Self> {
+    //     let home_dir = home_dir();
+    //     match home_dir {
+    //         Some(home_dir) => {
+    //             println!("Found SMDB dir");
+    //             let db_dir = home_dir.join("Library/Application Support/SoundminerV6/Databases");
+    //             let path = FileDialog::new()
+    //                 .add_filter("SQLite Database", &["sqlite"])
+    //                 .set_directory(db_dir)
+    //                 .pick_file();
+    //             self.init(path, is_compare).await;
+    //         }
+    //         None => {
+    //             let path = FileDialog::new()
+    //                 .add_filter("SQLite Database", &["sqlite"])
+    //                 .pick_file();
+    //             self.init(path, is_compare).await;
+    //         }
+    //     }
+    //     None
+    // }
 
-    pub async fn init(&mut self, path: Option<PathBuf>, is_compare: bool) {
-        if let Some(path) = path {
-            self.path = Some(DbPath::new_local(path));
-            self.size = self.fetch_size().await.unwrap_or(0);
-            self.records = Vec::with_capacity(self.size); // No need for .into()
-            self.is_compare = is_compare;
-        }
+    pub async fn init(&mut self, path: String, is_compare: bool) {
+        self.pool = Pool::connect(&path).await.unwrap_or_else(|_| {
+            println!("❌ Failed to connect to database at {}", path);
+            Pool::default() // Return a default pool if connection fails
+        });
+        self.url = path;
+        self.size = self.pool.fetch_size().await.unwrap_or(0);
+        self.records = Vec::with_capacity(self.size); // No need for .into()
+        self.is_compare = is_compare;
     }
 
     pub async fn create_clone(&self, tag: &str) -> Result<Database, std::io::Error> {
-        let Some(DbPath::Local(source_path)) = &self.path else {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "No source database path",
-            ));
-        };
-
-        // let source_path = path.as_ref().ok_or_else(|| {
-        //     std::io::Error::new(std::io::ErrorKind::NotFound, "No source database path")
-        // })?;
-
+        let source_path = PathBuf::from(self.get_path());
         // Create the new path with proper cross-platform handling
-        let mut path_string = source_path.display().to_string();
+        let mut path_string = self.get_path().to_string();
         path_string = path_string.replace(".sqlite", &format!("_{}.sqlite", tag));
+        let target_string = format!("sqlite://{}", path_string);
         let target_path = PathBuf::from(path_string);
 
         // Check if source file exists and is readable
@@ -286,7 +593,7 @@ impl Database {
         }
 
         // Perform the copy operation with proper error handling
-        fs::copy(source_path, &target_path).map_err(|e| {
+        fs::copy(&source_path, &target_path).map_err(|e| {
             std::io::Error::new(
                 e.kind(),
                 format!(
@@ -300,26 +607,22 @@ impl Database {
 
         // Initialize the new database
         let mut db = Database::default();
-        db.init(Some(target_path), false).await;
+        db.init(target_string, false).await;
         Ok(db)
     }
 
-    pub fn get_path(&self) -> Option<Arc<str>> {
-        if let Some(path) = &self.path {
-            return path.get_path();
-        } else {
-            println!("❌ No database path set");
-        }
-        None
+    pub fn get_path(&self) -> &str {
+        let (_, path) = self.url.split_once("://").unwrap_or(("", &self.url));
+        path
     }
 
-    pub fn get_name(&self) -> Option<Arc<str>> {
-        if let Some(path) = &self.path {
-            return path.get_name();
-        } else {
-            println!("❌ No database name set");
-        }
-        None
+    pub fn get_name(&self) -> String {
+        let binding = self.get_path();
+        let path = Path::new(&binding);
+        path.file_stem()
+            .and_then(|s| s.to_str())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "unknown".to_string())
     }
     pub fn get_size(&self) -> usize {
         self.size
@@ -332,201 +635,85 @@ impl Database {
             .count()
     }
 
-    pub async fn get_pool(&self) -> Option<AnyPool> {
-        if let Some(path) = &self.path {
-            match path {
-                DbPath::Local(path_buf) => {
-                    let path_str = path_buf.to_str()?;
-                    println!("🔌 Attempting to connect to SQLite database: {}", path_str);
+    // pub async fn get_pool(&self) -> Option<SqlitePool> {
+    //     if let Some(pool) = &self.pool {
+    //         match pool {
+    //             Pool::Sqlite(pool) => Some(pool.clone()),
+    //             _ => None,
+    //         }
+    //     } else {
+    //         println!("❌ No database pool available for connection");
+    //         None
+    //     }
+    // }
 
-                    if !path_buf.exists() {
-                        println!("❌ Database file does not exist: {}", path_str);
-                        return None;
-                    }
-
-                    let connection_url = format!("sqlite://{}", path_str);
-                    println!("🔗 Connection URL: {}", connection_url);
-
-                    match AnyPool::connect(&connection_url).await {
-                        Ok(pool) => {
-                            println!("✅ Successfully connected to SQLite database");
-                            // Test the connection with a simple query
-                            match sqlx::query("SELECT 1").fetch_one(&pool).await {
-                                Ok(_) => {
-                                    println!("✅ Database connection test successful");
-                                    Some(pool)
-                                }
-                                Err(e) => {
-                                    println!("❌ Database connection test failed: {}", e);
-                                    None
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            println!("❌ Failed to connect to SQLite database: {}", e);
-                            println!("❌ Error details: {:?}", e);
-                            None
-                        }
-                    }
-                }
-                DbPath::Server(server_db) => {
-                    let connection_url = server_db.get_connection_string();
-                    println!(
-                        "🔌 Attempting to connect to MySQL server: {}",
-                        connection_url
-                    );
-
-                    match AnyPool::connect(&connection_url).await {
-                        Ok(pool) => {
-                            println!("✅ Successfully connected to MySQL server");
-                            Some(pool)
-                        }
-                        Err(e) => {
-                            println!("❌ Failed to connect to MySQL server: {}", e);
-                            None
-                        }
-                    }
-                }
-            }
-        } else {
-            println!("❌ No database path available for connection");
-            None
-        }
+    pub async fn add_column(&self, add: &str) -> Result<(), sqlx::Error> {
+        self.pool.add_column(add).await?;
+        println!("Added column: {}", add);
+        Ok(())
     }
 
     pub async fn remove_column(&self, remove: &str) -> Result<(), sqlx::Error> {
-        if let Some(pool) = self.get_pool().await {
-            // First check if the column already exists
-            let columns = sqlx::query(&format!("PRAGMA table_info({});", &self.get_table()))
-                .fetch_all(&pool)
-                .await?;
+        let query = format!(
+            "ALTER&self.get_table() {} DROP COLUMN {};",
+            &self.pool.get_table_name(),
+            remove
+        );
+        self.pool.execute(&query).await?;
+        println!("Removed column: {}", remove);
 
-            // Check if our column exists
-            let column_exists = columns.iter().any(|row| {
-                let column_name: &str = row.try_get("name").unwrap_or_default();
-                column_name == remove
-            });
-
-            // Only remove the column if it exists
-            if column_exists {
-                // Remove the column
-                let query = format!(
-                    "ALTER&self.get_table() {} DROP COLUMN {};",
-                    &self.get_table(),
-                    remove
-                );
-                sqlx::query(&query).execute(&pool).await?;
-                println!("Removed column: {}", remove);
-            } else {
-                println!("Column '{}' does not exist", remove);
-            }
-
-            return Ok(());
-        }
-
-        Err(sqlx::Error::Configuration(
-            "No database connection available".into(),
-        ))
-    }
-
-    pub async fn add_column(&self, add: &str) -> Result<(), sqlx::Error> {
-        if let Some(pool) = self.get_pool().await {
-            // First check if the column already exists
-            let columns = sqlx::query(&format!("PRAGMA table_info({});", &self.get_table()))
-                .fetch_all(&pool)
-                .await?;
-
-            // Check if our column exists
-            let column_exists = columns.iter().any(|row| {
-                let column_name: &str = row.try_get("name").unwrap_or_default();
-                column_name == add
-            });
-
-            // Only add the column if it doesn't exist
-            if !column_exists {
-                // Add the column with TEXT type (you can change this if needed)
-                let query = format!("ALTER TABLE {} ADD COLUMN {} TEXT;", &self.get_table(), add);
-                sqlx::query(&query).execute(&pool).await?;
-                println!("Added new column: {}", add);
-            } else {
-                println!("Column '{}' already exists", add);
-            }
-
-            return Ok(());
-        }
-
-        Err(sqlx::Error::Configuration(
-            "No database connection available".into(),
-        ))
-    }
-
-    pub async fn fetch_size(&self) -> Result<usize, sqlx::Error> {
-        println!("📏 Attempting to fetch database size...");
-
-        if let Some(pool) = self.get_pool().await {
-            println!("🔍 Executing count query on table: {}", &self.get_table());
-
-            match sqlx::query_as::<_, (i64,)>(&format!(
-                "SELECT COUNT(*) FROM {}",
-                &self.get_table()
-            ))
-            .fetch_one(&pool)
-            .await
-            {
-                Ok(count) => {
-                    let size = count.0 as usize;
-                    println!("✅ Database size fetched successfully: {} records", size);
-                    Ok(size)
-                }
-                Err(e) => {
-                    println!("❌ Failed to fetch database size: {}", e);
-                    Err(e)
-                }
-            }
-        } else {
-            println!("❌ No database pool available for size fetch");
-            Ok(0)
-        }
+        Ok(())
     }
 
     pub async fn remove(&self, ids: &[usize], app: &AppHandle) -> Result<(), sqlx::Error> {
         const BATCH_SIZE: usize = 12321; // Define the batch size
         let _ = app;
         let mut counter = 0;
-        if let Some(pool) = self.get_pool().await {
-            // Iterate over chunks of IDs
-            for chunk in ids.chunks(BATCH_SIZE) {
-                app.status(
-                    "Record Removal",
-                    counter * 100 / ids.len(),
-                    &format!("Removing Records... {}/{}", counter, ids.len()),
-                );
 
-                counter += BATCH_SIZE;
-                // Create placeholders for each ID in the chunk
-                let placeholders = std::iter::repeat("?")
-                    .take(chunk.len())
-                    .collect::<Vec<_>>()
-                    .join(",");
-                let query = format!(
-                    "DELETE FROM {} WHERE recid IN ({})",
-                    &self.get_table(),
-                    placeholders
-                );
+        // Iterate over chunks of IDs
+        for chunk in ids.chunks(BATCH_SIZE) {
+            app.status(
+                "Record Removal",
+                counter * 100 / ids.len(),
+                &format!("Removing Records... {}/{}", counter, ids.len()),
+            );
 
-                // Create a query builder
-                let mut query_builder = sqlx::query(&query);
+            counter += BATCH_SIZE;
+            // Create placeholders for each ID in the chunk
+            let placeholders = std::iter::repeat("?")
+                .take(chunk.len())
+                .collect::<Vec<_>>()
+                .join(",");
+            let query = format!(
+                "DELETE FROM {} WHERE recid IN ({})",
+                &self.pool.get_table_name(),
+                placeholders
+            );
 
-                // Bind each ID individually
-                for &id in chunk {
-                    query_builder = query_builder.bind(id as i64);
+            match self.pool {
+                Pool::Sqlite(ref pool) => {
+                    println!("Executing query on SQLite pool");
+                    // Create a query builder for SQLite
+                    let mut query_builder = sqlx::query(&query);
+                    // Bind each ID individually
+                    for &id in chunk {
+                        query_builder = query_builder.bind(id as i64);
+                    }
+                    query_builder.execute(pool).await?;
                 }
-
-                // Execute the query
-                query_builder.execute(&pool).await?;
+                Pool::MySql(ref pool) => {
+                    println!("Executing query on MySQL pool");
+                    // Create a query builder for MySQL
+                    let mut query_builder = sqlx::query(&query);
+                    // Bind each ID individually
+                    for &id in chunk {
+                        query_builder = query_builder.bind(id as i64);
+                    }
+                    query_builder.execute(pool).await?;
+                }
             }
-            app.status("Final Checks", 100, "Records successfully removed");
         }
+        app.status("Final Checks", 100, "Records successfully removed");
         Ok(())
     }
 
@@ -624,6 +811,7 @@ impl Database {
         // Only update database if we have SUCCESSFUL records to update
         if !successful_ids.is_empty() {
             match self
+                .pool
                 .update_channel_count_to_mono(app, &successful_ids)
                 .await
             {
@@ -654,160 +842,18 @@ impl Database {
         }
     }
 
-    pub async fn fetch(&self, query: &str) -> Vec<sqlx::any::AnyRow> {
-        if let Some(pool) = self.get_pool().await {
-            sqlx::query(query)
-                .fetch_all(&pool)
-                .await
-                .unwrap_or_default()
-        } else {
-            Vec::new()
-        }
-    }
-
-    pub async fn fetch_filerecords(
-        &mut self,
-        query: &str,
-        enabled: &Enabled,
-        pref: &Preferences,
-        app: &AppHandle,
-    ) -> Result<(), sqlx::Error> {
-        // self.records.clear();
-        let completed = AtomicUsize::new(0);
-        let rows = self.fetch(query).await;
-        let mut records = Vec::with_capacity(rows.len());
-        println!("{} Rows Found", rows.len());
-        let new_records: Vec<FileRecord> = rows
-            .par_iter()
-            .enumerate()
-            .filter_map(|(count, row)| {
-                let new_completed = completed.fetch_add(1, Ordering::SeqCst) + 1;
-                if new_completed % RECORD_DIVISOR == 0 {
-                    app.substatus(
-                        "Gathering File Records",
-                        new_completed * 100 / rows.len(),
-                        format!("Processing Records into Memory: {}/{}", count, rows.len())
-                            .as_str(),
-                    );
-                }
-                FileRecord::new(row, enabled, pref, self.is_compare)
-            })
-            .collect();
-        app.substatus("Gathering File Records", 100, "Complete");
-
-        records.extend(new_records);
-        self.records = records;
-        Ok(())
-    }
-
     pub async fn fetch_all_filerecords(
-        &mut self,
+        &self,
         enabled: &Enabled,
         pref: &Preferences,
         app: &AppHandle,
-    ) -> Result<(), sqlx::Error> {
-        println!("Gathering all records from database");
-        self.fetch_filerecords(
-            &format!("SELECT recid, filepath, duration, _fingerprint, description, channels, bitdepth, samplerate, _DualMono, {} FROM {}",
-                pref.get_data_requirements(),
-                &self.get_table()
-            ),
-            enabled,
-            pref,
-            app,
-        )
-        .await
-    }
-
-    pub async fn fetch_columns(&self) -> Result<Vec<Arc<str>>, sqlx::Error> {
-        // Query for table info using PRAGMA
-        let mut columns = self
-            .fetch(&format!("PRAGMA table_info({});", &self.get_table()))
+    ) -> Result<Vec<FileRecord>, sqlx::Error> {
+        let query = format!("SELECT * FROM {}", self.pool.get_table_name());
+        self.pool
+            .fetch_filerecords(&query, enabled, pref, self.is_compare, app)
             .await
-            .into_iter()
-            .filter_map(|row| {
-                let column_name: &str = row.try_get("name").ok()?; // Extract "name" column
-                if !column_name.starts_with('_') {
-                    Some(column_name.into())
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<Arc<str>>>();
-        columns.sort();
-        // if let Some(index) = columns.iter().position(|x| x.as_ref() == "FilePath") {
-        //     let filepath = columns.remove(index); // Remove the item
-        //     columns.insert(0, filepath); // Insert it at the beginning
-        // }
-
-        Ok(columns)
     }
-    pub async fn update_channel_count_to_mono(
-        &self,
-        app: &AppHandle,
-        record_ids: &[usize],
-    ) -> Result<(), sqlx::Error> {
-        const BATCH_SIZE: usize = 1000; // Smaller batch size for updates
 
-        if let Some(pool) = self.get_pool().await {
-            let mut counter = 0;
-
-            // Begin a transaction for better performance
-            let mut tx = pool.begin().await?;
-
-            // Process in batches
-            for chunk in record_ids.chunks(BATCH_SIZE) {
-                // Create placeholders for SQL IN clause
-                let placeholders = std::iter::repeat("?")
-                    .take(chunk.len())
-                    .collect::<Vec<_>>()
-                    .join(",");
-
-                // Build update query
-                let query = format!(
-                    "UPDATE {} SET Channels = 1, _Dirty = 1 WHERE recid IN ({})",
-                    &self.get_table(),
-                    placeholders
-                );
-
-                // Create query builder
-                let mut query_builder = sqlx::query(&query);
-
-                // Bind all IDs
-                for &id in chunk {
-                    query_builder = query_builder.bind(id as i64);
-                }
-
-                // Execute the query within transaction
-                query_builder.execute(&mut *tx).await?;
-
-                // Update progress
-                counter += chunk.len();
-                app.status(
-                    "Stripping Multi-Mono",
-                    counter * 100 / record_ids.len(),
-                    format!(
-                        "Updating channel metadata: {}/{}",
-                        counter,
-                        record_ids.len()
-                    )
-                    .as_str(),
-                );
-            }
-
-            // Commit the transaction
-            tx.commit().await?;
-
-            // Final status update
-            app.status(
-                "Stripping Multi-Mono",
-                100,
-                format!("Updated {} records to mono", record_ids.len()).as_str(),
-            );
-        }
-
-        Ok(())
-    }
     pub async fn batch_update_column(
         &self,
         app: &AppHandle,
@@ -816,82 +862,14 @@ impl Database {
         column: &str,
         value: &str,
     ) -> Result<(), sqlx::Error> {
-        if let Some(pool) = self.get_pool().await {
-            let mut counter = 0;
-
-            // Begin a transaction for better performance
-            let mut tx = pool.begin().await?;
-
-            // Process in batches
-            for chunk in record_ids.chunks(pref.batch_size) {
-                // Create placeholders for SQL IN clause
-                let placeholders = std::iter::repeat("?")
-                    .take(chunk.len())
-                    .collect::<Vec<_>>()
-                    .join(",");
-
-                // Build update query
-                let query = format!(
-                    "UPDATE {} SET {} = {} WHERE recid IN ({})",
-                    &self.get_table(),
-                    column,
-                    value,
-                    placeholders
-                );
-
-                // Create query builder
-                let mut query_builder = sqlx::query(&query);
-
-                // Bind all IDs
-                for &id in chunk {
-                    query_builder = query_builder.bind(id as i64);
-                }
-
-                // Execute the query within transaction
-                query_builder.execute(&mut *tx).await?;
-
-                // Update progress
-                counter += chunk.len();
-                app.status(
-                    "Stripping Multi-Mono",
-                    counter * 100 / record_ids.len(),
-                    format!(
-                        "Updating channel metadata: {}/{}",
-                        counter,
-                        record_ids.len()
-                    )
-                    .as_str(),
-                );
-            }
-
-            // Commit the transaction
-            tx.commit().await?;
-
-            // Final status update
-            app.status(
-                "Stripping Multi-Mono",
-                100,
-                format!("Updated {} records to mono", record_ids.len()).as_str(),
-            );
-        }
-
-        Ok(())
-    }
-
-    pub fn get_table(&self) -> &str {
-        match &self.path {
-            Some(DbPath::Local(_)) => LOCAL_TABLE,
-            Some(DbPath::Server(_)) => SERVER_TABLE,
-            None => {
-                println!("❌ No database path set, returning default table name");
-                LOCAL_TABLE
-            }
-        }
+        self.pool
+            .batch_update_column(app, pref, record_ids, column, value)
+            .await
     }
 }
 
 pub async fn batch_store_data_optimized(
-    pool: &AnyPool,
+    pool: &SqlitePool,
     data: &[(usize, &str)],
     column: &str,
     app: &AppHandle,
