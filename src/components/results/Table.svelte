@@ -844,7 +844,8 @@
   function restoreScrollPositionIfNeeded() {
     if (parentRef && !isRestoringScroll) {
       const savedPosition = restoreScrollPosition();
-      if (savedPosition > 0) {
+      // Only restore if there's a meaningful saved position and current position is at top
+      if (savedPosition > 0 && parentRef.scrollTop === 0) {
         isRestoringScroll = true;
 
         // Use requestAnimationFrame to ensure DOM is updated
@@ -862,8 +863,16 @@
     }
   }
 
-  // Watch for changes in filtered items to restore scroll position
-  $: if (filteredItems && parentRef) {
+  // Track meaningful changes to filtered items for scroll restoration
+  // Only restore scroll position when the items themselves change (length or IDs),
+  // not when their content (algorithm arrays) change
+  $: filteredItemsLength = filteredItems ? filteredItems.length : 0;
+  $: filteredItemsIds = filteredItems
+    ? filteredItems.map((item) => item.id).join(",")
+    : "";
+
+  // Watch for structural changes in filtered items to restore scroll position
+  $: if (filteredItemsLength > 0 && filteredItemsIds && parentRef) {
     restoreScrollPositionIfNeeded();
   } // Base row height calculation responsive to font size
   $: baseItemSize = Math.round(
