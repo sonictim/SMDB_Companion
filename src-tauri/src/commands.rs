@@ -32,13 +32,15 @@ pub async fn open_db(
     state: State<'_, Mutex<AppState>>,
     path: String,
     is_compare: bool,
-) -> Result<Arc<str>, String> {
+) -> Result<String, String> {
     let mut state = state.lock().await;
-    state.db = Database::new(&path, is_compare).await;
+    state.db = Database::new(path, is_compare)
+        .await
+        .map_err(|e| e.to_string())?;
     if let Some(name) = state.db.get_name() {
         return Ok(name);
     }
-    Ok(Arc::from("Select Database"))
+    Ok(String::from("Select Database"))
 }
 // #[tauri::command]
 // pub async fn open_server_db(
@@ -62,14 +64,14 @@ pub async fn close_db(state: State<'_, Mutex<AppState>>) -> Result<Arc<str>, Str
 }
 
 #[tauri::command]
-pub async fn get_db_name(state: State<'_, Mutex<AppState>>) -> Result<Arc<str>, String> {
+pub async fn get_db_name(state: State<'_, Mutex<AppState>>) -> Result<String, String> {
     println!("Get DB Name");
     let state = state.lock().await;
 
     Ok(state
         .db
         .get_name()
-        .unwrap_or_else(|| Arc::from("Select Database")))
+        .unwrap_or_else(|| String::from("Select Database")))
 }
 
 #[tauri::command]
@@ -167,7 +169,11 @@ async fn run_search(
     app.substatus("Starting", 0, "Gathering records from database...");
     counter += 1;
 
-    let _ = db.fetch_all_filerecords(&enabled, &pref, &app).await;
+    let r = db.fetch_all_filerecords(&enabled, &pref, &app).await;
+    match r {
+        Ok(_) => println!("File Records Fetched Successfully"),
+        Err(e) => eprintln!("Error fetching file records: {}", e),
+    }
     if db.abort.load(Ordering::SeqCst) {
         println!("Aborting fingerprint scan - early exit");
         return Err("Aborted".to_string());
@@ -234,12 +240,15 @@ async fn run_search(
 }
 
 #[tauri::command]
-pub async fn clear_fingerprints(state: State<'_, Mutex<AppState>>) -> Result<Arc<str>, String> {
+pub async fn clear_fingerprints(state: State<'_, Mutex<AppState>>) -> Result<String, String> {
     println!("Clearing Fingerprints");
     let state = state.lock().await;
     let _ = state.db.remove_column("_fingerprint").await;
     println!("Fingerprints Cleared");
-    Ok(state.db.get_name().unwrap_or(Arc::from("Select Database")))
+    Ok(state
+        .db
+        .get_name()
+        .unwrap_or(String::from("Select Database")))
 }
 #[tauri::command]
 pub async fn clear_selected_fingerprints(
@@ -269,7 +278,7 @@ pub async fn remove_records(
     files: Vec<&str>,
     dual_mono: Vec<DualMono>,
     strip_dual_mono: bool,
-) -> Result<Arc<str>, String> {
+) -> Result<String, String> {
     println!("Removing Records");
 
     println!("Dual Mono: {:?}", dual_mono);
@@ -358,7 +367,10 @@ pub async fn remove_records(
     println!("Remove Ended");
     app.status("Final Checks", 100, "Success! Removal is complete");
 
-    Ok(state.db.get_path().unwrap_or(Arc::from("Select Database")))
+    Ok(state
+        .db
+        .get_name()
+        .unwrap_or(String::from("Select Database")))
 }
 
 // Helper functions to detect permission errors
@@ -407,81 +419,103 @@ pub async fn find(
     // Use a scope to ensure the mutex is released promptly
     let _ = {
         let mut state = state.lock().await;
-        let table = state.db.get_table();
-        let case = if case_sensitive { "GLOB" } else { "LIKE" };
-        let query =
-            // format!("SELECT recid, filepath, duration FROM {TABLE} WHERE {column} {case} ?");
-            format!("SELECT recid, filepath, duration, _fingerprint, description, channels, bitdepth, samplerate, _DualMono  FROM {table} WHERE {column} {case} ?");
+        let Some(pool) = &state.db.pool else {
+            return Err("sqlx::Error::PoolClosed".to_string());
+        };
+        let table = pool.get_table_name();
 
-        // Get pool with error handling
-        let pool = state.db.get_pool().await.unwrap();
+        // Build query with proper parameter handling
+        let query = if case_sensitive {
+            // For GLOB, use direct string interpolation (GLOB doesn't use standard bind params well)
+            format!(
+                "SELECT recid, filepath, duration, _fingerprint, description, channels, bitdepth, samplerate, _DualMono FROM {table} WHERE {column} GLOB '*{}*'",
+                find.replace("'", "''")
+            )
+        } else {
+            // For LIKE, use direct string interpolation with proper escaping
+            format!(
+                "SELECT recid, filepath, duration, _fingerprint, description, channels, bitdepth, samplerate, _DualMono FROM {table} WHERE {column} LIKE '%{}%'",
+                find.replace("'", "''")
+            )
+        };
 
         app.substatus("Metadata Search", 10, "Querying Database...");
 
-        // Execute query with error handling
-        let rows = match sqlx::query(&query)
-            .bind(if case_sensitive {
-                format!("*{}*", find) // GLOB wildcard (*)
-            } else {
-                format!("%{}%", find) // LIKE wildcard (%)
-            })
-            .fetch_all(&pool)
+        let mut records = pool
+            .fetch(&query, &pref, &app)
             .await
-        {
-            Ok(rows) => rows,
-            Err(e) => return Err(format!("Database query failed: {}", e)),
-        };
+            .map_err(|e| e.to_string())?;
+
+        // Execute query with error handling
+        // let rows = match sqlx::query(&query)
+        //     .bind(if case_sensitive {
+        //         format!("*{}*", find) // GLOB wildcard (*)
+        //     } else {
+        //         format!("%{}%", find) // LIKE wildcard (%)
+        //     })
+        //     .fetch_all(&pool)
+        //     .await
+        // {
+        //     Ok(rows) => rows,
+        //     Err(e) => return Err(format!("Database query failed: {}", e)),
+        // };
         app.substatus(
             "Metadata Search",
             20,
-            &format!("{} Records Found", rows.len()),
+            &format!("{} Records Found", records.len()),
         );
-        println!("{} Rows Found", rows.len());
+        println!("{} Rows Found", records.len());
         app.status(
             "Metadata Record Retrieval",
             50,
-            &format!("{} Records Found", rows.len()),
+            &format!("{} Records Found", records.len()),
         );
 
-        // Add a timeout for processing to prevent hanging
-        let processing_timeout = std::time::Duration::from_secs(60); // 60 second timeout
+        records.par_iter_mut().for_each(|record| {
+            record.algorithm.insert(A::Replace);
+            record.algorithm.remove(&A::Keep);
+        });
 
-        // Process records with error handling and timeout
-        let new_records: Vec<FileRecord> = match tokio::time::timeout(processing_timeout, async {
-            rows.par_iter()
-                .enumerate()
-                .map(|(i, row)| {
-                    app.substatus(
-                        "Processing Records",
-                        i * 100 / rows.len(),
-                        &format!("Processing: {}/{} Records", i, rows.len()),
-                    );
-                    let mut record = FileRecord::new_sqlite(row, &Enabled::default(), &pref, true)?;
-                    // Safely create record with error handling
-                    record.algorithm.insert(A::Replace);
-                    record.algorithm.remove(&A::Keep);
-                    Some(record)
-                })
-                .filter_map(|record| record) // Remove None values
-                .collect()
-        })
-        .await
-        {
-            Ok(records) => records,
-            Err(_) => return Err("Processing timed out after 60 seconds".to_string()),
-        };
+        // // Add a timeout for processing to prevent hanging
+        // let processing_timeout = std::time::Duration::from_secs(60); // 60 second timeout
+
+        // // Process records with error handling and timeout
+        // let new_records: Vec<FileRecord> = match tokio::time::timeout(processing_timeout, async {
+        //     records
+        //         .par_iter()
+        //         .enumerate()
+        //         .map(|(i, row)| {
+        //             app.substatus(
+        //                 "Processing Records",
+        //                 i * 100 / rows.len(),
+        //                 &format!("Processing: {}/{} Records", i, rows.len()),
+        //             );
+        //             let mut record = FileRecord::new_sqlite(row, &Enabled::default(), &pref, true)?;
+        //             // Safely create record with error handling
+        //             record.algorithm.insert(A::Replace);
+        //             record.algorithm.remove(&A::Keep);
+        //             Some(record)
+        //         })
+        //         .filter_map(|record| record) // Remove None values
+        //         .collect()
+        // })
+        // .await
+        // {
+        //     Ok(records) => records,
+        //     Err(_) => return Err("Processing timed out after 60 seconds".to_string()),
+        // };
         app.status(
             "Metadata Record Retrieval",
             90,
-            &format!("{} Records Processed", new_records.len()),
+            &format!("{} Records Processed", records.len()),
         );
         app.substatus(
             "Metadata Record Retrieval",
             100,
-            &format!("{} Records Processed", new_records.len()),
+            &format!("{} Records Processed", records.len()),
         );
         // Update the records in the database
-        state.db.records = new_records;
+        state.db.records = records;
         app.status(
             "Metadata Record Retrieval",
             100,
@@ -513,7 +547,10 @@ pub async fn replace_metadata(
 ) -> Result<String, String> {
     println!("Starting Replace");
     let state = state.lock().await;
-    let table = state.db.get_table();
+    let Some(pool) = &state.db.pool else {
+        return Err("sqlx::Error::PoolClosed".to_string());
+    };
+    let table = pool.get_table_name();
     app.status(
         "Metadata Replacement",
         0,
@@ -524,85 +561,17 @@ pub async fn replace_metadata(
     );
     app.substatus("Metadata Replacement", 0, "Preparing SQL query...");
 
-    let dirty_text = if data.mark_dirty
-        && (data.column == "Filename" || data.column == "FilePath" || data.column == "Pathname")
-    {
-        ", _Dirty = 1"
-    } else {
-        ""
-    };
-    let case_text = if data.case_sensitive { "GLOB" } else { "LIKE" };
-
-    let bind_value = if data.case_sensitive {
-        format!("*{}*", data.find) // GLOB wildcard (*)
-    } else {
-        format!("%{}%", data.find) // LIKE wildcard (%)
-    };
-
-    let pool = state.db.get_pool().await.unwrap();
-
-    if data.column == "Filename" || data.column == "FilePath" || data.column == "Pathname" {
-        // First update the file paths
-        let query = format!(
-            "UPDATE {table} SET 
-                FilePath = REPLACE(FilePath, '{}', '{}'),
-                Filename = REPLACE(Filename, '{}', '{}'),
-                Pathname = REPLACE(Pathname, '{}', '{}'){} 
-            WHERE Filename {} ? OR FilePath {} ? OR Pathname {} ?",
-            data.find,
-            data.replace,
-            data.find,
-            data.replace,
-            data.find,
-            data.replace,
-            dirty_text,
-            case_text,
-            case_text,
-            case_text
-        );
-
-        println!("{}", query);
-        app.substatus("Metadata Replacement", 10, "Updating file paths...");
-
-        let result = sqlx::query(&query)
-            .bind(&bind_value)
-            .bind(&bind_value)
-            .bind(&bind_value)
-            .execute(&pool)
-            .await;
-
-        println!("Main table result: {:?}", result);
-
-        // Then update the pathname table
-        app.substatus("Metadata Replacement", 30, "Updating pathname table...");
-        let pathname_query = format!(
-            "UPDATE justinrdb_Pathname SET Pathname = REPLACE(Pathname, '{}', '{}') WHERE Pathname {} ?",
-            data.find, data.replace, case_text
-        );
-
-        let pathname_result = sqlx::query(&pathname_query)
-            .bind(&bind_value)
-            .execute(&pool)
-            .await;
-
-        println!("Pathname table result: {:?}", pathname_result);
-
-        // Finally, update the file path hashes
-        app.substatus("Metadata Replacement", 50, "Updating file path hashes...");
-        update_filepath_hash(&app, &data.find, &data.replace, case_text, &pool, table).await?;
-    } else {
-        // For non-file path columns, use the original simple update
-        let query = format!(
-            "UPDATE {table} SET {} = REPLACE({}, '{}', '{}'){} WHERE {} {} ?",
-            data.column, data.column, data.find, data.replace, dirty_text, data.column, case_text,
-        );
-
-        app.substatus("Metadata Replacement", 10, "Querying Database...");
-
-        let result = sqlx::query(&query).bind(&bind_value).execute(&pool).await;
-
-        println!("{:?}", result);
-    }
+    // Use the Pool's replace_metadata method to handle pattern matching internally
+    pool.replace_metadata(
+        &app,
+        &data.find,
+        &data.replace,
+        &data.column,
+        data.case_sensitive,
+        data.mark_dirty,
+        table,
+    )
+    .await?;
 
     app.substatus(
         "Metadata Replacement",
@@ -619,139 +588,6 @@ pub async fn replace_metadata(
     );
     println!("Replace Ended");
     Ok(String::from("Replace Success"))
-}
-
-async fn update_filepath_hash(
-    app: &AppHandle,
-    find: &str,
-    replace: &str,
-    case_text: &str,
-    pool: &sqlx::sqlite::SqlitePool,
-    table: &str,
-) -> Result<(), String> {
-    use sha1::{Digest, Sha1};
-
-    println!(
-        "Hash update function called with find='{}', replace='{}'",
-        find, replace
-    );
-
-    // Search for records that NOW contain the replacement string (after the update)
-    let bind_value = if case_text == "GLOB" {
-        format!("*{}*", replace) // GLOB wildcard (*)
-    } else {
-        format!("%{}%", replace) // LIKE wildcard (%)
-    };
-
-    let select_query = format!(
-        "SELECT recid, FilePath FROM {table} WHERE Filename {} ? OR FilePath {} ? OR Pathname {} ?",
-        case_text, case_text, case_text
-    );
-
-    app.substatus("Metadata Replacement", 50, "Fetching updated records...");
-
-    let affected_rows = sqlx::query(&select_query)
-        .bind(&bind_value) // Use replacement string, not original find string
-        .bind(&bind_value)
-        .bind(&bind_value)
-        .fetch_all(pool)
-        .await
-        .map_err(|e| format!("Failed to fetch affected records: {}", e))?;
-
-    println!(
-        "Found {} records containing replacement string '{}'",
-        affected_rows.len(),
-        replace
-    );
-
-    if affected_rows.is_empty() {
-        app.substatus(
-            "Metadata Replacement",
-            90,
-            "No records to update hashes for",
-        );
-        return Ok(());
-    }
-
-    // Rest of the function remains the same...
-    app.substatus(
-        "Metadata Replacement",
-        60,
-        &format!(
-            "Calculating new hashes for {} records...",
-            affected_rows.len()
-        ),
-    );
-
-    let hashes: Vec<(i64, String)> = affected_rows
-        .par_iter()
-        .map(|row| {
-            let recid: i64 = row.get(0);
-            let file_path: String = row.get(1);
-
-            // Generate SHA-1 hash of the NEW file path
-            let mut hasher = Sha1::new();
-            hasher.update(file_path.as_bytes());
-            let hash = format!("{:x}", hasher.finalize());
-
-            (recid, hash)
-        })
-        .collect();
-
-    // Update hashes in batches for better performance
-    app.substatus("Metadata Replacement", 70, "Updating file path hashes...");
-
-    let batch_size = 10_000;
-    let total_batches = hashes.len().div_ceil(batch_size);
-
-    for (batch_num, chunk) in hashes.chunks(batch_size).enumerate() {
-        let progress = 70 + (batch_num * 20 / total_batches);
-        app.substatus(
-            "Metadata Replacement",
-            progress,
-            &format!(
-                "Updating batch {}/{} ({} hashes)",
-                batch_num + 1,
-                total_batches,
-                chunk.len()
-            ),
-        );
-
-        let mut update_query = format!("UPDATE {table} SET _FilePathHash = CASE recid ");
-
-        for (recid, hash) in chunk {
-            update_query.push_str(&format!("WHEN {} THEN '{}' ", recid, hash));
-        }
-
-        update_query.push_str("END WHERE recid IN (");
-        update_query.push_str(
-            &chunk
-                .iter()
-                .map(|(recid, _)| recid.to_string())
-                .collect::<Vec<_>>()
-                .join(", "),
-        );
-        update_query.push(')');
-
-        sqlx::query(&update_query)
-            .execute(pool)
-            .await
-            .map_err(|e| {
-                format!(
-                    "Failed to update _FilePathHash batch {}: {}",
-                    batch_num + 1,
-                    e
-                )
-            })?;
-    }
-
-    app.substatus(
-        "Metadata Replacement",
-        90,
-        &format!("Successfully updated {} file path hashes", hashes.len()),
-    );
-
-    Ok(())
 }
 
 #[tauri::command]
@@ -800,7 +636,10 @@ pub async fn get_results(
 #[tauri::command]
 pub async fn get_columns(state: State<'_, Mutex<AppState>>) -> Result<Vec<Arc<str>>, String> {
     let state = state.lock().await;
-    let columns = state.db.fetch_columns().await.unwrap_or(Vec::new());
+    let Some(pool) = &state.db.pool else {
+        return Err("sqlx::Error::PoolClosed".to_string());
+    };
+    let columns = pool.fetch_columns().await.unwrap_or(Vec::new());
     Ok(columns)
 }
 

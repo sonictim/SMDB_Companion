@@ -1,3 +1,5 @@
+use sqlx::pool;
+
 pub use crate::prelude::*;
 
 #[derive(Debug, Clone)]
@@ -81,7 +83,7 @@ impl Pool {
         }
     }
 
-    fn get_table_name(&self) -> &'static str {
+    pub fn get_table_name(&self) -> &'static str {
         match self {
             Pool::MySql(_) => "metadata",
             Pool::Sqlite(_) => "justinmetadata",
@@ -144,6 +146,68 @@ impl Pool {
             }
         }
     }
+    pub async fn fetch(
+        &self,
+        query: &str,
+        pref: &Preferences,
+        app: &AppHandle,
+    ) -> Result<Vec<FileRecord>, sqlx::Error> {
+        match self {
+            Pool::Sqlite(pool) => {
+                let completed = AtomicUsize::new(0);
+
+                let rows = sqlx::query(query).fetch_all(pool).await?;
+                let results = rows
+                    .par_iter()
+                    .filter_map(|row| {
+                        let new_completed = completed.fetch_add(1, Ordering::SeqCst) + 1;
+                        if new_completed % RECORD_DIVISOR == 0 {
+                            app.substatus(
+                                "Gathering File Records",
+                                new_completed * 100 / rows.len(),
+                                format!(
+                                    "Processing Records into Memory: {}/{}",
+                                    new_completed,
+                                    rows.len()
+                                )
+                                .as_str(),
+                            );
+                        }
+                        FileRecord::new_sqlite(row, &Enabled::default(), pref, true)
+                    })
+                    .collect::<Vec<_>>();
+                app.substatus("Gathering File Records", 100, "Complete");
+                Ok(results)
+            }
+
+            Pool::MySql(pool) => {
+                let completed = AtomicUsize::new(0);
+
+                let rows = sqlx::query(query).fetch_all(pool).await?;
+                let results = rows
+                    .par_iter()
+                    .filter_map(|row| {
+                        let new_completed = completed.fetch_add(1, Ordering::SeqCst) + 1;
+                        if new_completed % RECORD_DIVISOR == 0 {
+                            app.substatus(
+                                "Gathering File Records",
+                                new_completed * 100 / rows.len(),
+                                format!(
+                                    "Processing Records into Memory: {}/{}",
+                                    new_completed,
+                                    rows.len()
+                                )
+                                .as_str(),
+                            );
+                        }
+                        FileRecord::new_mysql(row, &Enabled::default(), pref, true)
+                    })
+                    .collect::<Vec<_>>();
+                app.substatus("Gathering File Records", 100, "Complete");
+                Ok(results)
+            }
+        }
+    }
     pub async fn fetch_filerecords(
         &self,
         query: &str,
@@ -177,6 +241,7 @@ impl Pool {
                     })
                     .collect::<Vec<_>>();
                 app.substatus("Gathering File Records", 100, "Complete");
+                println!("Fetched {} records", results.len());
                 Ok(results)
             }
 
@@ -204,6 +269,7 @@ impl Pool {
                     })
                     .collect::<Vec<_>>();
                 app.substatus("Gathering File Records", 100, "Complete");
+                println!("Fetched {} records", results.len());
                 Ok(results)
             }
         }
@@ -441,6 +507,700 @@ impl Pool {
 
         Ok(())
     }
+    pub async fn batch_store_data_optimized(
+        &self,
+        data: &[(usize, &str)],
+        column: &str,
+        app: &AppHandle,
+    ) {
+        let name: &str = column.strip_prefix('_').unwrap_or(column);
+
+        if data.is_empty() {
+            println!("No {} to store", name);
+            return;
+        }
+
+        println!("Storing {} {} in database", data.len(), name);
+
+        app.substatus(
+            "Storing Batch to Database",
+            0,
+            format!("Storing {} {} in database...", name, data.len()).as_str(),
+        );
+
+        match self {
+            Pool::Sqlite(pool) => match pool.begin().await {
+                Ok(mut tx) => {
+                    let _ = sqlx::query("PRAGMA journal_mode = WAL")
+                        .execute(&mut *tx)
+                        .await;
+                    let _ = sqlx::query("PRAGMA synchronous = NORMAL")
+                        .execute(&mut *tx)
+                        .await;
+
+                    let total = data.len();
+                    let mut success_count = 0;
+                    let mut error_count = 0;
+
+                    for (i, (id, d)) in data.iter().enumerate() {
+                        if i % 25 == 0 || i == total - 1 {
+                            app.substatus(
+                                "Storing Batch to Database",
+                                (i + 1) * 100 / total,
+                                format!("Storing {}: {}/{}", name, i + 1, total).as_str(),
+                            );
+                        }
+
+                        let result = sqlx::query(&format!(
+                            "UPDATE {} SET {} = ? WHERE recid = ?",
+                            self.get_table_name(),
+                            column,
+                        ))
+                        .bind(d)
+                        .bind(*id as i64)
+                        .execute(&mut *tx)
+                        .await;
+
+                        match result {
+                            Ok(result) => {
+                                if result.rows_affected() == 0 {
+                                    println!(
+                                        "WARNING: No rows affected when updating {} for ID {}",
+                                        name, id
+                                    );
+                                } else {
+                                    success_count += 1;
+                                }
+                            }
+                            Err(e) => {
+                                println!("ERROR updating {} for ID {}: {}", name, id, e);
+                                error_count += 1;
+                            }
+                        }
+                    }
+                    app.substatus(
+                        "Storing Batch to Database",
+                        99,
+                        &format!(
+                            "Committing all changes to database: {} {}s updated, {} errors",
+                            success_count, name, error_count
+                        ),
+                    );
+
+                    match tx.commit().await {
+                        Ok(_) => {
+                            println!(
+                                "Transaction committed successfully: {} {}s updated, {} errors",
+                                success_count, name, error_count
+                            );
+
+                            let checkpoint_result = sqlx::query("PRAGMA wal_checkpoint(FULL)")
+                                .execute(pool)
+                                .await;
+
+                            if let Err(e) = checkpoint_result {
+                                println!("WARNING: Checkpoint failed: {}", e);
+                            } else {
+                                println!("Database checkpoint successful");
+                            }
+                        }
+                        Err(e) => println!("ERROR: Transaction failed to commit: {}", e),
+                    }
+                    app.substatus(
+                        "Storing Batch to Database",
+                        100,
+                        format!(
+                            "Database update complete: {} {} stored",
+                            success_count, name
+                        )
+                        .as_str(),
+                    );
+                }
+                Err(e) => {
+                    println!("ERROR: Failed to start transaction: {}", e);
+                    app.substatus(
+                        "Storing Batch to Database",
+                        100,
+                        &format!("ERROR: Database update failed: {}", e),
+                    );
+                }
+            },
+            Pool::MySql(pool) => match pool.begin().await {
+                Ok(mut tx) => {
+                    let total = data.len();
+                    let mut success_count = 0;
+                    let mut error_count = 0;
+
+                    for (i, (id, d)) in data.iter().enumerate() {
+                        if i % 25 == 0 || i == total - 1 {
+                            app.substatus(
+                                "Storing Batch to Database",
+                                (i + 1) * 100 / total,
+                                format!("Storing {}: {}/{}", name, i + 1, total).as_str(),
+                            );
+                        }
+
+                        let result = sqlx::query(&format!(
+                            "UPDATE {} SET {} = ? WHERE recid = ?",
+                            self.get_table_name(),
+                            column,
+                        ))
+                        .bind(d)
+                        .bind(*id as i64)
+                        .execute(&mut *tx)
+                        .await;
+
+                        match result {
+                            Ok(result) => {
+                                if result.rows_affected() == 0 {
+                                    println!(
+                                        "WARNING: No rows affected when updating {} for ID {}",
+                                        name, id
+                                    );
+                                } else {
+                                    success_count += 1;
+                                }
+                            }
+                            Err(e) => {
+                                println!("ERROR updating {} for ID {}: {}", name, id, e);
+                                error_count += 1;
+                            }
+                        }
+                    }
+                    app.substatus(
+                        "Storing Batch to Database",
+                        99,
+                        &format!(
+                            "Committing all changes to database: {} {}s updated, {} errors",
+                            success_count, name, error_count
+                        ),
+                    );
+
+                    match tx.commit().await {
+                        Ok(_) => {
+                            println!(
+                                "Transaction committed successfully: {} {}s updated, {} errors",
+                                success_count, name, error_count
+                            );
+                        }
+                        Err(e) => println!("ERROR: Transaction failed to commit: {}", e),
+                    }
+                    app.substatus(
+                        "Storing Batch to Database",
+                        100,
+                        format!(
+                            "Database update complete: {} {} stored",
+                            success_count, name
+                        )
+                        .as_str(),
+                    );
+                }
+                Err(e) => {
+                    println!("ERROR: Failed to start transaction: {}", e);
+                    app.substatus(
+                        "Storing Batch to Database",
+                        100,
+                        &format!("ERROR: Database update failed: {}", e),
+                    );
+                }
+            },
+        }
+    }
+
+    pub async fn store_fingerprints_batch_optimized(
+        &self,
+        fingerprints: &[(usize, String)],
+        app: &AppHandle,
+        table: &str,
+    ) {
+        if fingerprints.is_empty() {
+            println!("No fingerprints to store");
+            return;
+        }
+
+        println!("Storing {} fingerprints in database", fingerprints.len());
+        app.substatus(
+            "Writing to Database",
+            0,
+            &format!("Storing {} fingerprints in database...", fingerprints.len()),
+        );
+
+        match self {
+            Pool::Sqlite(pool) => match pool.begin().await {
+                Ok(mut tx) => {
+                    let _ = sqlx::query("PRAGMA journal_mode = WAL")
+                        .execute(&mut *tx)
+                        .await;
+                    let _ = sqlx::query("PRAGMA synchronous = NORMAL")
+                        .execute(&mut *tx)
+                        .await;
+
+                    let total = fingerprints.len();
+                    let mut success_count = 0;
+                    let mut error_count = 0;
+
+                    for (i, (id, fingerprint)) in fingerprints.iter().enumerate() {
+                        if i % 25 == 0 || i == total - 1 {
+                            app.substatus(
+                                "Writing to Database",
+                                (i + 1) * 100 / total,
+                                &format!("Storing fingerprints: {}/{}", i + 1, total),
+                            );
+                        }
+
+                        let result = sqlx::query(&format!(
+                            "UPDATE {} SET _fingerprint = ? WHERE recid = ?",
+                            table
+                        ))
+                        .bind(fingerprint)
+                        .bind(*id as i64)
+                        .execute(&mut *tx)
+                        .await;
+
+                        match result {
+                            Ok(result) => {
+                                if result.rows_affected() == 0 {
+                                    println!(
+                                        "WARNING: No rows affected when updating fingerprints for ID {}",
+                                        id
+                                    );
+                                } else {
+                                    success_count += 1;
+                                }
+                            }
+                            Err(e) => {
+                                println!("ERROR updating fingerprints for ID {}: {}", id, e);
+                                error_count += 1;
+                            }
+                        }
+                    }
+                    app.substatus(
+                        "Writing to Database",
+                        90,
+                        "Committing changes to database...",
+                    );
+
+                    match tx.commit().await {
+                        Ok(_) => {
+                            println!(
+                                "Transaction committed successfully: {} fingerprints updated, {} errors",
+                                success_count, error_count
+                            );
+
+                            let checkpoint_result = sqlx::query("PRAGMA wal_checkpoint(FULL)")
+                                .execute(pool)
+                                .await;
+
+                            if let Err(e) = checkpoint_result {
+                                println!("WARNING: Checkpoint failed: {}", e);
+                            } else {
+                                println!("Database checkpoint successful");
+                            }
+                        }
+                        Err(e) => println!("ERROR: Transaction failed to commit: {}", e),
+                    }
+                    app.substatus(
+                        "Writing to Database",
+                        100,
+                        &format!(
+                            "Database update complete: {} fingerprints stored",
+                            success_count
+                        ),
+                    );
+                }
+                Err(e) => {
+                    println!("ERROR: Failed to start transaction: {}", e);
+                    app.substatus(
+                        "Writing to Database",
+                        100,
+                        &format!("ERROR: Failed to start transaction: {}", e),
+                    );
+                }
+            },
+            Pool::MySql(pool) => match pool.begin().await {
+                Ok(mut tx) => {
+                    let total = fingerprints.len();
+                    let mut success_count = 0;
+                    let mut error_count = 0;
+
+                    for (i, (id, fingerprint)) in fingerprints.iter().enumerate() {
+                        if i % 25 == 0 || i == total - 1 {
+                            app.substatus(
+                                "Writing to Database",
+                                (i + 1) * 100 / total,
+                                &format!("Storing fingerprints: {}/{}", i + 1, total),
+                            );
+                        }
+
+                        let result = sqlx::query(&format!(
+                            "UPDATE {} SET _fingerprint = ? WHERE recid = ?",
+                            table
+                        ))
+                        .bind(fingerprint)
+                        .bind(*id as i64)
+                        .execute(&mut *tx)
+                        .await;
+
+                        match result {
+                            Ok(result) => {
+                                if result.rows_affected() == 0 {
+                                    println!(
+                                        "WARNING: No rows affected when updating fingerprints for ID {}",
+                                        id
+                                    );
+                                } else {
+                                    success_count += 1;
+                                }
+                            }
+                            Err(e) => {
+                                println!("ERROR updating fingerprints for ID {}: {}", id, e);
+                                error_count += 1;
+                            }
+                        }
+                    }
+                    app.substatus(
+                        "Writing to Database",
+                        90,
+                        "Committing changes to database...",
+                    );
+
+                    match tx.commit().await {
+                        Ok(_) => {
+                            println!(
+                                "Transaction committed successfully: {} fingerprints updated, {} errors",
+                                success_count, error_count
+                            );
+                        }
+                        Err(e) => println!("ERROR: Transaction failed to commit: {}", e),
+                    }
+                    app.substatus(
+                        "Writing to Database",
+                        100,
+                        &format!(
+                            "Database update complete: {} fingerprints stored",
+                            success_count
+                        ),
+                    );
+                }
+                Err(e) => {
+                    println!("ERROR: Failed to start transaction: {}", e);
+                    app.substatus(
+                        "Writing to Database",
+                        100,
+                        &format!("ERROR: Failed to start transaction: {}", e),
+                    );
+                }
+            },
+        }
+    }
+
+    pub async fn replace_metadata(
+        &self,
+        app: &AppHandle,
+        find: &str,
+        replace: &str,
+        column: &str,
+        case_sensitive: bool,
+        mark_dirty: bool,
+        table: &str,
+    ) -> Result<(), String> {
+        let dirty_text = if mark_dirty
+            && (column == "Filename" || column == "FilePath" || column == "Pathname")
+        {
+            ", _Dirty = 1"
+        } else {
+            ""
+        };
+        let case_text = if case_sensitive { "GLOB" } else { "LIKE" };
+
+        let bind_value = if case_sensitive {
+            format!("*{}*", find) // GLOB wildcard (*)
+        } else {
+            format!("%{}%", find) // LIKE wildcard (%)
+        };
+
+        match self {
+            Pool::Sqlite(pool) => {
+                if column == "Filename" || column == "FilePath" || column == "Pathname" {
+                    // First update the file paths
+                    let query = format!(
+                        "UPDATE {table} SET 
+                            FilePath = REPLACE(FilePath, '{}', '{}'),
+                            Filename = REPLACE(Filename, '{}', '{}'),
+                            Pathname = REPLACE(Pathname, '{}', '{}'){} 
+                        WHERE Filename {} ? OR FilePath {} ? OR Pathname {} ?",
+                        find,
+                        replace,
+                        find,
+                        replace,
+                        find,
+                        replace,
+                        dirty_text,
+                        case_text,
+                        case_text,
+                        case_text
+                    );
+
+                    app.substatus("Metadata Replacement", 10, "Updating file paths...");
+
+                    let result = sqlx::query(&query)
+                        .bind(&bind_value)
+                        .bind(&bind_value)
+                        .bind(&bind_value)
+                        .execute(pool)
+                        .await;
+
+                    println!("Main table result: {:?}", result);
+
+                    // Then update the pathname table
+                    app.substatus("Metadata Replacement", 30, "Updating pathname table...");
+                    let pathname_query = format!(
+                        "UPDATE justinrdb_Pathname SET Pathname = REPLACE(Pathname, '{}', '{}') WHERE Pathname {} ?",
+                        find, replace, case_text
+                    );
+
+                    let pathname_result = sqlx::query(&pathname_query)
+                        .bind(&bind_value)
+                        .execute(pool)
+                        .await;
+
+                    println!("Pathname table result: {:?}", pathname_result);
+
+                    // Finally, update the file path hashes
+                    app.substatus("Metadata Replacement", 50, "Updating file path hashes...");
+                    self.update_filepath_hash(app, find, replace, &case_text, table)
+                        .await?;
+                } else {
+                    // For non-file path columns, use the original simple update
+                    let query = format!(
+                        "UPDATE {table} SET {} = REPLACE({}, '{}', '{}'){} WHERE {} {} ?",
+                        column, column, find, replace, dirty_text, column, case_text,
+                    );
+
+                    app.substatus("Metadata Replacement", 10, "Querying Database...");
+
+                    let result = sqlx::query(&query).bind(&bind_value).execute(pool).await;
+
+                    println!("{:?}", result);
+                }
+            }
+            Pool::MySql(pool) => {
+                if column == "Filename" || column == "FilePath" || column == "Pathname" {
+                    // First update the file paths
+                    let query = format!(
+                        "UPDATE {table} SET 
+                            FilePath = REPLACE(FilePath, '{}', '{}'),
+                            Filename = REPLACE(Filename, '{}', '{}'),
+                            Pathname = REPLACE(Pathname, '{}', '{}'){} 
+                        WHERE Filename {} ? OR FilePath {} ? OR Pathname {} ?",
+                        find,
+                        replace,
+                        find,
+                        replace,
+                        find,
+                        replace,
+                        dirty_text,
+                        case_text,
+                        case_text,
+                        case_text
+                    );
+
+                    app.substatus("Metadata Replacement", 10, "Updating file paths...");
+
+                    let result = sqlx::query(&query)
+                        .bind(&bind_value)
+                        .bind(&bind_value)
+                        .bind(&bind_value)
+                        .execute(pool)
+                        .await;
+
+                    println!("Main table result: {:?}", result);
+
+                    // Then update the pathname table (adjust for MySQL table naming if needed)
+                    app.substatus("Metadata Replacement", 30, "Updating pathname table...");
+                    let pathname_query = format!(
+                        "UPDATE pathname SET Pathname = REPLACE(Pathname, '{}', '{}') WHERE Pathname {} ?",
+                        find, replace, case_text
+                    );
+
+                    let pathname_result = sqlx::query(&pathname_query)
+                        .bind(&bind_value)
+                        .execute(pool)
+                        .await;
+
+                    println!("Pathname table result: {:?}", pathname_result);
+
+                    // Note: File path hash update function would need to be adapted for MySQL
+                    app.substatus(
+                        "Metadata Replacement",
+                        50,
+                        "MySQL file path hash update not implemented",
+                    );
+                } else {
+                    // For non-file path columns, use the original simple update
+                    let query = format!(
+                        "UPDATE {table} SET {} = REPLACE({}, '{}', '{}'){} WHERE {} {} ?",
+                        column, column, find, replace, dirty_text, column, case_text,
+                    );
+
+                    app.substatus("Metadata Replacement", 10, "Querying Database...");
+
+                    let result = sqlx::query(&query).bind(&bind_value).execute(pool).await;
+
+                    println!("{:?}", result);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    pub async fn update_filepath_hash(
+        &self,
+        app: &AppHandle,
+        find: &str,
+        replace: &str,
+        case_text: &str,
+        table: &str,
+    ) -> Result<(), String> {
+        use sha1::{Digest, Sha1};
+
+        match self {
+            Pool::Sqlite(pool) => {
+                println!(
+                    "Hash update function called with find='{}', replace='{}'",
+                    find, replace
+                );
+
+                // Search for records that NOW contain the replacement string (after the update)
+                let bind_value = if case_text == "GLOB" {
+                    format!("*{}*", replace) // GLOB wildcard (*)
+                } else {
+                    format!("%{}%", replace) // LIKE wildcard (%)
+                };
+
+                let select_query = format!(
+                    "SELECT recid, FilePath FROM {table} WHERE Filename {} ? OR FilePath {} ? OR Pathname {} ?",
+                    case_text, case_text, case_text
+                );
+
+                app.substatus("Metadata Replacement", 50, "Fetching updated records...");
+
+                let affected_rows = sqlx::query(&select_query)
+                    .bind(&bind_value) // Use replacement string, not original find string
+                    .bind(&bind_value)
+                    .bind(&bind_value)
+                    .fetch_all(pool)
+                    .await
+                    .map_err(|e| format!("Failed to fetch affected records: {}", e))?;
+
+                println!(
+                    "Found {} records containing replacement string '{}'",
+                    affected_rows.len(),
+                    replace
+                );
+
+                if affected_rows.is_empty() {
+                    app.substatus(
+                        "Metadata Replacement",
+                        90,
+                        "No records to update hashes for",
+                    );
+                    return Ok(());
+                }
+
+                // Rest of the function remains the same...
+                app.substatus(
+                    "Metadata Replacement",
+                    60,
+                    &format!(
+                        "Calculating new hashes for {} records...",
+                        affected_rows.len()
+                    ),
+                );
+
+                let hashes: Vec<(i64, String)> = affected_rows
+                    .par_iter()
+                    .map(|row| {
+                        let recid: i64 = row.get(0);
+                        let file_path: String = row.get(1);
+
+                        // Generate SHA-1 hash of the NEW file path
+                        let mut hasher = Sha1::new();
+                        hasher.update(file_path.as_bytes());
+                        let hash = format!("{:x}", hasher.finalize());
+
+                        (recid, hash)
+                    })
+                    .collect();
+
+                // Update hashes in batches for better performance
+                app.substatus("Metadata Replacement", 70, "Updating file path hashes...");
+
+                let batch_size = 10_000;
+                let total_batches = hashes.len().div_ceil(batch_size);
+
+                for (batch_num, chunk) in hashes.chunks(batch_size).enumerate() {
+                    let progress = 70 + (batch_num * 20 / total_batches);
+                    app.substatus(
+                        "Metadata Replacement",
+                        progress,
+                        &format!(
+                            "Updating batch {}/{} ({} hashes)",
+                            batch_num + 1,
+                            total_batches,
+                            chunk.len()
+                        ),
+                    );
+
+                    let mut update_query =
+                        format!("UPDATE {table} SET _FilePathHash = CASE recid ");
+
+                    for (recid, hash) in chunk {
+                        update_query.push_str(&format!("WHEN {} THEN '{}' ", recid, hash));
+                    }
+
+                    update_query.push_str("END WHERE recid IN (");
+                    update_query.push_str(
+                        &chunk
+                            .iter()
+                            .map(|(recid, _)| recid.to_string())
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                    );
+                    update_query.push(')');
+
+                    sqlx::query(&update_query)
+                        .execute(pool)
+                        .await
+                        .map_err(|e| {
+                            format!(
+                                "Failed to update _FilePathHash batch {}: {}",
+                                batch_num + 1,
+                                e
+                            )
+                        })?;
+                }
+
+                app.substatus(
+                    "Metadata Replacement",
+                    90,
+                    &format!("Successfully updated {} file path hashes", hashes.len()),
+                );
+
+                Ok(())
+            }
+            Pool::MySql(_pool) => {
+                // MySQL implementation would go here
+                app.substatus(
+                    "Metadata Replacement",
+                    90,
+                    "MySQL file path hash update not implemented",
+                );
+                Ok(())
+            }
+        }
+    }
 }
 
 // #[derive(Default, Clone, Serialize, Deserialize, Clone)]
@@ -487,7 +1247,7 @@ pub struct Database {
     pub records: Vec<FileRecord>,
     pub is_compare: bool,
     pub abort: Arc<AtomicBool>,
-    pub pool: Pool,
+    pub pool: Option<Pool>,
 }
 
 // Change visibility of `Database` methods to private where possible
@@ -498,7 +1258,7 @@ impl Database {
         println!("🔄 Is compare: {}", is_compare);
 
         let mut d = Database {
-            pool: Pool::connect(&path).await?,
+            pool: Pool::connect(&path).await.ok(),
             url: path,
             size: 0,
             records: Vec::new(),
@@ -506,7 +1266,7 @@ impl Database {
             abort: Arc::new(AtomicBool::new(false)),
         };
 
-        d.size = d.pool.fetch_size().await?;
+        d.size = d.fetch_size().await?;
 
         println!("💾 Initializing records vector with capacity: {}", d.size);
         d.records = Vec::with_capacity(d.size);
@@ -537,13 +1297,18 @@ impl Database {
     //     None
     // }
 
+    pub async fn fetch_size(&self) -> Result<usize, sqlx::Error> {
+        if let Some(pool) = &self.pool {
+            pool.fetch_size().await
+        } else {
+            Err(sqlx::Error::PoolClosed)
+        }
+    }
+
     pub async fn init(&mut self, path: String, is_compare: bool) {
-        self.pool = Pool::connect(&path).await.unwrap_or_else(|_| {
-            println!("❌ Failed to connect to database at {}", path);
-            Pool::default() // Return a default pool if connection fails
-        });
+        self.pool = Pool::connect(&path).await.ok();
         self.url = path;
-        self.size = self.pool.fetch_size().await.unwrap_or(0);
+        self.size = self.fetch_size().await.unwrap_or(0);
         self.records = Vec::with_capacity(self.size); // No need for .into()
         self.is_compare = is_compare;
     }
@@ -616,16 +1381,28 @@ impl Database {
         path
     }
 
-    pub fn get_name(&self) -> String {
+    pub fn get_name(&self) -> Option<String> {
         let binding = self.get_path();
         let path = Path::new(&binding);
         path.file_stem()
             .and_then(|s| s.to_str())
             .map(|s| s.to_string())
-            .unwrap_or_else(|| "unknown".to_string())
     }
     pub fn get_size(&self) -> usize {
         self.size
+    }
+
+    pub fn get_table(&self) -> Result<&str, sqlx::Error> {
+        if let Some(pool) = &self.pool {
+            return Ok(pool.get_table_name());
+        }
+        Err(sqlx::Error::PoolClosed)
+    }
+    pub fn get_table_mut(&mut self) -> Result<&str, sqlx::Error> {
+        if let Some(pool) = &self.pool {
+            return Ok(pool.get_table_name());
+        }
+        Err(sqlx::Error::PoolClosed)
     }
 
     pub fn get_records_size(&self) -> usize {
@@ -648,18 +1425,24 @@ impl Database {
     // }
 
     pub async fn add_column(&self, add: &str) -> Result<(), sqlx::Error> {
-        self.pool.add_column(add).await?;
+        let Some(pool) = &self.pool else {
+            return Err(sqlx::Error::PoolClosed);
+        };
+        pool.add_column(add).await?;
         println!("Added column: {}", add);
         Ok(())
     }
 
     pub async fn remove_column(&self, remove: &str) -> Result<(), sqlx::Error> {
+        let Some(pool) = &self.pool else {
+            return Err(sqlx::Error::PoolClosed);
+        };
         let query = format!(
             "ALTER&self.get_table() {} DROP COLUMN {};",
-            &self.pool.get_table_name(),
+            pool.get_table_name(),
             remove
         );
-        self.pool.execute(&query).await?;
+        pool.execute(&query).await?;
         println!("Removed column: {}", remove);
 
         Ok(())
@@ -686,12 +1469,16 @@ impl Database {
                 .join(",");
             let query = format!(
                 "DELETE FROM {} WHERE recid IN ({})",
-                &self.pool.get_table_name(),
+                &self.get_table()?,
                 placeholders
             );
 
-            match self.pool {
-                Pool::Sqlite(ref pool) => {
+            let Some(pool) = &self.pool else {
+                return Err(sqlx::Error::PoolClosed);
+            };
+
+            match pool {
+                Pool::Sqlite(pool) => {
                     println!("Executing query on SQLite pool");
                     // Create a query builder for SQLite
                     let mut query_builder = sqlx::query(&query);
@@ -701,7 +1488,7 @@ impl Database {
                     }
                     query_builder.execute(pool).await?;
                 }
-                Pool::MySql(ref pool) => {
+                Pool::MySql(pool) => {
                     println!("Executing query on MySQL pool");
                     // Create a query builder for MySQL
                     let mut query_builder = sqlx::query(&query);
@@ -723,6 +1510,9 @@ impl Database {
         records: &Vec<DualMono>,
     ) -> Result<(), sqlx::Error> {
         use std::sync::Mutex;
+        let Some(pool) = &self.pool else {
+            return Err(sqlx::Error::PoolClosed);
+        };
 
         println!("Cleaning up multi-mono files");
         println!("{} Records Found", records.len());
@@ -810,8 +1600,7 @@ impl Database {
 
         // Only update database if we have SUCCESSFUL records to update
         if !successful_ids.is_empty() {
-            match self
-                .pool
+            match pool
                 .update_channel_count_to_mono(app, &successful_ids)
                 .await
             {
@@ -843,15 +1632,28 @@ impl Database {
     }
 
     pub async fn fetch_all_filerecords(
-        &self,
+        &mut self,
         enabled: &Enabled,
         pref: &Preferences,
         app: &AppHandle,
-    ) -> Result<Vec<FileRecord>, sqlx::Error> {
-        let query = format!("SELECT * FROM {}", self.pool.get_table_name());
-        self.pool
+    ) -> Result<(), sqlx::Error> {
+        println!("Gathering all records from database");
+        let Some(pool) = &self.pool else {
+            return Err(sqlx::Error::PoolClosed);
+        };
+        let query = format!(
+            "SELECT recid, filepath, duration, _fingerprint, description, channels, bitdepth, samplerate, _DualMono, {} FROM {}",
+            pref.get_data_requirements(),
+            pool.get_table_name()
+        );
+        println!("Executing query: {}", query);
+        self.records = pool
             .fetch_filerecords(&query, enabled, pref, self.is_compare, app)
-            .await
+            .await?;
+
+        println!("{} Records Found", self.records.len());
+
+        Ok(())
     }
 
     pub async fn batch_update_column(
@@ -862,127 +1664,10 @@ impl Database {
         column: &str,
         value: &str,
     ) -> Result<(), sqlx::Error> {
-        self.pool
-            .batch_update_column(app, pref, record_ids, column, value)
+        let Some(pool) = &self.pool else {
+            return Err(sqlx::Error::PoolClosed);
+        };
+        pool.batch_update_column(app, pref, record_ids, column, value)
             .await
-    }
-}
-
-pub async fn batch_store_data_optimized(
-    pool: &SqlitePool,
-    data: &[(usize, &str)],
-    column: &str,
-    app: &AppHandle,
-    table: &str,
-) {
-    let name: &str = column.strip_prefix('_').unwrap_or(column);
-
-    if data.is_empty() {
-        println!("No {} to store", name);
-        return;
-    }
-
-    println!("Storing {} {} in database", data.len(), name);
-
-    app.substatus(
-        "Storing Batch to Database",
-        0,
-        format!("Storing {} {} in database...", name, data.len()).as_str(),
-    );
-
-    match pool.begin().await {
-        Ok(mut tx) => {
-            let _ = sqlx::query("PRAGMA journal_mode = WAL")
-                .execute(&mut *tx)
-                .await;
-            let _ = sqlx::query("PRAGMA synchronous = NORMAL")
-                .execute(&mut *tx)
-                .await;
-
-            let total = data.len();
-            let mut success_count = 0;
-            let mut error_count = 0;
-
-            for (i, (id, d)) in data.iter().enumerate() {
-                if i % 25 == 0 || i == total - 1 {
-                    app.substatus(
-                        "Storing Batch to Database",
-                        (i + 1) * 100 / total,
-                        format!("Storing {}: {}/{}", name, i + 1, total).as_str(),
-                    );
-                }
-
-                let result = sqlx::query(&format!(
-                    "UPDATE {} SET {} = ? WHERE recid = ?",
-                    table, column,
-                ))
-                .bind(d)
-                .bind(*id as i64)
-                .execute(&mut *tx)
-                .await;
-
-                match result {
-                    Ok(result) => {
-                        if result.rows_affected() == 0 {
-                            println!(
-                                "WARNING: No rows affected when updating {} for ID {}",
-                                name, id
-                            );
-                        } else {
-                            success_count += 1;
-                        }
-                    }
-                    Err(e) => {
-                        println!("ERROR updating {} for ID {}: {}", name, id, e);
-                        error_count += 1;
-                    }
-                }
-            }
-            app.substatus(
-                "Storing Batch to Database",
-                99,
-                &format!(
-                    "Committing all changes to database: {} {}s updated, {} errors",
-                    success_count, name, error_count
-                ),
-            );
-
-            match tx.commit().await {
-                Ok(_) => {
-                    println!(
-                        "Transaction committed successfully: {} {}s updated, {} errors",
-                        success_count, name, error_count
-                    );
-
-                    let checkpoint_result = sqlx::query("PRAGMA wal_checkpoint(FULL)")
-                        .execute(pool)
-                        .await;
-
-                    if let Err(e) = checkpoint_result {
-                        println!("WARNING: Checkpoint failed: {}", e);
-                    } else {
-                        println!("Database checkpoint successful");
-                    }
-                }
-                Err(e) => println!("ERROR: Transaction failed to commit: {}", e),
-            }
-            app.substatus(
-                "Storing Batch to Database",
-                100,
-                format!(
-                    "Database update complete: {} {} stored",
-                    success_count, name
-                )
-                .as_str(),
-            );
-        }
-        Err(e) => {
-            println!("ERROR: Failed to start transaction: {}", e);
-            app.substatus(
-                "Storing Batch to Database",
-                100,
-                &format!("ERROR: Databaes update failed: {}", e),
-            );
-        }
     }
 }

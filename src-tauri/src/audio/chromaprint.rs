@@ -131,14 +131,11 @@ impl Database {
         pref: &Preferences,
         app: &AppHandle,
     ) -> Result<(), String> {
-        let table = match &self.path {
-            Some(DbPath::Local(_)) => LOCAL_TABLE,
-            Some(DbPath::Server(_)) => SERVER_TABLE,
-            None => {
-                println!("❌ No database path set, returning default table name");
-                LOCAL_TABLE
-            }
+        let Some(pool) = &self.pool else {
+            return Err("sqlx::Error::PoolClosed".to_string());
         };
+
+        let table = pool.get_table_name().to_string();
         let mut batch_size: usize = pref.batch_size;
         println!("Batch size: {}", batch_size);
         let total_records = self
@@ -158,12 +155,12 @@ impl Database {
         let started = AtomicUsize::new(0);
         let completed = AtomicUsize::new(0);
 
-        let pool = self.get_pool().await;
+        // let pool = self.get_pool().await;
 
-        let Some(pool) = pool else {
-            println!("No database connection pool available, skipping fingerprint storage.");
-            return Err("Database connection pool not available".to_string());
-        };
+        // let Some(pool) = pool else {
+        //     println!("No database connection pool available, skipping fingerprint storage.");
+        //     return Err("Database connection pool not available".to_string());
+        // };
 
         let mut record_ids_to_store: Vec<(usize, String)> = Vec::with_capacity(batch_size);
 
@@ -218,14 +215,16 @@ impl Database {
 
             if pref.store_waveforms && record_ids_to_store.len() >= pref.batch_size {
                 // Store fingerprints in batches to avoid memory issues
-                store_fingerprints_batch_optimized(&pool, &record_ids_to_store, app, table).await;
+                pool.store_fingerprints_batch_optimized(&record_ids_to_store, app, &table)
+                    .await;
                 record_ids_to_store.clear(); // Clear after storing
             }
         }
 
         if pref.store_waveforms {
             // Store fingerprints in batches to avoid memory issues
-            store_fingerprints_batch_optimized(&pool, &record_ids_to_store, app, table).await;
+            pool.store_fingerprints_batch_optimized(&record_ids_to_store, app, &table)
+                .await;
             record_ids_to_store.clear(); // Clear after storing
         }
 
@@ -1471,116 +1470,4 @@ fn approximate_lcs(seq1: &[u16], seq2: &[u16]) -> usize {
 
     // Normalize to account for random matches
     (matches as f64 * 0.8) as usize
-}
-// Helper function to decode a Chromaprint fingerprint from base64 to u32 vector
-
-async fn store_fingerprints_batch_optimized(
-    pool: &SqlitePool,
-    fingerprints: &[(usize, String)],
-    app: &AppHandle,
-    table: &str,
-) {
-    if fingerprints.is_empty() {
-        println!("No fingerprints to store");
-        return;
-    }
-
-    println!("Storing {} fingerprints in database", fingerprints.len());
-    app.substatus(
-        "Writing to Database",
-        0,
-        &format!("Storing {} fingerprints in database...", fingerprints.len()),
-    );
-
-    match pool.begin().await {
-        Ok(mut tx) => {
-            let _ = sqlx::query("PRAGMA journal_mode = WAL")
-                .execute(&mut *tx)
-                .await;
-            let _ = sqlx::query("PRAGMA synchronous = NORMAL")
-                .execute(&mut *tx)
-                .await;
-
-            let total = fingerprints.len();
-            let mut success_count = 0;
-            let mut error_count = 0;
-
-            for (i, (id, fingerprint)) in fingerprints.iter().enumerate() {
-                if i % 25 == 0 || i == total - 1 {
-                    app.substatus(
-                        "Writing to Database",
-                        (i + 1) * 100 / total,
-                        &format!("Storing fingerprints: {}/{}", i + 1, total),
-                    );
-                }
-
-                let result = sqlx::query(&format!(
-                    "UPDATE {} SET _fingerprint = ? WHERE recid = ?",
-                    table
-                ))
-                .bind(fingerprint)
-                .bind(*id as i64)
-                .execute(&mut *tx)
-                .await;
-
-                match result {
-                    Ok(result) => {
-                        if result.rows_affected() == 0 {
-                            println!(
-                                "WARNING: No rows affected when updating fingerprints for ID {}",
-                                id
-                            );
-                        } else {
-                            success_count += 1;
-                        }
-                    }
-                    Err(e) => {
-                        println!("ERROR updating fingerprints for ID {}: {}", id, e);
-                        error_count += 1;
-                    }
-                }
-            }
-            app.substatus(
-                "Writing to Database",
-                90,
-                "Committing changes to database...",
-            );
-
-            match tx.commit().await {
-                Ok(_) => {
-                    println!(
-                        "Transaction committed successfully: {} fingerprints updated, {} errors",
-                        success_count, error_count
-                    );
-
-                    let checkpoint_result = sqlx::query("PRAGMA wal_checkpoint(FULL)")
-                        .execute(pool)
-                        .await;
-
-                    if let Err(e) = checkpoint_result {
-                        println!("WARNING: Checkpoint failed: {}", e);
-                    } else {
-                        println!("Database checkpoint successful");
-                    }
-                }
-                Err(e) => println!("ERROR: Transaction failed to commit: {}", e),
-            }
-            app.substatus(
-                "Writing to Database",
-                100,
-                &format!(
-                    "Database update complete: {} fingerprints stored",
-                    success_count
-                ),
-            );
-        }
-        Err(e) => {
-            println!("ERROR: Failed to start transaction: {}", e);
-            app.substatus(
-                "Writing to Database",
-                100,
-                &format!("ERROR: Failed to start transaction: {}", e),
-            );
-        }
-    }
 }

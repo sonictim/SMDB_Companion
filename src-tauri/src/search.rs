@@ -5,8 +5,7 @@ pub use crate::prelude::*;
 impl Database {
     pub async fn compare_search(&mut self, enabled: &Enabled, pref: &Preferences, app: &AppHandle) {
         let mut cdb = Database::default();
-        cdb.init(Some(PathBuf::from(&*enabled.compare_db)), true)
-            .await;
+        cdb.init(enabled.compare_db.clone(), true).await;
         app.substatus("Compare Databases", 0, "Loading Compare Database");
 
         let _ = cdb.fetch_all_filerecords(enabled, pref, app).await;
@@ -94,7 +93,8 @@ impl Database {
                 if &**m == "Filename" && (enabled.filename || enabled.audiosuite) {
                     key.push(record.root.clone());
                 } else {
-                    key.push(record.data[m].clone());
+                    let value = record.data.get(m).cloned().unwrap_or_else(|| Arc::from(""));
+                    key.push(value);
                 }
             }
             file_groups.entry(key).or_default().push(record.clone());
@@ -236,23 +236,18 @@ impl Database {
     }
 
     pub async fn dual_mono_search(&mut self, pref: &Preferences, app: &AppHandle) {
-        let table = match &self.path {
-            Some(DbPath::Local(_)) => LOCAL_TABLE,
-            Some(DbPath::Server(_)) => SERVER_TABLE,
-            None => {
-                println!("❌ No database path set, returning default table name");
-                LOCAL_TABLE
-            }
+        let Some(pool) = &self.pool else {
+            eprintln!("No database pool available for dual mono search");
+            return;
         };
-
         println!(
             "Dual Mono Search started for db: {}",
             self.get_name().unwrap_or_default()
         );
-        let Some(pool) = self.get_pool().await else {
-            println!("No database pool available for dual mono search");
-            return;
-        };
+        // let Some(pool) = self.get_pool().await else {
+        //     println!("No database pool available for dual mono search");
+        //     return;
+        // };
         println!("Starting Dual Mono Search");
         let total = self.records.len();
         let completed = AtomicUsize::new(0);
@@ -312,7 +307,8 @@ impl Database {
                     .map(|(id, is_identical)| (*id, if *is_identical { "1" } else { "0" }))
                     .collect();
 
-                crate::batch_store_data_optimized(&pool, &to_db, "_DualMono", app, table).await;
+                pool.batch_store_data_optimized(&to_db, "_DualMono", app)
+                    .await;
                 records_batch.clear();
             }
             chunks_completed += pref.batch_size;
@@ -330,7 +326,8 @@ impl Database {
                 .map(|(id, is_identical)| (*id, if *is_identical { "1" } else { "0" }))
                 .collect();
 
-            crate::batch_store_data_optimized(&pool, &to_db, "_DualMono", app, table).await;
+            pool.batch_store_data_optimized(&to_db, "_DualMono", app)
+                .await;
             records_batch.clear();
         }
     }

@@ -106,7 +106,7 @@ export async function setDatabase(path: string | null, is_compare: boolean) {
 export async function openDatabase(is_compare: boolean){
     let path = await openSqliteFile();
     if (path) {
-        setDatabase(path, is_compare);
+        setDatabase("sqlite://" + path, is_compare);
     }
 }
 
@@ -126,7 +126,7 @@ const server = {
   port: 3306,
   username: "soundminer",
   password: "opensesame",
-  database: "sonictimDB",
+  database: "sonictim_lib",
 
 }
 
