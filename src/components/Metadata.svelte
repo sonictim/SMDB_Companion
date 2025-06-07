@@ -30,7 +30,7 @@
     <h2>Metadata Replacement</h2>
     <MetadataButton />
   </div>
-  {#if $showStatus}
+  <!-- {#if $showStatus}
     <div class="block inner">
       <span>
         <Loader
@@ -56,7 +56,7 @@
         ></div>
       </div>
     </div>
-  {:else}
-    <MetadataFields />
-  {/if}
+  {:else} -->
+  <MetadataFields />
+  <!-- {/if} -->
 </div>
