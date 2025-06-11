@@ -405,6 +405,14 @@ async function setupMenu() {
             },
           }),
           await CheckMenuItem.new({
+            id: "archive-audio-files",
+            text: "Move to Archive Folder",
+            checked: get(preferencesStore).erase_files === "Archive",
+            action: async () => {await 
+              updateEraseFiles("Archive");
+            },
+          }),
+          await CheckMenuItem.new({
             id: "trash-audio-files",
             text: "Move to Trash",
             checked: get(preferencesStore).erase_files === "Trash",
