@@ -81,6 +81,7 @@ export type Preferences = {
   safety_db: boolean;
   safety_db_tag: string;
   erase_files: string;
+  archive_folder: string;
   strip_dual_mono: boolean;
   waveform_search_type: string;
   similarity_threshold: number;

@@ -326,6 +326,7 @@ pub async fn remove_records(
             Delete::Trash => "Moving files to Trash",
             Delete::Delete => "Deleting Files",
             Delete::Keep => "Cleaning up....",
+            Delete::Archive(_) => "Archiving Files...",
         },
     );
 
@@ -950,4 +951,12 @@ fn reveal_single_file(path: &Path) -> Result<(), String> {
 
         Err("No supported file manager found for this platform".to_string())
     }
+}
+
+#[tauri::command]
+pub fn check_folder_exists(path: String) -> Result<bool, String> {
+    let folder_path = std::path::Path::new(&path);
+
+    // Check if path exists and is a directory
+    Ok(folder_path.exists() && folder_path.is_dir())
 }

@@ -25,6 +25,9 @@
   } from "../../stores/results";
   import { getHotkey } from "../../stores/hotkeys";
   import { createVirtualizer } from "@tanstack/svelte-virtual";
+  import { isMacOS } from "../../stores/utils";
+
+  let isMac = true;
 
   $: filteredItems = $filteredItemsStore;
   $: filteredGroups = $filteredGroupsStore;
@@ -40,6 +43,12 @@
   // Sort state
   $: sortColumn = $sortColumnStore;
   $: sortDirection = $sortDirectionStore;
+
+  $: algorithmClasses = filteredItems
+    ? filteredItems.map((item) =>
+        item.algorithm.includes("Keep") ? "unselected-item" : "checked-item"
+      )
+    : [];
 
   // Cache group position information for performance
   let groupPositionCache = new Map<
@@ -115,10 +124,10 @@
   }
 
   // Cache algorithm check results for performance
-  function getAlgorithmClass(index: number): string {
-    const item = filteredItems[index];
-    return item.algorithm.includes("Keep") ? "unselected-item" : "checked-item";
-  }
+  // function getAlgorithmClass(index: number): string {
+  //   const item = filteredItems[index];
+  //   return item.algorithm.includes("Keep") ? "unselected-item" : "checked-item";
+  // }
 
   // Reactive background style calculation that updates when selections change
   $: getBackgroundStyle = (index: number): string => {
@@ -566,6 +575,7 @@
   }
 
   onMount(async () => {
+    isMac = await isMacOS();
     loading = false;
     fetchData();
 
@@ -622,7 +632,9 @@
 
   async function playAudioFile(record: FileRecord) {
     console.log("last played: ", lastPlayed);
-    let filePath = record.path + "/" + record.filename;
+    let filePath = isMac
+      ? record.path + "/" + record.filename
+      : record.path + "\\" + record.filename;
     if (lastPlayed === filePath) {
       console.log("Stopping audio playback for:", filePath);
       await stopAudioFile();
@@ -1008,9 +1020,8 @@
           style="transform: translateY({virtualRow.start}px); height: {virtualRow.size}px; "
         >
           <div
-            class="list-item {getAlgorithmClass(
-              virtualRow.index
-            )} {getGroupClass(virtualRow.index)}"
+            class="list-item {algorithmClasses[virtualRow.index] ||
+              ''} {getGroupClass(virtualRow.index)}"
           >
             <div
               class="grid-container"

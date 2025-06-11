@@ -70,6 +70,7 @@ pub fn run() {
             refresh_all_windows,
             open_database_folder,
             reveal_files,
+            check_folder_exists,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -1185,12 +1186,13 @@ fn checktags(name: &str, tags: &Vec<Arc<str>>) -> bool {
     false
 }
 
-#[derive(PartialEq, serde::Serialize, Deserialize, Clone, Copy, Default)]
+#[derive(PartialEq, serde::Serialize, Deserialize, Clone, Default)]
 pub enum Delete {
     #[default]
     Keep,
     Trash,
     Delete,
+    Archive(String),
 }
 
 impl Delete {
@@ -1277,6 +1279,114 @@ impl Delete {
                         );
                     } else {
                         println!("Successfully deleted file: {}", normalized_path);
+                    }
+                }
+            }
+            Delete::Archive(archive_folder) => {
+                println!("Archiving files to: {}", archive_folder);
+                app.substatus(
+                    "Removing Files",
+                    10,
+                    &format!(
+                        "Archiving {} files to: {}",
+                        valid_files.len(),
+                        archive_folder
+                    ),
+                );
+
+                for (i, file) in valid_files.iter().enumerate() {
+                    app.substatus(
+                        "Removing Files",
+                        10 + (i * 90 / valid_files.len()),
+                        &format!("Archiving file {}/{}", i + 1, valid_files.len()),
+                    );
+
+                    let source_path = std::path::Path::new(file);
+
+                    // Process the path based on OS
+                    let processed_path = if cfg!(target_os = "windows") {
+                        // Remove drive letter on Windows (e.g., "C:\folder\file.wav" -> "\folder\file.wav")
+                        if let Some(path_str) = source_path.to_str() {
+                            if path_str.len() >= 3 && path_str.chars().nth(1) == Some(':') {
+                                // Remove drive letter and colon (e.g., "C:" -> "")
+                                &path_str[2..]
+                            } else {
+                                path_str
+                            }
+                        } else {
+                            file
+                        }
+                    } else if cfg!(target_os = "macos") {
+                        // Remove /Volumes prefix on macOS for removable drives
+                        if let Some(path_str) = source_path.to_str() {
+                            if path_str.starts_with("/Volumes/") {
+                                // Remove "/Volumes" prefix (e.g., "/Volumes/Drive/folder/file.wav" -> "/Drive/folder/file.wav")
+                                &path_str[8..] // Remove "/Volumes" (8 characters)
+                            } else {
+                                path_str
+                            }
+                        } else {
+                            file
+                        }
+                    } else {
+                        // For other platforms, use the original path
+                        file
+                    };
+
+                    // Create the destination path
+                    let dest_path = std::path::Path::new(archive_folder)
+                        .join(processed_path.trim_start_matches(['/', '\\']));
+
+                    // Ensure the destination directory exists
+                    if let Some(dest_dir) = dest_path.parent() {
+                        if let Err(e) = std::fs::create_dir_all(dest_dir) {
+                            eprintln!(
+                                "Failed to create archive directory {}: {}",
+                                dest_dir.display(),
+                                e
+                            );
+                            app.substatus(
+                                "Removing Files",
+                                10 + (i * 90 / valid_files.len()),
+                                &format!(
+                                    "Error: Failed to create directory: {}",
+                                    dest_dir.display()
+                                ),
+                            );
+                            continue;
+                        }
+                    }
+
+                    // Move the file
+                    match std::fs::rename(file, &dest_path) {
+                        Ok(_) => {
+                            println!("Successfully archived: {} -> {}", file, dest_path.display());
+                            app.substatus(
+                                "Removing Files",
+                                10 + (i * 90 / valid_files.len()),
+                                &format!(
+                                    "Archived: {}",
+                                    source_path
+                                        .file_name()
+                                        .unwrap_or_default()
+                                        .to_string_lossy()
+                                ),
+                            );
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to archive file {}: {}", file, e);
+                            app.substatus(
+                                "Removing Files",
+                                10 + (i * 90 / valid_files.len()),
+                                &format!(
+                                    "Error archiving: {}",
+                                    source_path
+                                        .file_name()
+                                        .unwrap_or_default()
+                                        .to_string_lossy()
+                                ),
+                            );
+                        }
                     }
                 }
             }

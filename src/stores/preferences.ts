@@ -24,6 +24,7 @@ export const defaultPreferences: Preferences = {
     safety_db: true,
     safety_db_tag: "thinned",
     erase_files: "Keep",
+    archive_folder: "Archive Folder",
     strip_dual_mono: false,
     autoselects: [],
     waveform_search_type: "Exact",

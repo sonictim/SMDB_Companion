@@ -15,6 +15,7 @@ import { ask } from "@tauri-apps/plugin-dialog";
 import { databaseStore, setDatabase, } from "../stores/database";
 import { showSearchView } from "../stores/menu";
 import { showStatus } from "../stores/status";
+import { isMacOS } from './utils';
 
   
 
@@ -37,7 +38,8 @@ import { showStatus } from "../stores/status";
     if (!pref.safety_db) dbDialog = "❌ Current Database";
 
     let filesDialog = "Keep in Place";
-    if (pref.erase_files === "Trash") filesDialog = "⚠️ Move to Trash";
+    if (pref.erase_files === "Archive") filesDialog = "⚠️ Move to Archive";
+    else if (pref.erase_files === "Trash") filesDialog = "⚠️ Move to Trash";
     else if (pref.erase_files === "Delete") filesDialog = "⛔ Delete Files";
 
     let dualMonoDialog = "Leave Unchanged";
@@ -66,22 +68,52 @@ import { showStatus } from "../stores/status";
 
 
  export async function removeRecords() {
+  const isMac = await isMacOS();
+   
     // let db = get(databaseStore);
     // if (!db) return;
     let filteredItems = get(filteredItemsStore);
+    let selectedItems = get(selectedItemsStore);
     let pref = get(preferencesStore);
+
+    if (pref.erase_files === "Archive") {
+      if (!pref.archive_folder || pref.archive_folder.trim() === "") {
+          return await message("Please set a valid Archive Folder before continuing.");
+      }
+      
+      try {
+          // Use Tauri's filesystem API to check if the folder exists and is a directory
+          const folderExists = await invoke<boolean>("check_folder_exists", { 
+              path: pref.archive_folder 
+          });
+          
+          if (!folderExists) {
+              return await message(`Archive folder does not exist: ${pref.archive_folder}\n\nPlease select a valid folder.`);
+          }
+      } catch (error) {
+          console.error("Error checking archive folder:", error);
+          return await message(`Cannot access archive folder: ${pref.archive_folder}\n\nPlease check the path and permissions.`);
+      }
+  }
+
+
     idsToRemove = filteredItems
       .filter((item) => !item.algorithm.includes("Keep"))
       .map((item) => item.id);
     filesToRemove = filteredItems
       .filter((item) => !item.algorithm.includes("Keep"))
-      .map((item) => item.path + "/" + item.filename);
+      .map((item) => 
+        isMac ? item.path + "/" + item.filename
+      : item.path + "\\" + item.filename
+    
+    );
 
     dualMono = filteredItems
       .filter((item) => item.algorithm.includes("DualMono"))
       .map((item) => ({
         id: item.id,
-        path: item.path + "/" + item.filename,
+        path: isMac ? item.path + "/" + item.filename
+        : item.path + "\\" + item.filename,
       }));
 
     if (idsToRemove.length > 0 || dualMono.length > 0) {
@@ -89,11 +121,18 @@ import { showStatus } from "../stores/status";
       if (confirmed) {
         showStatus.set(true)
         try {
+
+          let deleteParam;
+        if (pref.erase_files === "Archive") {
+          deleteParam = { Archive: pref.archive_folder };
+        } else {
+          deleteParam = pref.erase_files;
+        }
           const updatedDb = await invoke<string>("remove_records", {
             records: idsToRemove,
             clone: pref.safety_db,
             cloneTag: pref.safety_db_tag,
-            delete: pref.erase_files,
+            delete: deleteParam,
             files: filesToRemove,
             dualMono: dualMono,
             stripDualMono: pref.strip_dual_mono,
@@ -134,9 +173,31 @@ import { showStatus } from "../stores/status";
   }
 
  export async function removeSelectedRecords() {
+  const isMac = await isMacOS();
+    
     let filteredItems = get(filteredItemsStore);
     let selectedItems = get(selectedItemsStore);
     let pref = get(preferencesStore);
+
+    if (pref.erase_files === "Archive") {
+      if (!pref.archive_folder || pref.archive_folder.trim() === "") {
+          return await message("Please set a valid Archive Folder before continuing.");
+      }
+      
+      try {
+          // Use Tauri's filesystem API to check if the folder exists and is a directory
+          const folderExists = await invoke<boolean>("check_folder_exists", { 
+              path: pref.archive_folder 
+          });
+          
+          if (!folderExists) {
+              return await message(`Archive folder does not exist: ${pref.archive_folder}\n\nPlease select a valid folder.`);
+          }
+      } catch (error) {
+          console.error("Error checking archive folder:", error);
+          return await message(`Cannot access archive folder: ${pref.archive_folder}\n\nPlease check the path and permissions.`);
+      }
+  }
     
     idsToRemove = filteredItems
       .filter(
@@ -148,7 +209,8 @@ import { showStatus } from "../stores/status";
       .filter(
         (item) => !item.algorithm.includes("Keep") && selectedItems.has(item.id)
       )
-      .map((item) => item.path + "/" + item.filename);
+      .map((item) => isMac ? item.path + "/" + item.filename
+      : item.path + "\\" + item.filename);
 
     dualMono = filteredItems
       .filter(
@@ -157,7 +219,8 @@ import { showStatus } from "../stores/status";
       )
       .map((item) => ({
         id: item.id,
-        path: item.path + "/" + item.filename,
+        path: isMac ? item.path + "/" + item.filename
+        : item.path + "\\" + item.filename,
       }));
 
     if (idsToRemove.length > 0 || dualMono.length > 0) {
@@ -165,11 +228,17 @@ import { showStatus } from "../stores/status";
       if (confirmed) {
         showStatus.set(true)
         try {
+          let deleteParam;
+        if (pref.erase_files === "Archive") {
+          deleteParam = { Archive: pref.archive_folder };
+        } else {
+          deleteParam = pref.erase_files;
+        }
           const updatedDb = await invoke<string>("remove_records", {
             records: idsToRemove,
             clone: pref.safety_db,
             cloneTag: pref.safety_db_tag,
-            delete: pref.erase_files,
+            delete: deleteParam,
             files: filesToRemove,
             dualMono: dualMono,
             stripDualMono: pref.strip_dual_mono,
