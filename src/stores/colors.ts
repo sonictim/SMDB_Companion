@@ -1,7 +1,7 @@
 console.log('Loading module:', 'colors.ts');
 
 import { emit } from "@tauri-apps/api/event";
-import type { Colors } from './types';
+import type { Colors, ColorScheme } from './types';
 import { preferencesStore, } from './preferences';
 import { get } from 'svelte/store';
 
@@ -149,35 +149,65 @@ export const lcarsColors: Colors = {
     inactiveColor: "#666666",
 };
 
-// Create a collection of all available color themes for easy access
-export const colorThemes = {
-  default: defaultColors,
-  lightMode: lightModeColors,
-  terminal: terminalColors,
-  twilight: twilightColors,
-  dracula: draculaColors,
-  nord: nordColors,
-  oneDark: oneDarkColors,
-  tokyoNight: tokyoNightColors,
-  monokaiPro: monokaiProColors,
-  gruvbox: gruvboxColors,
-  lcars: lcarsColors
+export const eggplantColors: Colors = {
+    primaryBg: "#1a0a53",
+    secondaryBg: "#2c1376",
+    textColor: "#cce8b5",
+    topbarColor: "#96d35f",
+    accentColor: "#96d35f",
+    hoverColor: "#00f900",
+    warningColor: "#be38f3",
+    warningHover: "#e392fe",
+    inactiveColor: "#38571a",
+};
+export const nativeColors: Colors = {
+    primaryBg: "#282c34",
+    secondaryBg: "#21252b",
+    textColor: "#ebebeb",
+    topbarColor: "#006d8f",
+    accentColor: "#ff9300",
+    hoverColor: "#ffaa00",
+    warningColor: "#ad3e00",
+    warningHover: "#be4f46",
+    inactiveColor: "#5c6370",
 };
 
-// List of theme names and labels for UI display
-export const themeOptions = [
-  { value: 'default', label: 'Default' },
-  { value: 'lightMode', label: 'Light Mode' },
-  { value: 'terminal', label: 'Terminal' },
-  { value: 'twilight', label: 'Twilight' },
-  { value: 'dracula', label: 'Dracula' },
-  { value: 'nord', label: 'Nord' },
-  { value: 'oneDark', label: 'One Dark' },
-  { value: 'tokyoNight', label: 'Tokyo Night' },
-  { value: 'monokaiPro', label: 'Monokai Pro' },
-  { value: 'gruvbox', label: 'Gruvbox' },
-  { value: 'lcars', label: 'LCARS' }
+// MASTER COLOR SCHEME DEFINITIONS - SINGLE SOURCE OF TRUTH
+// This contains all default color schemes with their metadata
+const MASTER_COLOR_SCHEMES = [
+  { key: 'default', name: 'Default', colors: defaultColors },
+  { key: 'lightMode', name: 'Light Mode', colors: lightModeColors },
+  { key: 'terminal', name: 'Terminal', colors: terminalColors },
+  { key: 'twilight', name: 'Twilight', colors: twilightColors },
+  { key: 'dracula', name: 'Dracula', colors: draculaColors },
+  { key: 'nord', name: 'Nord', colors: nordColors },
+  { key: 'oneDark', name: 'One Dark', colors: oneDarkColors },
+  { key: 'tokyoNight', name: 'Tokyo Night', colors: tokyoNightColors },
+  { key: 'monokaiPro', name: 'Monokai Pro', colors: monokaiProColors },
+  { key: 'gruvbox', name: 'Gruvbox', colors: gruvboxColors },
+  { key: 'lcars', name: 'LCARS', colors: lcarsColors },
+  { key: 'eggplant', name: 'Eggplant', colors: eggplantColors },
+  { key: 'native', name: 'Native Instruments', colors: nativeColors },
 ];
+
+// DERIVED CONSTANTS - All generated from MASTER_COLOR_SCHEMES
+export const defaultSchemeNames = MASTER_COLOR_SCHEMES.map(scheme => scheme.name);
+
+export const defaultColorSchemes: ColorScheme[] = MASTER_COLOR_SCHEMES.map(scheme => ({
+  name: scheme.name,
+  colors: scheme.colors
+}));
+
+export const themeOptions = MASTER_COLOR_SCHEMES.map(scheme => ({
+  value: scheme.key,
+  label: scheme.name
+}));
+
+export const colorThemes = Object.fromEntries(
+  MASTER_COLOR_SCHEMES.map(scheme => [scheme.key, scheme.colors])
+) as Record<string, Colors>;
+
+
 
 // Enhanced apply colors function
 export async function applyColors(colors: Colors): Promise<void> {
@@ -310,6 +340,36 @@ export async function resetColors(): Promise<void> {
     console.log("Reset colors to defaults");
   } catch (error) {
     console.error("Error resetting colors:", error);
+  }
+}
+
+// Function to create a color scheme from current colors
+export async function createColorSchemeFromCurrent(name: string): Promise<string | null> {
+  try {
+    const currentColors = get(preferencesStore).colors;
+    if (!currentColors) {
+      console.warn("No current colors available");
+      return null;
+    }
+
+    // Import the save function to avoid circular dependency
+    const { saveColorScheme } = await import('./colorSchemes');
+    return await saveColorScheme(name, currentColors);
+  } catch (error) {
+    console.error("Error creating color scheme from current colors:", error);
+    return null;
+  }
+}
+
+// Function to apply a color scheme by name (integrates with colorSchemes store)
+export async function applyColorScheme(schemeName: string): Promise<boolean> {
+  try {
+    // Import the load function to avoid circular dependency
+    const { loadColorScheme } = await import('./colorSchemes');
+    return await loadColorScheme(schemeName);
+  } catch (error) {
+    console.error(`Error applying color scheme "${schemeName}":`, error);
+    return false;
   }
 }
 

@@ -16,14 +16,14 @@ import { emit } from '@tauri-apps/api/event';
 const defaultPresets: Preset[] = [
   { name: "Default", pref: defaultPreferences },
   { name: "TJF", pref: TJFPreferences },
-  { name: "Light Mode", pref: { ...defaultPreferences, colors: lightModeColors } },
-  { name: "Twilight", pref: { ...defaultPreferences, colors: twilightColors } },
-  { name: "Dracula", pref: { ...defaultPreferences, colors: draculaColors } },
-  { name: "Nord", pref: { ...defaultPreferences, colors: nordColors } },
-  { name: "Tokyo Night", pref: { ...defaultPreferences, colors: tokyoNightColors } },
-  { name: "Monokai Pro", pref: { ...defaultPreferences, colors: monokaiProColors } },
-  { name: "Gruvbox", pref: { ...defaultPreferences, colors: gruvboxColors } },
-  { name: "LCARS", pref: { ...defaultPreferences, colors: lcarsColors } },
+  // { name: "Light Mode", pref: { ...defaultPreferences, colors: lightModeColors } },
+  // { name: "Twilight", pref: { ...defaultPreferences, colors: twilightColors } },
+  // { name: "Dracula", pref: { ...defaultPreferences, colors: draculaColors } },
+  // { name: "Nord", pref: { ...defaultPreferences, colors: nordColors } },
+  // { name: "Tokyo Night", pref: { ...defaultPreferences, colors: tokyoNightColors } },
+  // { name: "Monokai Pro", pref: { ...defaultPreferences, colors: monokaiProColors } },
+  // { name: "Gruvbox", pref: { ...defaultPreferences, colors: gruvboxColors } },
+  // { name: "LCARS", pref: { ...defaultPreferences, colors: lcarsColors } },
 ];
 
 // Export the store if you need to access the list of presets elsewhere

@@ -6,6 +6,7 @@ console.log('Loading module:', 'index.ts');
 // export * from './utils';
 // export * from './algorithms';
 // export * from './colors';
+// export * from './colorSchemes';
 // export * from './preferences';
 // export * from './registration';
 // export * from './presets';

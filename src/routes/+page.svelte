@@ -132,9 +132,7 @@
             `${fontSize + 8}px`
           );
         }
-      });
-
-      // Listen for color changes from preferences window
+      }); // Listen for color changes from preferences window
       await listen("color-updated", (event) => {
         const { colorKey, cssVariable, newColor } = event.payload as {
           colorKey: string;
@@ -146,6 +144,40 @@
           document.documentElement.style.setProperty(cssVariable, newColor);
           console.log(`[MAIN] Updated ${cssVariable} to ${newColor}`);
         }
+      });
+
+      // Listen for color scheme changes
+      await listen("color-scheme-loaded", async (event) => {
+        const { name, colors } = event.payload as {
+          name: string;
+          colors: any;
+        };
+        console.log(`[MAIN] Color scheme loaded: ${name}`);
+
+        // Apply the colors to the main window
+        if (colors) {
+          Object.entries(colors).forEach(([key, value]) => {
+            const cssVariable = `--${key.replace(/([A-Z])/g, "-$1").toLowerCase()}`;
+            document.documentElement.style.setProperty(
+              cssVariable,
+              String(value)
+            );
+          });
+        }
+      });
+
+      await listen("color-scheme-saved", (event) => {
+        const { name } = event.payload as { name: string };
+        console.log(`[MAIN] Color scheme saved: ${name}`);
+      });
+
+      await listen("color-scheme-deleted", (event) => {
+        const { name } = event.payload as { name: string };
+        console.log(`[MAIN] Color scheme deleted: ${name}`);
+      });
+
+      await listen("color-schemes-reset", () => {
+        console.log(`[MAIN] Color schemes reset to defaults`);
       });
 
       // Listen for preference changes to sync between windows

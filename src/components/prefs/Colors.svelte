@@ -7,6 +7,7 @@
     changeColor,
     resetColors,
   } from "../../stores/colors";
+  import ColorSchemes from "./ColorSchemes.svelte";
 
   // Use the $: syntax to ensure preferences stays reactive
   $: preferences = $preferencesStore;
@@ -32,6 +33,13 @@
   // Function to reset font size to default (16px)
   function resetFontSize(): void {
     updateFontSize(16);
+  }
+
+  // Handle color scheme events
+  function handleSchemeEvent(event: CustomEvent) {
+    console.log("Color scheme event:", event.type, event.detail);
+    // The color scheme changes will be automatically reflected
+    // through the reactive preferences store
   }
 </script>
 
@@ -101,6 +109,9 @@
         </div>
       </div>
     </div>
+
+    <!-- Color Schemes Component -->
+    <ColorSchemes on:schemeChange={handleSchemeEvent} />
   </div>
 </div>
 

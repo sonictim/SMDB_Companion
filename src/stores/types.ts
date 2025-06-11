@@ -46,6 +46,11 @@ export type Colors = {
   inactiveColor: string;
 };
 
+export type ColorScheme = {
+  name: string;
+  colors: Colors;
+};
+
 export type FileRecord = { 
     filename: string; 
     path: string; 

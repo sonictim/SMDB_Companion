@@ -5,6 +5,8 @@
     Tags,
     Palette,
     Keyboard,
+    Save,
+    Trash2,
   } from "lucide-svelte";
   import "../../styles.css";
   import { onMount, onDestroy } from "svelte";
@@ -137,6 +139,40 @@
         }
       });
 
+      // Listen for color scheme changes
+      await listen("color-scheme-loaded", async (event) => {
+        const { name, colors } = event.payload as {
+          name: string;
+          colors: any;
+        };
+        console.log(`[PREFS] Color scheme loaded: ${name}`);
+
+        // Apply the colors to the preferences window
+        if (colors) {
+          Object.entries(colors).forEach(([key, value]) => {
+            const cssVariable = `--${key.replace(/([A-Z])/g, "-$1").toLowerCase()}`;
+            document.documentElement.style.setProperty(
+              cssVariable,
+              String(value)
+            );
+          });
+        }
+      });
+
+      await listen("color-scheme-saved", (event) => {
+        const { name } = event.payload as { name: string };
+        console.log(`[PREFS] Color scheme saved: ${name}`);
+      });
+
+      await listen("color-scheme-deleted", (event) => {
+        const { name } = event.payload as { name: string };
+        console.log(`[PREFS] Color scheme deleted: ${name}`);
+      });
+
+      await listen("color-schemes-reset", () => {
+        console.log(`[PREFS] Color schemes reset to defaults`);
+      });
+
       presetChangedListener = await listen(
         "preset-change",
         (event: { payload: { preset: Preset } }) => {
@@ -245,6 +281,7 @@
         on:click={handleSavePreset}
         disabled={!newPreset}
       >
+        <Save size={16} />
         Save Preset
       </button>
       <input
@@ -269,6 +306,7 @@
         on:click={() => deletePreset(selectedPreset)}
         disabled={!selectedPreset}
       >
+        <Trash2 size={16} />
         Delete
       </button>
     </div>
