@@ -123,6 +123,20 @@
         }
       });
 
+      // Listen for color changes from other windows
+      await listen("color-updated", (event) => {
+        const { colorKey, cssVariable, newColor } = event.payload as {
+          colorKey: string;
+          cssVariable: string;
+          newColor: string;
+        };
+        if (cssVariable && newColor) {
+          // Update the CSS variable in the preferences window
+          document.documentElement.style.setProperty(cssVariable, newColor);
+          console.log(`[PREFS] Updated ${cssVariable} to ${newColor}`);
+        }
+      });
+
       presetChangedListener = await listen(
         "preset-change",
         (event: { payload: { preset: Preset } }) => {

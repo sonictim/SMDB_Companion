@@ -134,6 +134,20 @@
         }
       });
 
+      // Listen for color changes from preferences window
+      await listen("color-updated", (event) => {
+        const { colorKey, cssVariable, newColor } = event.payload as {
+          colorKey: string;
+          cssVariable: string;
+          newColor: string;
+        };
+        if (cssVariable && newColor) {
+          // Update the CSS variable in the main window
+          document.documentElement.style.setProperty(cssVariable, newColor);
+          console.log(`[MAIN] Updated ${cssVariable} to ${newColor}`);
+        }
+      });
+
       // Listen for preference changes to sync between windows
       preferencesChangedListener = await listen(
         "preference-change",

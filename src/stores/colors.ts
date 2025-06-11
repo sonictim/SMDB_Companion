@@ -301,6 +301,12 @@ export async function resetColors(): Promise<void> {
     // Update all CSS variables
     await applyColors(defaultColors);
     
+    // Emit events for each color to update other windows
+    for (const [colorKey, colorValue] of Object.entries(defaultColors)) {
+      const cssVariable = `--${colorKey.replace(/([A-Z])/g, "-$1").toLowerCase()}`;
+      await emit("color-updated", { colorKey, cssVariable, newColor: colorValue });
+    }
+    
     console.log("Reset colors to defaults");
   } catch (error) {
     console.error("Error resetting colors:", error);

@@ -26,7 +26,7 @@ dependencies = [
 
 [[package]]
 name = "SMDB_Companion"
-version = "1.5.1"
+version = "1.5.2"
 dependencies = [
  "FFcodex",
  "anyhow",

@@ -11,10 +11,10 @@
   // Use the $: syntax to ensure preferences stays reactive
   $: preferences = $preferencesStore;
 
-  // Function to get current color value - this is now reactive
-  function getCurrentColor(colorKey: string): string {
+  // Make this reactive by using $: syntax
+  $: getCurrentColor = (colorKey: string): string => {
     return preferences?.colors[colorKey as keyof Colors] || "";
-  }
+  };
 
   // Wrapper function to handle the type conversion from string to keyof Colors
   function handleColorChange(key: string, value: string): void {
