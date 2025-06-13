@@ -3,6 +3,7 @@ pub use crate::*;
 pub use anyhow::{Context, Result as R, anyhow};
 pub use once_cell::sync::Lazy;
 // pub use preferences::*;
+pub use crate::database::*;
 pub use rayon::prelude::*;
 pub use serde::{Deserialize, Serialize};
 pub use std::borrow::Cow;

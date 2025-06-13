@@ -1,4 +1,4 @@
-use crate::FileRecord;
+use crate::database::FileRecord;
 pub use Algorithm as A;
 pub use OrderOperator as O;
 use chrono::{Duration, NaiveDateTime};

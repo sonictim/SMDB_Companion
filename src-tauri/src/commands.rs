@@ -396,8 +396,8 @@ pub async fn find(
         let mut state = state.lock().await;
         let case = if case_sensitive { "GLOB" } else { "LIKE" };
         let query =
-            // format!("SELECT rowid, filepath, duration FROM {TABLE} WHERE {column} {case} ?");
-            format!("SELECT rowid, filepath, duration, _fingerprint, description, channels, bitdepth, samplerate, _DualMono  FROM {TABLE} WHERE {column} {case} ?");
+            // format!("SELECT rowid, filepath, duration FROM {SQLITE_TABLE} WHERE {column} {case} ?");
+            format!("SELECT rowid, filepath, duration, _fingerprint, description, channels, bitdepth, samplerate, _DualMono  FROM {SQLITE_TABLE} WHERE {column} {case} ?");
 
         // Get pool with error handling
         let pool = state.db.get_pool().await.unwrap();
@@ -442,7 +442,7 @@ pub async fn find(
                         i * 100 / rows.len(),
                         &format!("Processing: {}/{} Records", i, rows.len()),
                     );
-                    let mut record = FileRecord::new(row, &Enabled::default(), &pref, true)?;
+                    let mut record = FileRecord::new_sqlite(row, &Enabled::default(), &pref, true)?;
                     // Safely create record with error handling
                     record.algorithm.insert(A::Replace);
                     record.algorithm.remove(&A::Keep);
@@ -529,7 +529,7 @@ pub async fn replace_metadata(
     if data.column == "Filename" || data.column == "FilePath" || data.column == "Pathname" {
         // First update the file paths
         let query = format!(
-            "UPDATE {TABLE} SET 
+            "UPDATE {SQLITE_TABLE} SET 
                 FilePath = REPLACE(FilePath, '{}', '{}'),
                 Filename = REPLACE(Filename, '{}', '{}'),
                 Pathname = REPLACE(Pathname, '{}', '{}'){} 
@@ -578,7 +578,7 @@ pub async fn replace_metadata(
     } else {
         // For non-file path columns, use the original simple update
         let query = format!(
-            "UPDATE {TABLE} SET {} = REPLACE({}, '{}', '{}'){} WHERE {} {} ?",
+            "UPDATE {SQLITE_TABLE} SET {} = REPLACE({}, '{}', '{}'){} WHERE {} {} ?",
             data.column, data.column, data.find, data.replace, dirty_text, data.column, case_text,
         );
 
@@ -628,7 +628,7 @@ async fn update_filepath_hash(
     };
 
     let select_query = format!(
-        "SELECT rowid, FilePath FROM {TABLE} WHERE Filename {} ? OR FilePath {} ? OR Pathname {} ?",
+        "SELECT rowid, FilePath FROM {SQLITE_TABLE} WHERE Filename {} ? OR FilePath {} ? OR Pathname {} ?",
         case_text, case_text, case_text
     );
 
@@ -701,7 +701,7 @@ async fn update_filepath_hash(
             ),
         );
 
-        let mut update_query = format!("UPDATE {TABLE} SET _FilePathHash = CASE rowid ");
+        let mut update_query = format!("UPDATE {SQLITE_TABLE} SET _FilePathHash = CASE rowid ");
 
         for (rowid, hash) in chunk {
             update_query.push_str(&format!("WHEN {} THEN '{}' ", rowid, hash));

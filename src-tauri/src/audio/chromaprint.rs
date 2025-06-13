@@ -1507,7 +1507,7 @@ async fn store_fingerprints_batch_optimized(
 
                 let result = sqlx::query(&format!(
                     "UPDATE {} SET _fingerprint = ? WHERE rowid = ?",
-                    TABLE
+                    SQLITE_TABLE
                 ))
                 .bind(fingerprint)
                 .bind(*id as i64)
