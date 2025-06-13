@@ -12,6 +12,7 @@ pub mod prelude;
 pub use commands::*;
 pub use regex::Regex;
 pub use sqlx::Row;
+pub use sqlx::mysql::{MySqlPool, MySqlRow};
 pub use sqlx::sqlite::{SqlitePool, SqliteRow};
 use std::hash::Hash;
 // use tauri::App;

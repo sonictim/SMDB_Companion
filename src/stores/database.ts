@@ -20,10 +20,10 @@ import { message, ask } from "@tauri-apps/plugin-dialog";
 export const databaseStore = createSessionStore<Database | null>('database', null);
 
 
-export async function setDatabase(path: string | null, is_compare: boolean) {
+export async function setDatabase(url: string | null, is_compare: boolean) {
     // Immediately signal loading state
     databaseStore.set({
-        path: '',
+        url: '',
         name: 'Select Database',
         size: 0,
         columns: [],
@@ -31,20 +31,20 @@ export async function setDatabase(path: string | null, is_compare: boolean) {
         error: null
     });
     
-    if (!path) return;
+    if (!url) return;
 
     try {
-        console.log("Opening database:", path);
+        console.log("Opening database:", url);
         
         // Get database path from Tauri
-        const name = await invoke<string>("open_db", {path: path, isCompare: is_compare });
+        const name = await invoke<string>("open_db", {url: url, isCompare: is_compare });
         const size = await getSize();
         console.log("Database opened:", name, "Size:", size);
         const columns = await invoke<string[]>("get_columns"); 
         const pref  = get(preferencesStore);
 
         let db = {
-            path: path,
+            url: url,
             name: name,
             size: size,
             columns: columns,
@@ -56,10 +56,10 @@ export async function setDatabase(path: string | null, is_compare: boolean) {
         databaseStore.set(db);
         
         // Add to recent databases
-        addRecentDatabase({name: name, path: path});
+        addRecentDatabase({name: name, url: url});
         
         // Run various initialization tasks
-        await checkThinned(path);
+        await checkThinned(url);
         
         // Reset all search-related state
         // 1. Clear results to avoid stale data
@@ -89,7 +89,7 @@ export async function setDatabase(path: string | null, is_compare: boolean) {
         
         // Update store with error
         databaseStore.set({
-            path: '',
+            url: '',
             name: null,
             size: 0,
             columns: [],
@@ -189,13 +189,13 @@ export async function fetchColumns(): Promise<string[]> {
 // Utility function to check if database is open
 export function isDatabaseOpen(): boolean {
     const db = get(databaseStore);
-    return db !== null && db.path !== '';
+    return db !== null && db.url !== '';
 }
 
 // Utility function to get current database path
 export function getDatabasePath(): string | null {
     const db = get(databaseStore);
-    return db ? db.path : null;
+    return db ? db.url : null;
 }
 
 
@@ -222,7 +222,7 @@ export function getDatabasePath(): string | null {
       if (Array.isArray(db)) {
         db = db[0];
       }
-      return db;
+      return "sqlite://" + db;
     }
     catch (error) {
       console.error("Error opening SQLite file:", error);
@@ -244,9 +244,9 @@ export function getDatabasePath(): string | null {
   }
 
 
-export const recentDbStore = createLocalStore<{name: string, path: string}[]>('recentDatabases', []);
+export const recentDbStore = createLocalStore<{name: string, url: string}[]>('recentDatabases', []);
 
-function addRecentDatabase(db: {name: string, path: string}) {
+function addRecentDatabase(db: {name: string, url: string}) {
     if (!db || !db.name) return;
     recentDbStore.update(currentList => {
         // Remove the path if it already exists

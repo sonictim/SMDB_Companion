@@ -614,7 +614,7 @@ const algoMenu = await Submenu.new({
       await Submenu.new({
         text: "Open Recent",
         items: recentdb
-          .filter(db => db.name !== null && db.path !== null && db.name !== "Select Database")
+          .filter(db => db.name !== null && db.url !== null && db.name !== "Select Database")
           .map((db, index) => {
             return {
               id: db.name!,
@@ -622,7 +622,7 @@ const algoMenu = await Submenu.new({
               // Add accelerator only to the first (most recent) item
               accelerator: index === 0 ? getHotkey("openRecent") : undefined,
               action: async () => {
-                await setDatabase(db.path!, false);
+                await setDatabase(db.url!, false);
               }
             };
           })

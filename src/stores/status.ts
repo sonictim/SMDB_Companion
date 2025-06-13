@@ -117,7 +117,7 @@ export async function toggleSearch(): Promise<boolean> {
 export async function search(): Promise<boolean> {
     let db = get(databaseStore);
     if (db === null) return false;
-    await setDatabase(db.path, false)
+    await setDatabase(db.url, false)
     // Set showStatus to true at the start of the search process
     showStatus.set(true);
     
@@ -169,7 +169,7 @@ export async function search(): Promise<boolean> {
         // Log the search start for debugging
         console.log("Invoking backend search with params:", { algorithmState, preferences });
         const db = get(databaseStore);
-        if (!db || !db.path) {
+        if (!db || !db.url) {
             console.error("No database loaded or database path is invalid");
             message("No database loaded. Please open a database before searching.");
             showStatus.set(false); // Make sure to reset on error
@@ -179,7 +179,6 @@ export async function search(): Promise<boolean> {
         const result = await invoke<FileRecord[][]>("search", {
             enabled: algorithmState,
             pref: preferences,
-            path: db.path,
         });
         
         console.log("Search Results:", result);

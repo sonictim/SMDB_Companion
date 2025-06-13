@@ -37,6 +37,7 @@ declare module '$env/static/private' {
 	export const MallocNanoZone: string;
 	export const ORIGINAL_XDG_CURRENT_DESKTOP: string;
 	export const TAURI_CLI_VERBOSITY: string;
+	export const ZDOTDIR: string;
 	export const TAURI_ENV_DEBUG: string;
 	export const npm_config_registry: string;
 	export const PNPM_HOME: string;
@@ -45,6 +46,7 @@ declare module '$env/static/private' {
 	export const COMMAND_MODE: string;
 	export const PNPM_SCRIPT_SRC_DIR: string;
 	export const SSH_AUTH_SOCK: string;
+	export const VSCODE_PROFILE_INITIALIZED: string;
 	export const __CF_USER_TEXT_ENCODING: string;
 	export const npm_execpath: string;
 	export const TAURI_ENV_PLATFORM: string;
@@ -54,6 +56,7 @@ declare module '$env/static/private' {
 	export const CARGO_HOME: string;
 	export const TAURI_ENV_FAMILY: string;
 	export const TAURI_ENV_PLATFORM_VERSION: string;
+	export const USER_ZDOTDIR: string;
 	export const __CFBundleIdentifier: string;
 	export const PWD: string;
 	export const RUSTC_WRAPPER: string;
@@ -69,6 +72,7 @@ declare module '$env/static/private' {
 	export const RUSTUP_TOOLCHAIN: string;
 	export const XPC_SERVICE_NAME: string;
 	export const npm_package_version: string;
+	export const VSCODE_INJECTION: string;
 	export const HOME: string;
 	export const SHLVL: string;
 	export const VSCODE_GIT_ASKPASS_MAIN: string;
@@ -127,6 +131,7 @@ declare module '$env/dynamic/private' {
 		MallocNanoZone: string;
 		ORIGINAL_XDG_CURRENT_DESKTOP: string;
 		TAURI_CLI_VERBOSITY: string;
+		ZDOTDIR: string;
 		TAURI_ENV_DEBUG: string;
 		npm_config_registry: string;
 		PNPM_HOME: string;
@@ -135,6 +140,7 @@ declare module '$env/dynamic/private' {
 		COMMAND_MODE: string;
 		PNPM_SCRIPT_SRC_DIR: string;
 		SSH_AUTH_SOCK: string;
+		VSCODE_PROFILE_INITIALIZED: string;
 		__CF_USER_TEXT_ENCODING: string;
 		npm_execpath: string;
 		TAURI_ENV_PLATFORM: string;
@@ -144,6 +150,7 @@ declare module '$env/dynamic/private' {
 		CARGO_HOME: string;
 		TAURI_ENV_FAMILY: string;
 		TAURI_ENV_PLATFORM_VERSION: string;
+		USER_ZDOTDIR: string;
 		__CFBundleIdentifier: string;
 		PWD: string;
 		RUSTC_WRAPPER: string;
@@ -159,6 +166,7 @@ declare module '$env/dynamic/private' {
 		RUSTUP_TOOLCHAIN: string;
 		XPC_SERVICE_NAME: string;
 		npm_package_version: string;
+		VSCODE_INJECTION: string;
 		HOME: string;
 		SHLVL: string;
 		VSCODE_GIT_ASKPASS_MAIN: string;

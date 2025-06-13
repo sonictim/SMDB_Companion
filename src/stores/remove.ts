@@ -73,7 +73,6 @@ import { isMacOS } from './utils';
     // let db = get(databaseStore);
     // if (!db) return;
     let filteredItems = get(filteredItemsStore);
-    let selectedItems = get(selectedItemsStore);
     let pref = get(preferencesStore);
 
     if (pref.erase_files === "Archive") {
@@ -150,7 +149,7 @@ import { isMacOS } from './utils';
           
 
           const db = get(databaseStore);
-          if (db != null && db.path !== updatedDb) await setDatabase(updatedDb, false);
+          if (db != null && db.url !== updatedDb) await setDatabase(updatedDb, false);
           // let size = db.size - idsToRemove.length;
           // setDbSize(size);
         } catch (error) {
@@ -254,7 +253,7 @@ import { isMacOS } from './utils';
           
           showStatus.set(false);
           const db = get(databaseStore);
-          if (db != null && db.path !== updatedDb) await setDatabase(updatedDb, false);
+          if (db != null && db.url !== updatedDb) await setDatabase(updatedDb, false);
         } catch (error) {
           console.error("Error removing selected records:", error);
           if (String(error).includes("PERMISSION_ERROR:")) {

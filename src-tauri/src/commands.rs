@@ -30,13 +30,15 @@ pub async fn check_reg(data: Registration) -> Result<bool, String> {
 #[tauri::command]
 pub async fn open_db(
     state: State<'_, Mutex<AppState>>,
-    path: String,
+    url: String,
     is_compare: bool,
 ) -> Result<Arc<str>, String> {
     let mut state = state.lock().await;
-    state.db = Database::new(&path, is_compare).await;
+    state.db = Database::new(url, is_compare)
+        .await
+        .map_err(|e| e.to_string())?;
     if let Some(name) = state.db.get_name() {
-        return Ok(name);
+        return Ok(name.into());
     }
     Ok(Arc::from("Select Database"))
 }
@@ -51,11 +53,8 @@ pub async fn close_db(state: State<'_, Mutex<AppState>>) -> Result<Arc<str>, Str
 pub async fn get_db_name(state: State<'_, Mutex<AppState>>) -> Result<Arc<str>, String> {
     println!("Get DB Name");
     let state = state.lock().await;
-    if let Some(path) = &state.db.path {
-        return Ok(path.file_stem().unwrap().to_str().unwrap().into());
-    }
 
-    Ok(Arc::from("Select Database"))
+    Ok(Arc::from(state.db.get_name().unwrap_or("Select Database")))
 }
 
 #[tauri::command]
@@ -225,7 +224,11 @@ pub async fn clear_fingerprints(state: State<'_, Mutex<AppState>>) -> Result<Arc
     let state = state.lock().await;
     let _ = state.db.remove_column("_fingerprint").await;
     println!("Fingerprints Cleared");
-    Ok(state.db.get_name().unwrap_or(Arc::from("Select Database")))
+    if let Some(name) = state.db.get_name() {
+        Ok(name.into())
+    } else {
+        Ok(Arc::from("Select Database"))
+    }
 }
 #[tauri::command]
 pub async fn clear_selected_fingerprints(
@@ -255,7 +258,7 @@ pub async fn remove_records(
     files: Vec<&str>,
     dual_mono: Vec<DualMono>,
     strip_dual_mono: bool,
-) -> Result<Arc<str>, String> {
+) -> Result<String, String> {
     println!("Removing Records");
 
     println!("Dual Mono: {:?}", dual_mono);
@@ -345,7 +348,7 @@ pub async fn remove_records(
     println!("Remove Ended");
     app.status("Final Checks", 100, "Success! Removal is complete");
 
-    Ok(state.db.get_path().unwrap_or(Arc::from("Select Database")))
+    Ok(state.db.url.clone())
 }
 
 // Helper functions to detect permission errors

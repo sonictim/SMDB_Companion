@@ -5,8 +5,7 @@ pub use crate::prelude::*;
 impl Database {
     pub async fn compare_search(&mut self, enabled: &Enabled, pref: &Preferences, app: &AppHandle) {
         let mut cdb = Database::default();
-        cdb.init(Some(PathBuf::from(&*enabled.compare_db)), true)
-            .await;
+        let _ = cdb.init(enabled.compare_db.clone(), true).await;
         app.substatus("Compare Databases", 0, "Loading Compare Database");
 
         let _ = cdb.fetch_all_filerecords(enabled, pref, app).await;

@@ -1,9 +1,33 @@
 pub mod filerecord;
 pub use filerecord::*;
 
+#[derive(Clone)]
+
+pub enum Pool {
+    Sqlite(SqlitePool),
+    Mysql(MySqlPool),
+}
+
+impl Pool {
+    pub async fn connect(url: &str) -> R<Self, sqlx::Error> {
+        if url.starts_with("sqlite://") {
+            let pool = SqlitePool::connect(url).await?;
+            Ok(Pool::Sqlite(pool))
+        } else if url.starts_with("mysql://") {
+            let pool = MySqlPool::connect(url).await?;
+            Ok(Pool::Mysql(pool))
+        } else {
+            Err(sqlx::Error::Configuration(
+                "Unsupported database URL".into(),
+            ))
+        }
+    }
+}
+
 #[derive(Default, Clone)]
 pub struct Database {
-    pub path: Option<PathBuf>,
+    pub url: String,
+    pub pool: Option<Pool>,
     pub size: usize,
     pub records: Vec<FileRecord>, // Changed from Arc<[FileRecord]> to Vec<FileRecord>
     pub is_compare: bool,
@@ -12,13 +36,17 @@ pub struct Database {
 
 // Change visibility of `Database` methods to private where possible
 impl Database {
-    pub async fn new(path: &str, is_compare: bool) -> Self {
+    pub async fn new(url: String, is_compare: bool) -> R<Self, sqlx::Error> {
         println!("🆕 Creating new Database instance");
-        println!("📁 Path: {}", path);
+        println!("📁 Url: {}", url);
         println!("🔄 Is compare: {}", is_compare);
 
+        let pool = Pool::connect(&url).await?;
+        println!("🔌 Database connection established");
+
         let mut d = Database {
-            path: Some(PathBuf::from(path)),
+            url,
+            pool: Some(pool),
             size: 0,
             records: Vec::new(),
             is_compare,
@@ -35,44 +63,49 @@ impl Database {
         d.records = Vec::with_capacity(d.size);
 
         println!("✅ Database instance created successfully");
-        d
+        Ok(d)
     }
 
-    pub async fn open(&mut self, is_compare: bool) -> Option<Self> {
-        let home_dir = home_dir();
-        match home_dir {
-            Some(home_dir) => {
-                println!("Found SMDB dir");
-                let db_dir = home_dir.join("Library/Application Support/SoundminerV6/Databases");
-                let path = FileDialog::new()
-                    .add_filter("SQLite Database", &["sqlite"])
-                    .set_directory(db_dir)
-                    .pick_file();
-                self.init(path, is_compare).await;
-            }
-            None => {
-                let path = FileDialog::new()
-                    .add_filter("SQLite Database", &["sqlite"])
-                    .pick_file();
-                self.init(path, is_compare).await;
-            }
-        }
-        None
-    }
+    // pub async fn open(&mut self, is_compare: bool) -> Option<Self> {
+    //     let home_dir = home_dir();
+    //     match home_dir {
+    //         Some(home_dir) => {
+    //             println!("Found SMDB dir");
+    //             let db_dir = home_dir.join("Library/Application Support/SoundminerV6/Databases");
+    //             let path = FileDialog::new()
+    //                 .add_filter("SQLite Database", &["sqlite"])
+    //                 .set_directory(db_dir)
+    //                 .pick_file();
+    //             self.init(path, is_compare).await;
+    //         }
+    //         None => {
+    //             let path = FileDialog::new()
+    //                 .add_filter("SQLite Database", &["sqlite"])
+    //                 .pick_file();
+    //             self.init(path, is_compare).await;
+    //         }
+    //     }
+    //     None
+    // }
 
-    pub async fn init(&mut self, path: Option<PathBuf>, is_compare: bool) {
-        if let Some(path) = path {
-            self.path = Some(path);
-            self.size = self.fetch_size().await.unwrap_or(0);
-            self.records = Vec::with_capacity(self.size); // No need for .into()
-            self.is_compare = is_compare;
-        }
+    pub async fn init(&mut self, url: String, is_compare: bool) -> R<(), sqlx::Error> {
+        let pool = Pool::connect(&url).await?;
+        println!("🔌 Database connection established");
+        self.pool = Some(pool);
+        self.url = url;
+        self.size = self.fetch_size().await.unwrap_or(0);
+        self.records = Vec::with_capacity(self.size); // No need for .into()
+        self.is_compare = is_compare;
+        Ok(())
     }
 
     pub async fn create_clone(&self, tag: &str) -> Result<Database, std::io::Error> {
-        let source_path = self.path.as_ref().ok_or_else(|| {
-            std::io::Error::new(std::io::ErrorKind::NotFound, "No source database path")
-        })?;
+        let source_path = PathBuf::from(self.get_address().ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Invalid database URL: cannot extract file path",
+            )
+        })?);
 
         // Create the new path with proper cross-platform handling
         let mut path_string = source_path.display().to_string();
@@ -116,7 +149,7 @@ impl Database {
         }
 
         // Perform the copy operation with proper error handling
-        fs::copy(source_path, &target_path).map_err(|e| {
+        fs::copy(&source_path, &target_path).map_err(|e| {
             std::io::Error::new(
                 e.kind(),
                 format!(
@@ -130,34 +163,44 @@ impl Database {
 
         // Initialize the new database
         let mut db = Database::default();
-        db.init(Some(target_path), false).await;
+        let target_path = format!("sqlite://{}", target_path.display());
+        db.init(target_path, false).await.map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to initialize database: {}", e),
+            )
+        })?;
         Ok(db)
     }
 
-    pub fn get_path(&self) -> Option<Arc<str>> {
-        if let Some(path) = &self.path {
-            if let Some(path_str) = path.to_str() {
-                println!("🛤️  Database path: {}", path_str);
-                return Some(Arc::from(path_str));
-            } else {
-                println!("❌ Failed to convert path to string");
-            }
-        } else {
-            println!("❌ No database path set");
-        }
-        None
+    // pub fn get_path(&self) -> Option<Arc<str>> {
+    //     if let Some(path) = &self.path {
+    //         if let Some(path_str) = path.to_str() {
+    //             println!("🛤️  Database path: {}", path_str);
+    //             return Some(Arc::from(path_str));
+    //         } else {
+    //             println!("❌ Failed to convert path to string");
+    //         }
+    //     } else {
+    //         println!("❌ No database path set");
+    //     }
+    //     None
+    // }
+
+    pub fn get_address(&self) -> Option<&str> {
+        self.url.split("://").nth(1)
     }
 
-    pub fn get_name(&self) -> Option<Arc<str>> {
-        if let Some(path) = &self.path {
-            if let Some(name) = path.file_stem() {
-                if let Some(name_str) = name.to_str() {
-                    return Some(Arc::from(name_str));
-                }
-            }
+    pub fn get_name(&self) -> Option<&str> {
+        let a = self.get_address()?;
+        let a = a.split('/').last()?;
+        if let Some(name) = a.strip_suffix(".sqlite") {
+            Some(name)
+        } else {
+            Some(a)
         }
-        None
     }
+
     pub fn get_size(&self) -> usize {
         self.size
     }
@@ -170,45 +213,40 @@ impl Database {
     }
 
     pub async fn get_pool(&self) -> Option<SqlitePool> {
-        if let Some(path) = self.get_path() {
-            println!("🔌 Attempting to connect to database: {}", path);
+        println!("🔌 Attempting to connect to database: {}", self.url);
 
-            // Check if file exists first
-            let path_buf = std::path::PathBuf::from(path.as_ref());
-            if !path_buf.exists() {
-                println!("❌ Database file does not exist: {}", path);
+        // Check if file exists first
+        let path_buf = std::path::PathBuf::from(self.get_address()?);
+        if !path_buf.exists() {
+            println!("❌ Database file does not exist: {}", self.url);
+            return None;
+        }
+
+        // Check file size
+        match std::fs::metadata(&path_buf) {
+            Ok(metadata) => {
+                let file_size = metadata.len();
+                println!("📊 Database file size: {} bytes", file_size);
+                if file_size == 0 {
+                    println!("⚠️  Database file is empty (0 bytes)");
+                }
+            }
+            Err(e) => {
+                println!("❌ Failed to get database metadata: {}", e);
                 return None;
             }
+        }
 
-            // Check file size
-            match std::fs::metadata(&path_buf) {
-                Ok(metadata) => {
-                    let file_size = metadata.len();
-                    println!("📊 Database file size: {} bytes", file_size);
-                    if file_size == 0 {
-                        println!("⚠️  Database file is empty (0 bytes)");
-                    }
-                }
-                Err(e) => {
-                    println!("❌ Failed to get database metadata: {}", e);
-                    return None;
-                }
+        // Attempt connection
+        match SqlitePool::connect(&self.url).await {
+            Ok(pool) => {
+                println!("✅ Successfully connected to database");
+                Some(pool)
             }
-
-            // Attempt connection
-            match SqlitePool::connect(&path).await {
-                Ok(pool) => {
-                    println!("✅ Successfully connected to database");
-                    Some(pool)
-                }
-                Err(e) => {
-                    println!("❌ Failed to connect to database: {}", e);
-                    None
-                }
+            Err(e) => {
+                println!("❌ Failed to connect to database: {}", e);
+                None
             }
-        } else {
-            println!("❌ No database path available for connection");
-            None
         }
     }
 

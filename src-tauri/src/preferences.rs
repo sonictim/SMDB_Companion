@@ -394,7 +394,7 @@ pub struct Enabled {
     pub duration: bool,
     pub min_dur: f64,
     pub dbcompare: bool,
-    pub compare_db: Arc<str>,
+    pub compare_db: String,
     pub dual_mono: bool,
 }
 
