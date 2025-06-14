@@ -189,7 +189,7 @@ impl FileRecord {
             path = p;
         }
 
-        if pref.safe_folders.len() > 0
+        if !pref.safe_folders.is_empty()
             && pref.safe_folders.iter().any(|folder| {
                 path.starts_with(folder) || path.starts_with(folder.trim_end_matches('/'))
             })

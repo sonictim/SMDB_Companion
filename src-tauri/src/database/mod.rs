@@ -527,6 +527,7 @@ impl Database {
             self.records = pool
                 .fetch_filerecords(self.is_compare, query, enabled, pref, app)
                 .await?;
+            println!("✅ Fetched {} records from database", self.records.len());
         } else {
             return Err(sqlx::Error::Configuration(
                 "No database connection available".into(),
@@ -544,15 +545,13 @@ impl Database {
         println!("Gathering all records from database");
 
         let mut table = SQLITE_TABLE;
-        if let Some(pool) = self.pool.as_ref() {
-            if let Pool::Mysql(_) = pool {
-                table = MYSQL_TABLE;
-            }
+        if let Some(Pool::Mysql(_)) = self.pool.as_ref() {
+            table = MYSQL_TABLE;
         }
 
         self.fetch_filerecords(
             &format!(
-                "SELECT rowid, filepath, duration, _fingerprint, description, channels, bitdepth, samplerate, _DualMono, {} FROM {}",
+                "SELECT recid, filepath, duration, _fingerprint, description, channels, bitdepth, samplerate, _DualMono, {} FROM {}",
                 pref.get_data_requirements(),
                 table
             ),

@@ -32,7 +32,7 @@ pub async fn fetch_filerecords_mysql(
 }
 
 pub async fn fetch_columns_mysql(pool: &MySqlPool) -> Result<Vec<Arc<str>>, sqlx::Error> {
-    let query = format!("PRAGMA table_info({});", SQLITE_TABLE);
+    let query = format!("PRAGMA table_info({});", MYSQL_TABLE);
     // Query for table info using PRAGMA
     let mut columns = sqlx::query(&query)
         .fetch_all(pool)
@@ -97,7 +97,7 @@ pub async fn remove_mysql(
             .collect::<Vec<_>>()
             .join(",");
         let query = format!(
-            "DELETE FROM {} WHERE rowid IN ({})",
+            "DELETE FROM {} WHERE recid IN ({})",
             MYSQL_TABLE, placeholders
         );
 
@@ -164,7 +164,7 @@ pub async fn batch_update_column_mysql(
 
         // Build update query
         let query = format!(
-            "UPDATE {} SET {} = {} WHERE rowid IN ({})",
+            "UPDATE {} SET {} = {} WHERE recid IN ({})",
             MYSQL_TABLE, column, value, placeholders
         );
 
@@ -228,7 +228,7 @@ pub async fn update_channel_count_to_mono_mysql(
 
         // Build update query
         let query = format!(
-            "UPDATE {} SET Channels = 1, _Dirty = 1 WHERE rowid IN ({})",
+            "UPDATE {} SET Channels = 1, _Dirty = 1 WHERE recid IN ({})",
             MYSQL_TABLE, placeholders
         );
 

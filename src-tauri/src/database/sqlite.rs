@@ -97,7 +97,7 @@ pub async fn remove_sqlite(
             .collect::<Vec<_>>()
             .join(",");
         let query = format!(
-            "DELETE FROM {} WHERE rowid IN ({})",
+            "DELETE FROM {} WHERE recid IN ({})",
             SQLITE_TABLE, placeholders
         );
 
@@ -164,7 +164,7 @@ pub async fn batch_update_column_sqlite(
 
         // Build update query
         let query = format!(
-            "UPDATE {} SET {} = {} WHERE rowid IN ({})",
+            "UPDATE {} SET {} = {} WHERE recid IN ({})",
             SQLITE_TABLE, column, value, placeholders
         );
 
@@ -228,7 +228,7 @@ pub async fn update_channel_count_to_mono_sqlite(
 
         // Build update query
         let query = format!(
-            "UPDATE {} SET Channels = 1, _Dirty = 1 WHERE rowid IN ({})",
+            "UPDATE {} SET Channels = 1, _Dirty = 1 WHERE recid IN ({})",
             SQLITE_TABLE, placeholders
         );
 

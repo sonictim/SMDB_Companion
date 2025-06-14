@@ -17,7 +17,7 @@ import { message, ask } from "@tauri-apps/plugin-dialog";
 
 
 
-export const databaseStore = createLocalStore<Database | null>('database', null);
+export const databaseStore = createSessionStore<Database | null>('database', null);
 
 // Session store for available databases (resets on app restart)
 export const serverDatabasesStore = createSessionStore<string[]>('serverDatabases', []);
@@ -50,7 +50,7 @@ export async function setDatabase(url: string | null, is_compare: boolean) {
         const name = await invoke<string>("open_db", {url: url, isCompare: is_compare });
         const size = await getSize();
         console.log("Database opened:", name, "Size:", size);
-        const columns = await invoke<string[]>("get_columns"); 
+        const columns = await fetchColumns(); 
         const pref  = get(preferencesStore);
 
         let db = {
@@ -89,7 +89,7 @@ export async function setDatabase(url: string | null, is_compare: boolean) {
         // }
         
         // Try to refresh the UI without a full window reload
-        await invoke("refresh_all_windows");
+        // await invoke("refresh_all_windows");
         
         console.log("Database successfully initialized:", name);
         return db;

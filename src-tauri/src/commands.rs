@@ -798,8 +798,7 @@ pub async fn get_results(
 #[tauri::command]
 pub async fn get_columns(state: State<'_, Mutex<AppState>>) -> Result<Vec<Arc<str>>, String> {
     let state = state.lock().await;
-    let columns = state.db.fetch_columns().await.unwrap_or(Vec::new());
-    Ok(columns)
+    state.db.fetch_columns().await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]

@@ -633,6 +633,12 @@ const algoMenu = await Submenu.new({
         accelerator: getHotkey("serverDatabase"),
         action: () => toggleServerWindow(),
       },
+      {
+        id: "serve-test",
+        text: "Server test",
+        accelerator: getHotkey("serverDatabase"),
+        action: () => setDatabase("mysql://soundminer:opensesame@192.168.1.240:3306/sonictim_lib", false),
+      },
       { id: "close", 
         text: "Close Database",
         accelerator: getHotkey("closeDatabase"),
