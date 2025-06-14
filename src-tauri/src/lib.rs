@@ -74,6 +74,7 @@ pub fn run() {
             open_database_folder,
             reveal_files,
             check_folder_exists,
+            test_server_database,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -424,7 +425,25 @@ impl Delete {
     }
 }
 
-fn get_column_as_string(row: &SqliteRow, column: &str) -> Option<Arc<str>> {
+fn get_column_as_string_sqlite(row: &SqliteRow, column: &str) -> Option<Arc<str>> {
+    // Try getting as text first (most common case)
+    if let Ok(value) = row.try_get::<&str, _>(column) {
+        return Some(Arc::from(value));
+    }
+
+    // Then try numeric types
+    if let Ok(value) = row.try_get::<i64, _>(column) {
+        return Some(Arc::from(value.to_string()));
+    }
+
+    if let Ok(value) = row.try_get::<f64, _>(column) {
+        return Some(Arc::from(value.to_string()));
+    }
+
+    // Handle null or other types
+    None
+}
+fn get_column_as_string_mysql(row: &MySqlRow, column: &str) -> Option<Arc<str>> {
     // Try getting as text first (most common case)
     if let Ok(value) = row.try_get::<&str, _>(column) {
         return Some(Arc::from(value));

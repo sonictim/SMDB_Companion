@@ -219,10 +219,13 @@ async fn run_search(
 }
 
 #[tauri::command]
-pub async fn clear_fingerprints(state: State<'_, Mutex<AppState>>) -> Result<Arc<str>, String> {
+pub async fn clear_fingerprints(
+    state: State<'_, Mutex<AppState>>,
+    app: AppHandle,
+) -> Result<Arc<str>, String> {
     println!("Clearing Fingerprints");
     let state = state.lock().await;
-    let _ = state.db.remove_column("_fingerprint").await;
+    let _ = state.db.remove_column(&app, "_fingerprint").await;
     println!("Fingerprints Cleared");
     if let Some(name) = state.db.get_name() {
         Ok(name.into())
@@ -403,7 +406,11 @@ pub async fn find(
             format!("SELECT rowid, filepath, duration, _fingerprint, description, channels, bitdepth, samplerate, _DualMono  FROM {SQLITE_TABLE} WHERE {column} {case} ?");
 
         // Get pool with error handling
-        let pool = state.db.get_pool().await.unwrap();
+        let pool = state
+            .db
+            .get_pool_sqlite()
+            .await
+            .map_err(|e| e.to_string())?;
 
         app.substatus("Metadata Search", 10, "Querying Database...");
 
@@ -527,7 +534,11 @@ pub async fn replace_metadata(
         format!("%{}%", data.find) // LIKE wildcard (%)
     };
 
-    let pool = state.db.get_pool().await.unwrap();
+    let pool = state
+        .db
+        .get_pool_sqlite()
+        .await
+        .map_err(|e| e.to_string())?;
 
     if data.column == "Filename" || data.column == "FilePath" || data.column == "Pathname" {
         // First update the file paths
@@ -962,4 +973,42 @@ pub fn check_folder_exists(path: String) -> Result<bool, String> {
 
     // Check if path exists and is a directory
     Ok(folder_path.exists() && folder_path.is_dir())
+}
+
+#[tauri::command]
+pub async fn test_server_database(url: String) -> Result<Vec<String>, String> {
+    let pool = sqlx::MySqlPool::connect(&url)
+        .await
+        .map_err(|e| format!("Failed to connect to database: {}", e))?;
+
+    let query = "SHOW DATABASES";
+    let rows = sqlx::query(query)
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| format!("Failed to execute query: {}", e))?;
+
+    // Define MariaDB/MySQL system databases to filter out
+    let system_databases = [
+        "information_schema",
+        "performance_schema",
+        "mysql",
+        "sys",
+        "test",
+        "sm_waveforms",
+    ];
+
+    let mut databases = Vec::new();
+    for row in rows {
+        let database_name = row.get::<String, _>(0);
+
+        // Only include non-system databases
+        if !system_databases.contains(&database_name.as_str()) {
+            databases.push(database_name);
+        }
+    }
+
+    if databases.is_empty() {
+        return Err("No user databases found on the server".to_string());
+    }
+    Ok(databases)
 }

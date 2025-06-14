@@ -1,5 +1,7 @@
 pub mod filerecord;
 pub use filerecord::*;
+pub mod mysql;
+pub mod sqlite;
 
 #[derive(Clone)]
 
@@ -22,6 +24,91 @@ impl Pool {
             ))
         }
     }
+
+    pub async fn fetch_filerecords(
+        &mut self,
+        is_compare: bool,
+        query: &str,
+        enabled: &Enabled,
+        pref: &Preferences,
+        app: &AppHandle,
+    ) -> Result<Vec<FileRecord>, sqlx::Error> {
+        match self {
+            Pool::Mysql(pool) => {
+                mysql::fetch_filerecords_mysql(pool, is_compare, query, enabled, pref, app).await
+            }
+            Pool::Sqlite(pool) => {
+                sqlite::fetch_filerecords_sqlite(pool, is_compare, query, enabled, pref, app).await
+            }
+        }
+    }
+
+    pub async fn fetch_columns(&self) -> Result<Vec<Arc<str>>, sqlx::Error> {
+        match self {
+            Pool::Mysql(pool) => mysql::fetch_columns_mysql(pool).await,
+            Pool::Sqlite(pool) => sqlite::fetch_columns_sqlite(pool).await,
+        }
+    }
+
+    pub async fn fetch_size(&self) -> Result<usize, sqlx::Error> {
+        match self {
+            Pool::Mysql(pool) => mysql::fetch_size_mysql(pool).await,
+            Pool::Sqlite(pool) => sqlite::fetch_size_sqlite(pool).await,
+        }
+    }
+
+    pub async fn remove(&self, ids: &[usize], app: &AppHandle) -> Result<(), sqlx::Error> {
+        match self {
+            Pool::Mysql(pool) => mysql::remove_mysql(pool, ids, app).await,
+            Pool::Sqlite(pool) => sqlite::remove_sqlite(pool, ids, app).await,
+        }
+    }
+
+    pub async fn add_column(&self, add: &str) -> Result<(), sqlx::Error> {
+        match self {
+            Pool::Mysql(pool) => mysql::add_column_mysql(pool, add).await,
+            Pool::Sqlite(pool) => sqlite::add_column_sqlite(pool, add).await,
+        }
+    }
+
+    pub async fn remove_column(&self, remove: &str) -> Result<(), sqlx::Error> {
+        match self {
+            Pool::Mysql(pool) => mysql::remove_column_mysql(pool, remove).await,
+            Pool::Sqlite(pool) => sqlite::remove_column_sqlite(pool, remove).await,
+        }
+    }
+
+    pub async fn batch_update_column(
+        &self,
+        app: &AppHandle,
+        pref: &Preferences,
+        record_ids: &[usize],
+        column: &str,
+        value: &str,
+    ) -> Result<(), sqlx::Error> {
+        match self {
+            Pool::Mysql(pool) => {
+                mysql::batch_update_column_mysql(pool, app, pref, record_ids, column, value).await
+            }
+            Pool::Sqlite(pool) => {
+                sqlite::batch_update_column_sqlite(pool, app, pref, record_ids, column, value).await
+            }
+        }
+    }
+    pub async fn update_channel_count_to_mono(
+        &self,
+        app: &AppHandle,
+        record_ids: &[usize],
+    ) -> Result<(), sqlx::Error> {
+        match self {
+            Pool::Mysql(pool) => {
+                mysql::update_channel_count_to_mono_mysql(pool, app, record_ids).await
+            }
+            Pool::Sqlite(pool) => {
+                sqlite::update_channel_count_to_mono_sqlite(pool, app, record_ids).await
+            }
+        }
+    }
 }
 
 #[derive(Default, Clone)]
@@ -36,6 +123,16 @@ pub struct Database {
 
 // Change visibility of `Database` methods to private where possible
 impl Database {
+    pub async fn get_pool_sqlite(&self) -> R<SqlitePool, sqlx::Error> {
+        if let Some(Pool::Sqlite(pool)) = &self.pool {
+            Ok(pool.clone())
+        } else {
+            Err(sqlx::Error::Configuration(
+                "Database is not a SQLite pool".into(),
+            ))
+        }
+    }
+
     pub async fn new(url: String, is_compare: bool) -> R<Self, sqlx::Error> {
         println!("🆕 Creating new Database instance");
         println!("📁 Url: {}", url);
@@ -212,170 +309,75 @@ impl Database {
             .count()
     }
 
-    pub async fn get_pool(&self) -> Option<SqlitePool> {
-        println!("🔌 Attempting to connect to database: {}", self.url);
+    // pub async fn get_pool(&self) -> Option<SqlitePool> {
+    //     println!("🔌 Attempting to connect to database: {}", self.url);
 
-        // Check if file exists first
-        let path_buf = std::path::PathBuf::from(self.get_address()?);
-        if !path_buf.exists() {
-            println!("❌ Database file does not exist: {}", self.url);
-            return None;
-        }
+    //     // Check if file exists first
+    //     let path_buf = std::path::PathBuf::from(self.get_address()?);
+    //     if !path_buf.exists() {
+    //         println!("❌ Database file does not exist: {}", self.url);
+    //         return None;
+    //     }
 
-        // Check file size
-        match std::fs::metadata(&path_buf) {
-            Ok(metadata) => {
-                let file_size = metadata.len();
-                println!("📊 Database file size: {} bytes", file_size);
-                if file_size == 0 {
-                    println!("⚠️  Database file is empty (0 bytes)");
-                }
-            }
-            Err(e) => {
-                println!("❌ Failed to get database metadata: {}", e);
-                return None;
-            }
-        }
+    //     // Check file size
+    //     match std::fs::metadata(&path_buf) {
+    //         Ok(metadata) => {
+    //             let file_size = metadata.len();
+    //             println!("📊 Database file size: {} bytes", file_size);
+    //             if file_size == 0 {
+    //                 println!("⚠️  Database file is empty (0 bytes)");
+    //             }
+    //         }
+    //         Err(e) => {
+    //             println!("❌ Failed to get database metadata: {}", e);
+    //             return None;
+    //         }
+    //     }
 
-        // Attempt connection
-        match SqlitePool::connect(&self.url).await {
-            Ok(pool) => {
-                println!("✅ Successfully connected to database");
-                Some(pool)
-            }
-            Err(e) => {
-                println!("❌ Failed to connect to database: {}", e);
-                None
-            }
-        }
-    }
-
-    pub async fn remove_column(&self, remove: &str) -> Result<(), sqlx::Error> {
-        if let Some(pool) = self.get_pool().await {
-            // First check if the column already exists
-            let columns = sqlx::query(&format!("PRAGMA table_info({});", SQLITE_TABLE))
-                .fetch_all(&pool)
-                .await?;
-
-            // Check if our column exists
-            let column_exists = columns.iter().any(|row| {
-                let column_name: &str = row.try_get("name").unwrap_or_default();
-                column_name == remove
-            });
-
-            // Only remove the column if it exists
-            if column_exists {
-                // Remove the column
-                let query = format!("ALTER TABLE {} DROP COLUMN {};", SQLITE_TABLE, remove);
-                sqlx::query(&query).execute(&pool).await?;
-                println!("Removed column: {}", remove);
-            } else {
-                println!("Column '{}' does not exist", remove);
-            }
-
-            return Ok(());
-        }
-
-        Err(sqlx::Error::Configuration(
-            "No database connection available".into(),
-        ))
-    }
+    //     // Attempt connection
+    //     match SqlitePool::connect(&self.url).await {
+    //         Ok(pool) => {
+    //             println!("✅ Successfully connected to database");
+    //             Some(pool)
+    //         }
+    //         Err(e) => {
+    //             println!("❌ Failed to connect to database: {}", e);
+    //             None
+    //         }
+    //     }
+    // }
 
     pub async fn add_column(&self, add: &str) -> Result<(), sqlx::Error> {
-        if let Some(pool) = self.get_pool().await {
-            // First check if the column already exists
-            let columns = sqlx::query(&format!("PRAGMA table_info({});", SQLITE_TABLE))
-                .fetch_all(&pool)
-                .await?;
-
-            // Check if our column exists
-            let column_exists = columns.iter().any(|row| {
-                let column_name: &str = row.try_get("name").unwrap_or_default();
-                column_name == add
-            });
-
-            // Only add the column if it doesn't exist
-            if !column_exists {
-                // Add the column with TEXT type (you can change this if needed)
-                let query = format!("ALTER TABLE {} ADD COLUMN {} TEXT;", SQLITE_TABLE, add);
-                sqlx::query(&query).execute(&pool).await?;
-                println!("Added new column: {}", add);
-            } else {
-                println!("Column '{}' already exists", add);
-            }
-
-            return Ok(());
+        if let Some(pool) = self.pool.as_ref() {
+            println!("➕ Adding column to database: {}", add);
+            pool.add_column(add).await
+        } else {
+            Err(sqlx::Error::Configuration(
+                "No database connection available".into(),
+            ))
         }
-
-        Err(sqlx::Error::Configuration(
-            "No database connection available".into(),
-        ))
     }
 
     pub async fn fetch_size(&self) -> Result<usize, sqlx::Error> {
-        println!("📏 Attempting to fetch database size...");
-
-        if let Some(pool) = self.get_pool().await {
-            println!("🔍 Executing count query on table: {}", SQLITE_TABLE);
-
-            match sqlx::query_as::<_, (i64,)>(&format!("SELECT COUNT(*) FROM {}", SQLITE_TABLE))
-                .fetch_one(&pool)
-                .await
-            {
-                Ok(count) => {
-                    let size = count.0 as usize;
-                    println!("✅ Database size fetched successfully: {} records", size);
-                    Ok(size)
-                }
-                Err(e) => {
-                    println!("❌ Failed to fetch database size: {}", e);
-                    Err(e)
-                }
-            }
+        if let Some(pool) = self.pool.as_ref() {
+            println!("📏 Fetching database size");
+            pool.fetch_size().await
         } else {
-            println!("❌ No database pool available for size fetch");
-            Ok(0)
+            Err(sqlx::Error::Configuration(
+                "No database connection available".into(),
+            ))
         }
     }
 
     pub async fn remove(&self, ids: &[usize], app: &AppHandle) -> Result<(), sqlx::Error> {
-        const BATCH_SIZE: usize = 12321; // Define the batch size
-        let _ = app;
-        let mut counter = 0;
-        if let Some(pool) = self.get_pool().await {
-            // Iterate over chunks of IDs
-            for chunk in ids.chunks(BATCH_SIZE) {
-                app.status(
-                    "Record Removal",
-                    counter * 100 / ids.len(),
-                    &format!("Removing Records... {}/{}", counter, ids.len()),
-                );
-
-                counter += BATCH_SIZE;
-                // Create placeholders for each ID in the chunk
-                let placeholders = std::iter::repeat("?")
-                    .take(chunk.len())
-                    .collect::<Vec<_>>()
-                    .join(",");
-                let query = format!(
-                    "DELETE FROM {} WHERE rowid IN ({})",
-                    SQLITE_TABLE, placeholders
-                );
-
-                // Create a query builder
-                let mut query_builder = sqlx::query(&query);
-
-                // Bind each ID individually
-                for &id in chunk {
-                    query_builder = query_builder.bind(id as i64);
-                }
-
-                // Execute the query
-                query_builder.execute(&pool).await?;
-            }
-            app.status("Final Checks", 100, "Records successfully removed");
+        if let Some(pool) = self.pool.as_ref() {
+            println!("🗑️  Removing records from database");
+            pool.remove(ids, app).await
+        } else {
+            Err(sqlx::Error::Configuration(
+                "No database connection available".into(),
+            ))
         }
-        Ok(())
     }
 
     pub async fn clean_multi_mono(
@@ -502,16 +504,16 @@ impl Database {
         }
     }
 
-    pub async fn fetch(&self, query: &str) -> Vec<SqliteRow> {
-        if let Some(pool) = self.get_pool().await {
-            sqlx::query(query)
-                .fetch_all(&pool)
-                .await
-                .unwrap_or_default()
-        } else {
-            Vec::new()
-        }
-    }
+    // pub async fn fetch(&self, query: &str) -> Vec<SqliteRow> {
+    //     if let Some(pool) = self.get_pool().await {
+    //         sqlx::query(query)
+    //             .fetch_all(&pool)
+    //             .await
+    //             .unwrap_or_default()
+    //     } else {
+    //         Vec::new()
+    //     }
+    // }
 
     pub async fn fetch_filerecords(
         &mut self,
@@ -520,31 +522,16 @@ impl Database {
         pref: &Preferences,
         app: &AppHandle,
     ) -> Result<(), sqlx::Error> {
-        // self.records.clear();
-        let completed = AtomicUsize::new(0);
-        let rows = self.fetch(query).await;
-        let mut records = Vec::with_capacity(rows.len());
-        println!("{} Rows Found", rows.len());
-        let new_records: Vec<FileRecord> = rows
-            .par_iter()
-            .enumerate()
-            .filter_map(|(count, row)| {
-                let new_completed = completed.fetch_add(1, Ordering::SeqCst) + 1;
-                if new_completed % RECORD_DIVISOR == 0 {
-                    app.substatus(
-                        "Gathering File Records",
-                        new_completed * 100 / rows.len(),
-                        format!("Processing Records into Memory: {}/{}", count, rows.len())
-                            .as_str(),
-                    );
-                }
-                FileRecord::new_sqlite(row, enabled, pref, self.is_compare)
-            })
-            .collect();
-        app.substatus("Gathering File Records", 100, "Complete");
-
-        records.extend(new_records);
-        self.records = records;
+        if let Some(pool) = self.pool.as_mut() {
+            println!("🔍 Fetching file records with query: {}", query);
+            self.records = pool
+                .fetch_filerecords(self.is_compare, query, enabled, pref, app)
+                .await?;
+        } else {
+            return Err(sqlx::Error::Configuration(
+                "No database connection available".into(),
+            ));
+        }
         Ok(())
     }
 
@@ -555,11 +542,19 @@ impl Database {
         app: &AppHandle,
     ) -> Result<(), sqlx::Error> {
         println!("Gathering all records from database");
+
+        let mut table = SQLITE_TABLE;
+        if let Some(pool) = self.pool.as_ref() {
+            if let Pool::Mysql(_) = pool {
+                table = MYSQL_TABLE;
+            }
+        }
+
         self.fetch_filerecords(
             &format!(
                 "SELECT rowid, filepath, duration, _fingerprint, description, channels, bitdepth, samplerate, _DualMono, {} FROM {}",
                 pref.get_data_requirements(),
-                SQLITE_TABLE
+                table
             ),
             enabled,
             pref,
@@ -569,92 +564,27 @@ impl Database {
     }
 
     pub async fn fetch_columns(&self) -> Result<Vec<Arc<str>>, sqlx::Error> {
-        // Query for table info using PRAGMA
-        let mut columns = self
-            .fetch(&format!("PRAGMA table_info({});", SQLITE_TABLE))
-            .await
-            .into_iter()
-            .filter_map(|row| {
-                let column_name: &str = row.try_get("name").ok()?; // Extract "name" column
-                if !column_name.starts_with('_') {
-                    Some(column_name.into())
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<Arc<str>>>();
-        columns.sort();
-        // if let Some(index) = columns.iter().position(|x| x.as_ref() == "FilePath") {
-        //     let filepath = columns.remove(index); // Remove the item
-        //     columns.insert(0, filepath); // Insert it at the beginning
-        // }
-
-        Ok(columns)
+        if let Some(pool) = self.pool.as_ref() {
+            println!("🔍 Fetching columns from database");
+            pool.fetch_columns().await
+        } else {
+            Err(sqlx::Error::Configuration(
+                "No database connection available".into(),
+            ))
+        }
     }
     pub async fn update_channel_count_to_mono(
         &self,
         app: &AppHandle,
         record_ids: &[usize],
     ) -> Result<(), sqlx::Error> {
-        const BATCH_SIZE: usize = 1000; // Smaller batch size for updates
-
-        if let Some(pool) = self.get_pool().await {
-            let mut counter = 0;
-
-            // Begin a transaction for better performance
-            let mut tx = pool.begin().await?;
-
-            // Process in batches
-            for chunk in record_ids.chunks(BATCH_SIZE) {
-                // Create placeholders for SQL IN clause
-                let placeholders = std::iter::repeat("?")
-                    .take(chunk.len())
-                    .collect::<Vec<_>>()
-                    .join(",");
-
-                // Build update query
-                let query = format!(
-                    "UPDATE {} SET Channels = 1, _Dirty = 1 WHERE rowid IN ({})",
-                    SQLITE_TABLE, placeholders
-                );
-
-                // Create query builder
-                let mut query_builder = sqlx::query(&query);
-
-                // Bind all IDs
-                for &id in chunk {
-                    query_builder = query_builder.bind(id as i64);
-                }
-
-                // Execute the query within transaction
-                query_builder.execute(&mut *tx).await?;
-
-                // Update progress
-                counter += chunk.len();
-                app.status(
-                    "Stripping Multi-Mono",
-                    counter * 100 / record_ids.len(),
-                    format!(
-                        "Updating channel metadata: {}/{}",
-                        counter,
-                        record_ids.len()
-                    )
-                    .as_str(),
-                );
-            }
-
-            // Commit the transaction
-            tx.commit().await?;
-
-            // Final status update
-            app.status(
-                "Stripping Multi-Mono",
-                100,
-                format!("Updated {} records to mono", record_ids.len()).as_str(),
-            );
+        if let Some(pool) = self.pool.as_ref() {
+            pool.update_channel_count_to_mono(app, record_ids).await
+        } else {
+            Err(sqlx::Error::Configuration(
+                "No database connection available".into(),
+            ))
         }
-
-        Ok(())
     }
     pub async fn batch_update_column(
         &self,
@@ -664,62 +594,30 @@ impl Database {
         column: &str,
         value: &str,
     ) -> Result<(), sqlx::Error> {
-        if let Some(pool) = self.get_pool().await {
-            let mut counter = 0;
-
-            // Begin a transaction for better performance
-            let mut tx = pool.begin().await?;
-
-            // Process in batches
-            for chunk in record_ids.chunks(pref.batch_size) {
-                // Create placeholders for SQL IN clause
-                let placeholders = std::iter::repeat("?")
-                    .take(chunk.len())
-                    .collect::<Vec<_>>()
-                    .join(",");
-
-                // Build update query
-                let query = format!(
-                    "UPDATE {} SET {} = {} WHERE rowid IN ({})",
-                    SQLITE_TABLE, column, value, placeholders
-                );
-
-                // Create query builder
-                let mut query_builder = sqlx::query(&query);
-
-                // Bind all IDs
-                for &id in chunk {
-                    query_builder = query_builder.bind(id as i64);
-                }
-
-                // Execute the query within transaction
-                query_builder.execute(&mut *tx).await?;
-
-                // Update progress
-                counter += chunk.len();
-                app.status(
-                    "Stripping Multi-Mono",
-                    counter * 100 / record_ids.len(),
-                    format!(
-                        "Updating channel metadata: {}/{}",
-                        counter,
-                        record_ids.len()
-                    )
-                    .as_str(),
-                );
-            }
-
-            // Commit the transaction
-            tx.commit().await?;
-
-            // Final status update
-            app.status(
-                "Stripping Multi-Mono",
-                100,
-                format!("Updated {} records to mono", record_ids.len()).as_str(),
-            );
+        if let Some(pool) = self.pool.as_ref() {
+            pool.batch_update_column(app, pref, record_ids, column, value)
+                .await
+        } else {
+            Err(sqlx::Error::Configuration(
+                "No database connection available".into(),
+            ))
         }
+    }
 
-        Ok(())
+    pub async fn remove_column(&self, app: &AppHandle, column: &str) -> Result<(), sqlx::Error> {
+        if let Some(pool) = self.pool.as_ref() {
+            app.status(
+                "Removing Column",
+                0,
+                &format!("Removing column: {}", column),
+            );
+            pool.remove_column(column).await?;
+            app.status("Removing Column", 100, "Column removed successfully");
+            Ok(())
+        } else {
+            Err(sqlx::Error::Configuration(
+                "No database connection available".into(),
+            ))
+        }
     }
 }

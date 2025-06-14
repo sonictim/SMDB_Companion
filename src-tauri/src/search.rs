@@ -239,9 +239,12 @@ impl Database {
             "Dual Mono Search started for db: {}",
             self.get_name().unwrap_or_default()
         );
-        let Some(pool) = self.get_pool().await else {
-            println!("No database pool available for dual mono search");
-            return;
+        let pool = match self.get_pool_sqlite().await.ok() {
+            Some(pool) => pool,
+            None => {
+                println!("Failed to get database pool for dual mono search");
+                return;
+            }
         };
         println!("Starting Dual Mono Search");
         let total = self.records.len();

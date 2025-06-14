@@ -5,5 +5,8 @@
 	],
 	"/preferences": [
 		"src/routes/+layout.js"
+	],
+	"/server": [
+		"src/routes/+layout.js"
 	]
 }

@@ -627,6 +627,12 @@ const algoMenu = await Submenu.new({
             };
           })
       }),
+      {
+        id: "server",
+        text: "Connect to Server",
+        accelerator: getHotkey("serverDatabase"),
+        action: () => toggleServerWindow(),
+      },
       { id: "close", 
         text: "Close Database",
         accelerator: getHotkey("closeDatabase"),
@@ -940,3 +946,64 @@ export function showRegistrationView() {
 //     splitView: !state.splitView
 //   }));
 // }
+
+
+export async function toggleServerWindow() {
+  try {
+    const serverWindow = await Window.getByLabel("server");
+
+    if (serverWindow) {
+      const visible = await serverWindow.isVisible();
+
+      if (visible) {
+        // Check focus BEFORE changing it
+        const wasFocused = await serverWindow.isFocused();
+
+        if (wasFocused) {
+          // If it was already focused, hide it
+          await serverWindow.hide();
+        } else {
+          // If it wasn't focused, just bring it to front
+          await serverWindow.setFocus();
+        }
+      } else {
+        // Window exists but isn't visible - show it
+        await serverWindow.show();
+        await serverWindow.setFocus();
+      }
+    } else {
+      // Window doesn't exist - create it
+      const url = `${window.location.origin}/server`;
+      console.log("Creating Server Window!");
+      const appWindow = new WebviewWindow("server", {
+        title: "Connect to Server",
+        width: 500,
+        height: 500,
+        visible: true,
+        url: url,
+        dragDropEnabled: false,
+        devtools: true,
+        focus: true, // Ensure it gets focus when created
+        transparent: false,
+        decorations: true,
+      });
+
+      // Listen for console logs from preferences window
+      const { listen } = await import('@tauri-apps/api/event');
+      await listen("preferences-log", (event: any) => {
+        console.log("Preferences Window:", event.payload);
+      });
+
+      appWindow.once("tauri://created", function () {
+        console.log("Preferences window created!");
+      });
+
+      appWindow.once("tauri://error", function (e) {
+        console.error("Error creating preferences window:", e);
+      });
+    }
+  } catch (error) {
+    console.error("Error toggling preferences window:", error);
+    menuStore.update(state => ({ ...state, error: String(error) }));
+  }
+}

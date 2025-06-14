@@ -136,3 +136,10 @@ export type HotKeys = {
 
 
 }
+
+export type Server = {
+  name: string;
+  password: string;
+  address: string;
+  port: number;
+};

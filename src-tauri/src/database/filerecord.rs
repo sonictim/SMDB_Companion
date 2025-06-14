@@ -74,13 +74,13 @@ impl FileRecord {
             path = p;
         }
 
-        if pref.safe_folders.len() > 0 {
-            if pref.safe_folders.iter().any(|folder| {
+        if pref.safe_folders.len() > 0
+            && pref.safe_folders.iter().any(|folder| {
                 path.starts_with(folder) || path.starts_with(folder.trim_end_matches('/'))
-            }) {
-                println!("Skipping record with ID {}: Path is in a safe folder", id);
-                return None;
-            }
+            })
+        {
+            println!("Skipping record with ID {}: Path is in a safe folder", id);
+            return None;
         }
 
         let duration_str: &str = row.get(2);
@@ -119,7 +119,7 @@ impl FileRecord {
 
         // Gather required columns from preferences
         for column in &pref.match_criteria {
-            if let Some(value) = get_column_as_string(row, column) {
+            if let Some(value) = get_column_as_string_sqlite(row, column) {
                 data.insert(column.clone(), value);
             }
         }
@@ -127,7 +127,122 @@ impl FileRecord {
         // Gather columns from preservation logic
         for logic in &pref.preservation_order {
             let column = &logic.column;
-            if let Some(value) = get_column_as_string(row, column) {
+            if let Some(value) = get_column_as_string_sqlite(row, column) {
+                data.insert(column.clone(), value);
+            }
+        }
+
+        let f = row.try_get::<&str, _>("_fingerprint").unwrap_or_default();
+
+        let fingerprint = if f.is_empty() || !pref.fetch_waveforms {
+            None
+        } else {
+            Some(Arc::from(f))
+        };
+
+        let mut dual_mono = None;
+
+        if pref.fetch_waveforms {
+            let dm = row.try_get::<&str, _>("_DualMono").ok();
+            dual_mono = match dm {
+                Some("1") => Some(true),
+                Some("0") => Some(false),
+                _ => None,
+            };
+        }
+
+        let mut record = Self {
+            id,
+            path,
+            root: Arc::default(),
+            duration: Arc::from(duration_str),
+            data,
+            fingerprint,
+            algorithm,
+            channels,
+            bitdepth,
+            samplerate,
+            description: Arc::from(description),
+            dual_mono,
+        };
+
+        record.set_root(enabled, pref);
+        Some(record)
+    }
+    pub fn new_mysql(
+        row: &MySqlRow,
+        enabled: &Enabled,
+        pref: &Preferences,
+        is_compare: bool,
+    ) -> Option<Self> {
+        let _ = is_compare;
+        let id = row.get::<u32, _>(0) as usize;
+        let path_str: &str = row.get(1);
+
+        #[cfg(not(target_os = "windows"))]
+        let path = PathBuf::from(path_str);
+
+        #[cfg(target_os = "windows")]
+        let mut path = PathBuf::from(path_str);
+        #[cfg(target_os = "windows")]
+        if let Some(p) = windows::auto_convert_macos_path_to_windows(path_str) {
+            path = p;
+        }
+
+        if pref.safe_folders.len() > 0
+            && pref.safe_folders.iter().any(|folder| {
+                path.starts_with(folder) || path.starts_with(folder.trim_end_matches('/'))
+            })
+        {
+            println!("Skipping record with ID {}: Path is in a safe folder", id);
+            return None;
+        }
+
+        let duration_str: &str = row.get(2);
+        let description: &str = row.get(4);
+        let channels = row.get(5);
+        let bitdepth = row.get(6);
+        let samplerate = row.get(7);
+
+        let mut algorithm = HashSet::new();
+        let mut keep = true;
+        if enabled.invalidpath || enabled.dual_mono {
+            // Use the path existence check from the PathBuf directly
+            // This handles cross-platform path separators correctly
+            let path_exists = path.exists();
+
+            if !path_exists {
+                algorithm.insert(Algorithm::InvalidPath);
+                if enabled.invalidpath {
+                    keep = false;
+                }
+            }
+        }
+        if enabled.duration && checkduration(duration_str, enabled.min_dur) {
+            algorithm.insert(Algorithm::Duration);
+            keep = false;
+        }
+        if enabled.filetags && checktags(path_str, &pref.autoselects) {
+            algorithm.insert(Algorithm::FileTags);
+            keep = false;
+        }
+        if keep {
+            algorithm.insert(Algorithm::Keep);
+        }
+
+        let mut data = HashMap::new();
+
+        // Gather required columns from preferences
+        for column in &pref.match_criteria {
+            if let Some(value) = get_column_as_string_mysql(row, column) {
+                data.insert(column.clone(), value);
+            }
+        }
+
+        // Gather columns from preservation logic
+        for logic in &pref.preservation_order {
+            let column = &logic.column;
+            if let Some(value) = get_column_as_string_mysql(row, column) {
                 data.insert(column.clone(), value);
             }
         }

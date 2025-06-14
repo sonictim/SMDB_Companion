@@ -150,7 +150,7 @@ impl Database {
         let started = AtomicUsize::new(0);
         let completed = AtomicUsize::new(0);
 
-        let pool = self.get_pool().await;
+        let pool = self.get_pool_sqlite().await.ok();
 
         let Some(pool) = pool else {
             println!("No database connection pool available, skipping fingerprint storage.");

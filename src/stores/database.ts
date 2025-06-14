@@ -5,7 +5,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { preferencesStore, checkThinned } from './preferences';
 import { createLocalStore, createSessionStore } from './utils';
 import { clearResults, currentFilterStore, selectedItemsStore } from './results';
-import type { Database } from './types';
+import type { Database, Server } from './types';
 import { open, } from "@tauri-apps/plugin-dialog";
 import { openPath } from "@tauri-apps/plugin-opener";
 import { viewStore, showSearchView } from './menu';
@@ -17,7 +17,17 @@ import { message, ask } from "@tauri-apps/plugin-dialog";
 
 
 
-export const databaseStore = createSessionStore<Database | null>('database', null);
+export const databaseStore = createLocalStore<Database | null>('database', null);
+
+// Session store for available databases (resets on app restart)
+export const serverDatabasesStore = createSessionStore<string[]>('serverDatabases', []);
+
+export const serverStore = createLocalStore<Server>('serverConfig', {
+    name: '',
+    password: '',
+    address: '',
+    port: 3306,
+});
 
 
 export async function setDatabase(url: string | null, is_compare: boolean) {
@@ -79,7 +89,7 @@ export async function setDatabase(url: string | null, is_compare: boolean) {
         // }
         
         // Try to refresh the UI without a full window reload
-        // await invoke("refresh_all_windows");
+        await invoke("refresh_all_windows");
         
         console.log("Database successfully initialized:", name);
         return db;
@@ -314,6 +324,5 @@ function addRecentDatabase(db: {name: string, url: string}) {
         message("Error clearing fingerprints: " + error);
       });
   }
-  
 
 
