@@ -46,6 +46,12 @@ import {removeRecords} from './remove';
     search,
     cancelSearch,
   } from "../stores/status";
+import { show } from "@tauri-apps/api/app";
+
+const DEBUG_MODE = import.meta.env.DEV || false;
+
+
+  export const showPopup = writable(false);
 
 export async function refreshMenu() {
   try {
@@ -631,14 +637,10 @@ const algoMenu = await Submenu.new({
         id: "server",
         text: "Connect to Server",
         accelerator: getHotkey("serverDatabase"),
-        action: () => toggleServerWindow(),
+        action: () => showPopup.set(true),
+        enabled: DEBUG_MODE,
       },
-      {
-        id: "serve-test",
-        text: "Server test",
-        accelerator: getHotkey("serverDatabase"),
-        action: () => setDatabase("mysql://soundminer:opensesame@192.168.1.240:3306/sonictim_lib", false),
-      },
+
       { id: "close", 
         text: "Close Database",
         accelerator: getHotkey("closeDatabase"),

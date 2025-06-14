@@ -88,12 +88,14 @@ impl Database {
                     &format!("Oraginizing Records: {}/{}", count, total),
                 );
             }
+
             let mut key = Vec::new();
             for m in &pref.match_criteria {
                 if &**m == "Filename" && (enabled.filename || enabled.audiosuite) {
                     key.push(record.root.clone());
                 } else {
-                    key.push(record.data[m].clone());
+                    let value = record.data.get(m).cloned().unwrap_or_else(|| Arc::from(""));
+                    key.push(value);
                 }
             }
             file_groups.entry(key).or_default().push(record.clone());

@@ -9,7 +9,14 @@ pub async fn fetch_filerecords_mysql(
     app: &AppHandle,
 ) -> Result<Vec<FileRecord>, sqlx::Error> {
     let completed = AtomicUsize::new(0);
-    let rows = sqlx::query(query).fetch_all(pool).await.unwrap_or_default();
+    let rows = match sqlx::query(query).fetch_all(pool).await {
+        Ok(rows) => rows,
+        Err(e) => {
+            eprintln!("Error fetching records: {}", e);
+            return Err(e);
+        }
+    };
+
     println!("{} Rows Found", rows.len());
     let records: Vec<FileRecord> = rows
         .par_iter()
@@ -29,28 +36,6 @@ pub async fn fetch_filerecords_mysql(
     app.substatus("Gathering File Records", 100, "Complete");
 
     Ok(records)
-}
-
-pub async fn fetch_columns_mysql(pool: &MySqlPool) -> Result<Vec<Arc<str>>, sqlx::Error> {
-    let query = format!("PRAGMA table_info({});", MYSQL_TABLE);
-    // Query for table info using PRAGMA
-    let mut columns = sqlx::query(&query)
-        .fetch_all(pool)
-        .await
-        .unwrap_or_default()
-        .into_iter()
-        .filter_map(|row| {
-            let column_name: &str = row.try_get("name").ok()?; // Extract "name" column
-            if !column_name.starts_with('_') {
-                Some(column_name.into())
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<Arc<str>>>();
-    columns.sort();
-
-    Ok(columns)
 }
 
 pub async fn fetch_size_mysql(pool: &MySqlPool) -> Result<usize, sqlx::Error> {
@@ -114,31 +99,6 @@ pub async fn remove_mysql(
     }
     app.status("Final Checks", 100, "Records successfully removed");
     Ok(())
-}
-
-pub async fn remove_column_mysql(pool: &MySqlPool, remove: &str) -> Result<(), sqlx::Error> {
-    // First check if the column already exists
-    let columns = sqlx::query(&format!("PRAGMA table_info({});", MYSQL_TABLE))
-        .fetch_all(pool)
-        .await?;
-
-    // Check if our column exists
-    let column_exists = columns.iter().any(|row| {
-        let column_name: &str = row.try_get("name").unwrap_or_default();
-        column_name == remove
-    });
-
-    // Only remove the column if it exists
-    if column_exists {
-        // Remove the column
-        let query = format!("ALTER TABLE {} DROP COLUMN {};", MYSQL_TABLE, remove);
-        sqlx::query(&query).execute(pool).await?;
-        println!("Removed column: {}", remove);
-    } else {
-        println!("Column '{}' does not exist", remove);
-    }
-
-    return Ok(());
 }
 
 pub async fn batch_update_column_mysql(
@@ -271,26 +231,112 @@ pub async fn update_channel_count_to_mono_mysql(
 }
 
 pub async fn add_column_mysql(pool: &MySqlPool, add: &str) -> Result<(), sqlx::Error> {
-    // First check if the column already exists
-    let columns = sqlx::query(&format!("PRAGMA table_info({});", MYSQL_TABLE))
-        .fetch_all(pool)
-        .await?;
+    println!(
+        "🔍 Checking if column '{}' exists in table '{}'",
+        add, MYSQL_TABLE
+    );
 
-    // Check if our column exists
-    let column_exists = columns.iter().any(|row| {
-        let column_name: &str = row.try_get("name").unwrap_or_default();
-        column_name == add
-    });
+    let columns = match sqlx::query(&format!("SHOW COLUMNS FROM {}", MYSQL_TABLE))
+        .fetch_all(pool)
+        .await
+    {
+        Ok(cols) => {
+            println!("✅ Successfully fetched {} columns", cols.len());
+            cols
+        }
+        Err(e) => {
+            println!("❌ Failed to fetch columns: {}", e);
+            return Err(e);
+        }
+    };
+
+    // Debug: Print all available columns
+    println!("📋 Available columns:");
+    for (i, row) in columns.iter().enumerate() {
+        match row.try_get::<String, _>("Field") {
+            Ok(field_name) => println!("  {}: {}", i, field_name),
+            Err(e) => println!("  {}: Error getting field name: {}", i, e),
+        }
+    }
+
+    // Check if our column exists (MySQL uses "Field" not "name")
+    let column_exists = columns
+        .iter()
+        .any(|row| match row.try_get::<String, _>("Field") {
+            Ok(column_name) => {
+                println!("🔍 Comparing '{}' with '{}'", column_name, add);
+                column_name == add
+            }
+            Err(e) => {
+                println!("⚠️ Error getting column name: {}", e);
+                false
+            }
+        });
+
+    println!("🎯 Column '{}' exists: {}", add, column_exists);
 
     // Only add the column if it doesn't exist
     if !column_exists {
-        // Add the column with TEXT type (you can change this if needed)
-        let query = format!("ALTER TABLE {} ADD COLUMN {} TEXT;", MYSQL_TABLE, add);
-        sqlx::query(&query).execute(pool).await?;
-        println!("Added new column: {}", add);
+        println!("➕ Adding new column: {}", add);
+        let query = format!("ALTER TABLE {} ADD COLUMN {} TEXT", MYSQL_TABLE, add);
+        println!("🔧 Executing query: {}", query);
+
+        match sqlx::query(&query).execute(pool).await {
+            Ok(_) => println!("✅ Successfully added column: {}", add),
+            Err(e) => {
+                println!("❌ Failed to add column: {}", e);
+                return Err(e);
+            }
+        }
     } else {
-        println!("Column '{}' already exists", add);
+        println!("ℹ️ Column '{}' already exists", add);
     }
 
     Ok(())
+}
+
+pub async fn remove_column_mysql(pool: &MySqlPool, remove: &str) -> Result<(), sqlx::Error> {
+    let columns = sqlx::query(&format!("SHOW COLUMNS FROM {}", MYSQL_TABLE))
+        .fetch_all(pool)
+        .await?;
+
+    // Check if our column exists (MySQL uses "Field" not "name")
+    let column_exists = columns.iter().any(|row| {
+        let column_name: String = row.try_get("Field").unwrap_or_default();
+        column_name == remove
+    });
+
+    // Only remove the column if it exists
+    if column_exists {
+        // Remove the column
+        let query = format!("ALTER TABLE {} DROP COLUMN {}", MYSQL_TABLE, remove);
+        sqlx::query(&query).execute(pool).await?;
+        println!("➖ Removed column: {}", remove);
+    } else {
+        println!("ℹ️ Column '{}' does not exist", remove);
+    }
+
+    Ok(())
+}
+
+pub async fn fetch_columns_mysql(pool: &MySqlPool) -> Result<Vec<Arc<str>>, sqlx::Error> {
+    let query = format!("SHOW COLUMNS FROM {}", MYSQL_TABLE);
+
+    let mut columns = sqlx::query(&query)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|row| {
+            let column_name: String = row.try_get("Field").ok()?; // Use "Field" for MySQL
+            if !column_name.starts_with('_') {
+                Some(column_name.into())
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<Arc<str>>>();
+    columns.sort();
+
+    Ok(columns)
 }

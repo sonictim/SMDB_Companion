@@ -14,6 +14,7 @@
   import RegistrationComponent from "../components/Registration.svelte";
   import SplitComponent from "../components/Split.svelte";
   import NoFrillsComponent from "../components/NoFrills.svelte";
+  import ServerConnect from "../components/ServerConnect.svelte";
 
   // Stores and utilities
   import {
@@ -24,7 +25,12 @@
   import { databaseStore } from "../stores/database";
   import { checkForUpdates } from "../stores/utils";
   import { checkRegistered, isRegistered } from "../stores/registration";
-  import { initializeMenu, viewStore, showSearchView } from "../stores/menu";
+  import {
+    initializeMenu,
+    viewStore,
+    showSearchView,
+    showPopup,
+  } from "../stores/menu";
   import { applyPreset } from "../stores/presets";
   import { hotkeysStore } from "../stores/hotkeys";
   import type { Preset } from "../stores/types";
@@ -314,6 +320,13 @@
     </main>
   </div>
 {/if}
+{#if $showPopup}
+  <div class="popup-overlay" on:click={() => ($showPopup = false)}>
+    <div class="popup" on:click|stopPropagation>
+      <ServerConnect />
+    </div>
+  </div>
+{/if}
 
 <style>
   .loading-screen,
@@ -355,5 +368,43 @@
     border: none;
     border-radius: 4px;
     cursor: pointer;
+  }
+
+  .popup-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+  }
+
+  .popup {
+    background-color: var(--primary-bg);
+    border: 1px solid var(--inactive-color);
+    border-radius: 8px;
+    padding: 24px;
+    max-width: 400px;
+    width: 90vw;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    color: var(--text-color);
+  }
+
+  .popup button {
+    margin-top: 16px;
+    padding: 8px 16px;
+    background: var(--accent-color);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+
+  .popup button:hover {
+    background: var(--hover-color);
   }
 </style>

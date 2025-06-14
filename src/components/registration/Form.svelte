@@ -85,10 +85,12 @@
 
   async function fetchData() {
     total = 0;
-    results.forEach((result) => {
-      if (!result.algorithm.includes("Keep")) {
-        total++;
-      }
+    results.forEach((resultArray) => {
+      resultArray.forEach((result) => {
+        if (!result.algorithm.includes("Keep")) {
+          total++;
+        }
+      });
     });
   }
 
