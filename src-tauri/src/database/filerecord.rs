@@ -198,11 +198,11 @@ impl FileRecord {
             return None;
         }
 
-        let duration_str: &str = row.get(2);
-        let description: &str = row.get(4);
-        let channels = row.get(5);
-        let bitdepth = row.get(6);
-        let samplerate = row.get(7);
+        let duration_str: &str = row.try_get(2).unwrap_or("0:00.000");
+        let description: &str = row.try_get(4).unwrap_or("");
+        let channels = row.try_get(5).unwrap_or(0i64);
+        let bitdepth = row.try_get(6).unwrap_or(0i64);
+        let samplerate = row.try_get(7).unwrap_or(0i64);
 
         let mut algorithm = HashSet::new();
         let mut keep = true;
@@ -274,9 +274,9 @@ impl FileRecord {
             data,
             fingerprint,
             algorithm,
-            channels,
-            bitdepth,
-            samplerate,
+            channels: channels as u32,
+            bitdepth: bitdepth as u32,
+            samplerate: samplerate as u32,
             description: Arc::from(description),
             dual_mono,
         };
