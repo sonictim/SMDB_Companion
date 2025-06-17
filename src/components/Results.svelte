@@ -121,7 +121,7 @@
 
 <div class="block results-container">
   <div class="header">
-    <h2>Search Results:</h2>
+    <h2>Results:</h2>
     <span style="font-size: var(--font-size-lg)">
       {#if $isRemove}
         {totalChecks} of {totalResultsCount} Records marked for Removal

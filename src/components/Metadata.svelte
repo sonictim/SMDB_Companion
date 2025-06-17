@@ -25,9 +25,9 @@
   });
 </script>
 
-<div class="block" style="height: 100%; margin-top: 20px">
+<div class="block" style="height: 100%">
   <div class="header">
-    <h2>Metadata Replacement</h2>
+    <h2>Replace Metadata</h2>
     <MetadataButton />
   </div>
   <!-- {#if $showStatus}

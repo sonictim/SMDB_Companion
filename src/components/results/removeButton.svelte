@@ -11,8 +11,9 @@
   import { isRemove } from "../../stores/menu";
   import RegButton from "../registration/Button.svelte";
   import { isRegistered } from "../../stores/registration";
+  import { cancelSearch, showStatus } from "../../stores/status";
 
-  import { OctagonX, NotebookPenIcon, Loader } from "lucide-svelte";
+  import { OctagonX, NotebookPenIcon, X } from "lucide-svelte";
   import type { Registration } from "../../stores/types";
 
   $: metadata = $metadataStore;
@@ -22,7 +23,17 @@
 </script>
 
 <div style="margin-left: auto; display: flex; gap: 20px;">
-  {#if $isRegistered}
+  {#if $showStatus}
+    <button
+      class="cta-button cancel"
+      on:click={async () => {
+        let result = await cancelSearch();
+      }}
+    >
+      <X size={18} />
+      <span>Cancel Search</span>
+    </button>
+  {:else if $isRegistered}
     {#if $isRemove}
       {#if selectedItems.size > 0}
         <button class="cta-button cancel" on:click={removeSelectedRecords}>

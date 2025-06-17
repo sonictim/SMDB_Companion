@@ -49,7 +49,7 @@
 </div>
 
 <div class="input-group">
-  <label for="column-select">in Column:</label>
+  <label for="column-select">Column:</label>
   <select id="column-select" bind:value={$metadata.column} class="select-field">
     {#each $preferencesStore.columns as option}
       <option value={option}>{option}</option>

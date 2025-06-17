@@ -8,7 +8,7 @@ import { clearResults, currentFilterStore, selectedItemsStore } from './results'
 import type { Database, Server } from './types';
 import { open, } from "@tauri-apps/plugin-dialog";
 import { openPath } from "@tauri-apps/plugin-opener";
-import { viewStore, showSearchView } from './menu';
+import { viewStore, showSearchView, showSearchPopup } from './menu';
 import { platform } from '@tauri-apps/plugin-os';
 import { homeDir } from '@tauri-apps/api/path';
 import { showStatus, resetSearchProgress } from './status';
@@ -115,8 +115,11 @@ export async function setDatabase(url: string | null, is_compare: boolean) {
 
 export async function openDatabase(is_compare: boolean){
     let path = await openSqliteFile();
-    if (path) {
+    if (path !== "sqlite://null" && path !== null) {
+        console.log("Selected database path:", path);
         setDatabase(path, is_compare);
+        if (get(viewStore) === "results" && path !== "Select Database")
+          showSearchPopup.set(true);
         
 
     }

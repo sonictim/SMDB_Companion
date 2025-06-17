@@ -14,6 +14,12 @@
   import SearchButton from "./search/SearchButton.svelte";
   import Status from "./Status.svelte";
   import Metadata from "./Metadata.svelte";
+  import Matches from "./prefs/Match.svelte";
+  import MatchPage from "./prefs/MatchPage.svelte";
+  import SafeFolders from "./prefs/SafeFolders.svelte";
+  import Order from "./prefs/Order.svelte";
+  import WaveFormSearch from "./prefs/WaveFormSearch.svelte";
+  import Tags from "./prefs/Tags.svelte";
 
   onMount(() => {
     initializeSearchListeners().then(() => {
@@ -44,22 +50,43 @@
       <Status />
     {/if}
   </div>
+  <div class="preferences-grid">
+    <Matches />
+    <Order />
 
-  <Metadata />
+    <WaveFormSearch />
+    <SafeFolders />
+  </div>
+
+  <!-- <Metadata /> -->
 </div>
 
 <style>
   .grid {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
     grid-template-rows: repeat(3, auto);
     grid-auto-flow: column;
   }
 
   .page-columns {
     display: grid;
-    grid-template-columns: repeat(1, 1fr); /* 3 equal columns */
+    grid-template-columns: repeat(1, 1fr);
+    grid-template-rows: auto 1fr; /* First row auto-sizes, second row takes remaining space */
+    gap: 10px;
+    height: 100vh;
+    overflow: hidden; /* Prevent overflow */
+    margin: 0px;
+    padding: 0px;
+  }
 
-    gap: 0px;
+  .preferences-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: auto 1fr; /* First row auto-sizes, second row takes remaining space */
+    row-gap: 10px; /* Same gap as columns */
+    column-gap: 10px; /* Keep normal gap between columns */
+    overflow: hidden; /* Prevent the grid from overflowing */
+    height: 94%; /* Take full available height */
   }
 
   :global(.checkbox.checked) {

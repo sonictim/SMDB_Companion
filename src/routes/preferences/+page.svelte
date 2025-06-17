@@ -14,7 +14,7 @@
   import { listen } from "@tauri-apps/api/event";
 
   import MainComponent from "../../components/prefs/Main.svelte";
-  import MatchComponent from "../../components/prefs/Match.svelte";
+  import MatchComponent from "../../components/prefs/MatchPage.svelte";
   import OrderComponent from "../../components/prefs/Order.svelte";
   import TagsComponent from "../../components/prefs/Tags.svelte";
   import SelectComponent from "../../components/prefs/Select.svelte";

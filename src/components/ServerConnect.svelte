@@ -13,7 +13,7 @@
   import type { Server } from "../stores/types";
   import { invoke } from "@tauri-apps/api/core";
   import { getCurrentWindow } from "@tauri-apps/api/window";
-  import { showPopup } from "../stores/menu";
+  import { showServerPopup } from "../stores/menu";
 
   // Local state for form
   let username = "";
@@ -130,7 +130,7 @@
 
       console.log("Connected to database:", selectedDatabase);
 
-      showPopup.set(false);
+      showServerPopup.set(false);
     } catch (error) {
       connectionError = `Database connection failed: ${error}`;
     } finally {

@@ -14,6 +14,8 @@
   import Status from "./Status.svelte";
   import Form from "./registration/Form.svelte";
   import RemoveButton from "./results/removeButton.svelte";
+  import Match from "./prefs/MatchPage.svelte";
+
   import { isRegistered } from "../stores/registration";
 
   import { removeRecords, removeSelectedRecords } from "../stores/remove";

@@ -5,10 +5,12 @@
   $: database = $databaseStore;
 
   import { metadataStore, findMetadata } from "../../stores/metadata";
+  import { showMetadataPopup } from "../../stores/menu";
 
   $: metadata = metadataStore;
 
   async function searchForMetadata() {
+    $showMetadataPopup = false;
     showStatus.set(true);
     await findMetadata();
     showStatus.set(false);

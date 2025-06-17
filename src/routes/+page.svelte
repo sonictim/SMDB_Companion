@@ -15,6 +15,8 @@
   import SplitComponent from "../components/Split.svelte";
   import NoFrillsComponent from "../components/NoFrills.svelte";
   import ServerConnect from "../components/ServerConnect.svelte";
+  import SearchButton from "../components/search/SearchButton.svelte";
+  import Algorithms from "../components/search/Algorithms.svelte";
 
   // Stores and utilities
   import {
@@ -29,7 +31,9 @@
     initializeMenu,
     viewStore,
     showSearchView,
-    showPopup,
+    showServerPopup,
+    showSearchPopup,
+    showMetadataPopup,
   } from "../stores/menu";
   import { applyPreset } from "../stores/presets";
   import { hotkeysStore } from "../stores/hotkeys";
@@ -320,10 +324,35 @@
     </main>
   </div>
 {/if}
-{#if $showPopup}
-  <div class="popup-overlay" on:click={() => ($showPopup = false)}>
+{#if $showServerPopup}
+  <div class="popup-overlay" on:click={() => ($showServerPopup = false)}>
     <div class="popup" on:click|stopPropagation>
       <ServerConnect />
+    </div>
+  </div>
+{/if}
+{#if $showMetadataPopup}
+  <div class="popup-overlay" on:click={() => ($showMetadataPopup = false)}>
+    <div class="popup" on:click|stopPropagation>
+      <MetadataComponent />
+    </div>
+  </div>
+{/if}
+{#if $showSearchPopup}
+  <div class="popup-overlay" on:click={() => ($showSearchPopup = false)}>
+    <div class="popup" on:click|stopPropagation>
+      <div class="block" style="height: 60%">
+        <SearchButton />
+
+        <div
+          class="grid"
+          style="grid-template-columns: repeat(1, 1fr);
+                  gap: 0.5rem;  
+                  margin-top: 20px;"
+        >
+          <Algorithms />
+        </div>
+      </div>
     </div>
   </div>
 {/if}
@@ -388,7 +417,7 @@
     border: 1px solid var(--inactive-color);
     border-radius: 8px;
     padding: 24px;
-    max-width: 400px;
+    max-width: 500px;
     width: 90vw;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     color: var(--text-color);

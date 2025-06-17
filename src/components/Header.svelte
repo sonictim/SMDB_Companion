@@ -12,10 +12,20 @@
     showSearchView,
     showResultsView,
     showSplitView,
+    showSearchPopup,
   } from "../stores/menu";
 
   // Bind the local variables to viewStore
   $: view = $viewStore;
+
+  function toggleSplitView() {
+    if (view === "split") {
+      showResultsView();
+    } else {
+      $showSearchPopup = true;
+      // showSplitView();
+    }
+  }
 </script>
 
 <div class="top-bar">
@@ -41,19 +51,21 @@
           showSplitView();
         } else {
           // Just show search view
-          showSearchView();
+          // $showSearchPopup = true;
+          toggleSplitView();
+          // showSearchView();
         }
-        view = "search";
+        // view = "search";
         console.log("Search tab clicked", view);
       }}
-      title="Hold CMD to toggle split view"
+      title="Hold CMD to toggle search bar"
     >
       <div class="flex items-center gap-2">
         <SearchIcon size={18} />
         <span>Search</span>
       </div>
     </button>
-    <button
+    <!-- <button
       class="nav-link {view === 'results' || view === 'split' ? 'active' : ''}"
       on:click={(action) => {
         if (action.metaKey) {
@@ -72,7 +84,7 @@
         <FilesIcon size={18} />
         <span>Results</span>
       </div>
-    </button>
+    </button> -->
     <button class="nav-link" on:click={togglePreferencesWindow}>
       <div class="flex items-center gap-2">
         <Settings2 size={18} /> Options

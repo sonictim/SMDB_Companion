@@ -115,6 +115,7 @@ export async function toggleSearch(): Promise<boolean> {
  * @returns {Promise<string>} The next active tab to navigate to
  */
 export async function search(): Promise<boolean> {
+
     let db = get(databaseStore);
     if (db === null) return false;
     await setDatabase(db.url, false)

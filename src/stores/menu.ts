@@ -51,7 +51,9 @@ import { show } from "@tauri-apps/api/app";
 const DEBUG_MODE = import.meta.env.DEV || false;
 
 
-  export const showPopup = writable(false);
+  export const showServerPopup = writable(false);
+  export const showMetadataPopup = writable(false);
+  export const showSearchPopup = writable(false);
 
 export async function refreshMenu() {
   try {
@@ -637,7 +639,7 @@ const algoMenu = await Submenu.new({
         id: "server",
         text: "Connect to Server",
         accelerator: getHotkey("serverDatabase"),
-        action: () => showPopup.set(true),
+        action: () => showServerPopup.set(true),
         enabled: DEBUG_MODE,
       },
 
@@ -690,6 +692,14 @@ const algoMenu = await Submenu.new({
         accelerator: getHotkey("revealDatabaseFolder"),
         enabled: true,
         action: async () => {openDbFolder()},
+      },
+      separator,
+      {
+        id: "metadata",
+        text: "Replace Metadata",
+        accelerator: getHotkey("replaceMetadata"),
+        action: () => showMetadataPopup.set(true),
+        enabled: DEBUG_MODE,
       },
       
       
@@ -878,12 +888,12 @@ const selectionMenu = await Submenu.new({
 const initialView = (() => {
   try {
     const storedView = localStorage.getItem("view");
-    const parsedView = storedView ? JSON.parse(storedView) : "search";
+    const parsedView = storedView ? JSON.parse(storedView) : "split";
     // If the stored view is "results", reset to "search"
-    return parsedView === "results" ? "search" : parsedView;
+    return parsedView === "results" ? "split" : parsedView;
   } catch (e) {
     console.error("Error loading view state:", e);
-    return "search";
+    return "split";
   }
 })();
 
