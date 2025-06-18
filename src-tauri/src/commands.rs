@@ -1019,9 +1019,11 @@ pub async fn search_file_system(
     app: AppHandle,
     state: State<'_, Mutex<AppState>>,
     enabled: Enabled,
-    pref: Preferences,
+    mut pref: Preferences,
     folders: Vec<String>,
 ) -> Result<Vec<Vec<FileRecordFrontend>>, String> {
+    pref.store_waveforms = false;
+    pref.fetch_waveforms = false;
     let (tx, rx) = tokio::sync::oneshot::channel();
     let app = app.clone();
     let enabled = enabled.clone();

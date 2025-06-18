@@ -241,13 +241,7 @@ impl Database {
             "Dual Mono Search started for db: {}",
             self.get_name().unwrap_or_default()
         );
-        let pool = match self.get_pool_sqlite().await.ok() {
-            Some(pool) => pool,
-            None => {
-                println!("Failed to get database pool for dual mono search");
-                return;
-            }
-        };
+        let pool = self.get_pool_sqlite().await.ok();
         println!("Starting Dual Mono Search");
         let total = self.records.len();
         let completed = AtomicUsize::new(0);
@@ -301,13 +295,17 @@ impl Database {
             records_batch.extend(records_to_update);
 
             if pref.store_waveforms && records_batch.len() >= pref.batch_size {
+                let Some(pool) = &pool else {
+                    app.substatus("Dual Mono Search", 0, "No database connection");
+                    continue;
+                };
                 app.substatus("Dual Mono Search", 0, "storing chunk to database");
                 let to_db: Vec<(usize, &str)> = records_batch
                     .iter()
                     .map(|(id, is_identical)| (*id, if *is_identical { "1" } else { "0" }))
                     .collect();
 
-                crate::batch_store_data_optimized(&pool, &to_db, "_DualMono", app).await;
+                crate::batch_store_data_optimized(pool, &to_db, "_DualMono", app).await;
                 records_batch.clear();
             }
             chunks_completed += pref.batch_size;
@@ -319,13 +317,17 @@ impl Database {
             // Then transform the results into the format needed for batch_store_data_optimized
         }
         if pref.store_waveforms && !records_batch.is_empty() {
+            let Some(pool) = &pool else {
+                app.substatus("Dual Mono Search", 0, "No database connection");
+                return;
+            };
             app.substatus("Dual Mono Search", 0, "storing chunk to database");
             let to_db: Vec<(usize, &str)> = records_batch
                 .iter()
                 .map(|(id, is_identical)| (*id, if *is_identical { "1" } else { "0" }))
                 .collect();
 
-            crate::batch_store_data_optimized(&pool, &to_db, "_DualMono", app).await;
+            crate::batch_store_data_optimized(pool, &to_db, "_DualMono", app).await;
             records_batch.clear();
         }
     }

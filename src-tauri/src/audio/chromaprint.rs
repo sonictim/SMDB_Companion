@@ -4,6 +4,7 @@ use crate::*;
 use anyhow::Result;
 use base64::{Engine as _, engine::general_purpose};
 use bit_set::BitSet;
+use sqlx::pool;
 
 impl FileRecord {
     pub fn get_chromaprint_fingerprint(&mut self) -> Option<String> {
@@ -152,10 +153,10 @@ impl Database {
 
         let pool = self.get_pool_sqlite().await.ok();
 
-        let Some(pool) = pool else {
-            println!("No database connection pool available, skipping fingerprint storage.");
-            return Err("Database connection pool not available".to_string());
-        };
+        // let Some(pool) = pool else {
+        //     println!("No database connection pool available, skipping fingerprint storage.");
+        //     return Err("Database connection pool not available".to_string());
+        // };
 
         let mut record_ids_to_store: Vec<(usize, String)> = Vec::with_capacity(batch_size);
 
@@ -209,15 +210,25 @@ impl Database {
             record_ids_to_store.extend(local_ids);
 
             if pref.store_waveforms && record_ids_to_store.len() >= pref.batch_size {
+                let Some(pool) = &pool else {
+                    println!(
+                        "No database connection pool available, skipping fingerprint storage."
+                    );
+                    return Err("Database connection pool not available".to_string());
+                };
                 // Store fingerprints in batches to avoid memory issues
-                store_fingerprints_batch_optimized(&pool, &record_ids_to_store, app).await;
+                store_fingerprints_batch_optimized(pool, &record_ids_to_store, app).await;
                 record_ids_to_store.clear(); // Clear after storing
             }
         }
 
         if pref.store_waveforms {
+            let Some(pool) = &pool else {
+                println!("No database connection pool available, skipping fingerprint storage.");
+                return Err("Database connection pool not available".to_string());
+            };
             // Store fingerprints in batches to avoid memory issues
-            store_fingerprints_batch_optimized(&pool, &record_ids_to_store, app).await;
+            store_fingerprints_batch_optimized(pool, &record_ids_to_store, app).await;
             record_ids_to_store.clear(); // Clear after storing
         }
 
