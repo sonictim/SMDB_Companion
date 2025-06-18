@@ -54,6 +54,62 @@ impl PartialEq for FileRecord {
 impl Eq for FileRecord {}
 
 impl FileRecord {
+    pub fn new_from_path(path: PathBuf, enabled: &Enabled, pref: &Preferences) -> Option<Self> {
+        if pref.safe_folders.len() > 0
+            && pref.safe_folders.iter().any(|folder| {
+                path.starts_with(folder) || path.starts_with(folder.trim_end_matches('/'))
+            })
+        {
+            return None;
+        }
+        let file_info: ffcodex_lib::FileInfo =
+            ffcodex_lib::get_basic_metadata(&path.display().to_string()).ok()?;
+
+        let mut algorithm = HashSet::new();
+        let mut keep = true;
+        if enabled.invalidpath || enabled.dual_mono {
+            // Use the path existence check from the PathBuf directly
+            // This handles cross-platform path separators correctly
+            let path_exists = path.exists();
+
+            if !path_exists {
+                algorithm.insert(Algorithm::InvalidPath);
+                if enabled.invalidpath {
+                    keep = false;
+                }
+            }
+        }
+        if enabled.duration && checkduration(&file_info.duration, enabled.min_dur) {
+            algorithm.insert(Algorithm::Duration);
+            keep = false;
+        }
+        if enabled.filetags && checktags(&path.display().to_string(), &pref.autoselects) {
+            algorithm.insert(Algorithm::FileTags);
+            keep = false;
+        }
+        if keep {
+            algorithm.insert(Algorithm::Keep);
+        }
+
+        let mut record = Self {
+            id: 0,
+            path,
+            root: Arc::default(),
+            duration: Arc::from(file_info.duration),
+            data: HashMap::new(),
+            fingerprint: None,
+            algorithm,
+            channels: file_info.channels as u32,
+            bitdepth: file_info.bit_depth as u32,
+            samplerate: file_info.sample_rate as u32,
+            description: Arc::from("description not set"),
+            dual_mono: None,
+        };
+
+        record.set_root(enabled, pref);
+        Some(record)
+    }
+
     pub fn new_sqlite(
         row: &SqliteRow,
         enabled: &Enabled,

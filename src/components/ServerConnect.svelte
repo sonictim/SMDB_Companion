@@ -1,6 +1,5 @@
 <!-- Server Database Connection Window -->
 <script lang="ts">
-  import "../styles.css";
   import { onMount } from "svelte";
   import { get } from "svelte/store";
   import {

@@ -48,16 +48,20 @@ export async function setDatabase(url: string | null, is_compare: boolean) {
         
         // Get database path from Tauri
         const name = await invoke<string>("open_db", {url: url, isCompare: is_compare });
-        const size = await getSize();
-        console.log("Database opened:", name, "Size:", size);
-        const columns = await fetchColumns(); 
+        console.log("Database opened:", name);
+        if (name !== "Folder Search") {
+
+          const size = await getSize();
+          console.log("Database opened:", name, "Size:", size);
+          const columns = await fetchColumns(); 
+        }
         const pref  = get(preferencesStore);
 
         let db = {
             url: url,
             name: name,
-            size: size,
-            columns: columns,
+            size: 0,
+            columns: [],
             isLoading: false,
             error: null
         }

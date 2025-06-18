@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "FFcodex"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -21,13 +21,14 @@ dependencies = [
  "quick-xml 0.36.2",
  "rand 0.9.1",
  "rayon",
+ "serde_json",
  "sha2",
  "wide",
 ]
 
 [[package]]
 name = "SMDB_Companion"
-version = "1.5.3"
+version = "1.5.4"
 dependencies = [
  "FFcodex",
  "anyhow",
@@ -74,6 +75,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "trash",
+ "walkdir",
  "winapi",
 ]
 

@@ -75,6 +75,7 @@ pub fn run() {
             reveal_files,
             check_folder_exists,
             test_server_database,
+            search_file_system,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1011,3 +1011,154 @@ pub async fn test_server_database(url: String) -> Result<Vec<String>, String> {
     }
     Ok(databases)
 }
+
+#[tauri::command]
+pub async fn search_file_system(
+    app: AppHandle,
+    state: State<'_, Mutex<AppState>>,
+    enabled: Enabled,
+    pref: Preferences,
+    folders: Vec<String>,
+) -> Result<Vec<Vec<FileRecordFrontend>>, String> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let app = app.clone();
+    let enabled = enabled.clone();
+    let pref = pref.clone();
+
+    let db = {
+        let state = state.lock().await;
+        state.db.abort.store(false, Ordering::SeqCst);
+        state.db.clone()
+    };
+
+    let handle = tokio::spawn(async move {
+        let result = run_search_file_system(app, db, enabled, pref, folders).await;
+        let _ = tx.send(result);
+    });
+
+    // Don't use a loop - just await both in parallel once
+    tokio::select! {
+        // Poll for abortion periodically
+        _ = async {
+            let mut interval = tokio::time::interval(std::time::Duration::from_millis(100));
+            loop {
+                interval.tick().await;
+                let state = state.lock().await;
+                if state.db.abort.load(Ordering::SeqCst) {
+                    return;
+                }
+            }
+        } => {
+            println!("Detected abort request, cancelling search task");
+            handle.abort();
+            return Err("Aborted".to_string());
+        }
+
+        // Wait for search to complete
+        result = rx => {
+            match result {
+                Ok(result) => {
+                   result.map_err(|e| e.to_string())
+                }
+                Err(e) => {
+                    Err(format!("Fingerprinting task aborted or failed: {}", e))
+                }
+            }
+        }
+    }
+}
+
+async fn run_search_file_system(
+    app: AppHandle,
+    mut db: Database,
+    enabled: Enabled,
+    pref: Preferences,
+    folders: Vec<String>,
+) -> Result<Vec<Vec<FileRecordFrontend>>, anyhow::Error> {
+    println!("Starting Search");
+
+    // let _ = db.add_column("_fingerprint").await;
+    // let _ = db.add_column("_DualMono").await;
+
+    let mut counter = 0;
+    let mut total = 1;
+    if enabled.basic {
+        total += 1;
+    }
+    if enabled.waveform {
+        total += 1;
+    }
+    if enabled.dbcompare {
+        total += 1;
+    }
+
+    app.status("Starting", counter * 100 / total, "Starting search...");
+    app.substatus("Starting", 0, "Gathering records from database...");
+    counter += 1;
+
+    db.fetch_filerecords_from_folders(&enabled, &pref, &app, &folders)
+        .await?;
+    if db.abort.load(Ordering::SeqCst) {
+        println!("Aborting fingerprint scan - early exit");
+        return Err(anyhow::anyhow!("Aborted"));
+    }
+
+    if enabled.dbcompare {
+        counter += 1;
+        app.status(
+            "Compare Database",
+            counter * 100 / total,
+            &format!("Comparing records against {}", enabled.compare_db),
+        );
+
+        db.compare_search(&enabled, &pref, &app).await;
+    }
+    if db.abort.load(Ordering::SeqCst) {
+        println!("Aborting fingerprint scan - early exit");
+        return Err(anyhow::anyhow!("Aborted"));
+    }
+
+    if enabled.basic {
+        counter += 1;
+        app.status(
+            "Duplicate Search",
+            counter * 100 / total,
+            "Performing Duplicate Search",
+        );
+
+        db.dupe_search(&pref, &enabled, &app);
+
+        app.substatus("Duplicate Search", 10, "Sorting Records");
+
+        db.records.sort_by(|a, b| a.root.cmp(&b.root));
+    }
+    if enabled.dual_mono {
+        counter += 1;
+        app.status(
+            "Dual Mono Search",
+            counter * 100 / total,
+            "Performing Dual Mono Search",
+        );
+
+        db.dual_mono_search(&pref, &app).await;
+    }
+    if db.abort.load(Ordering::SeqCst) {
+        println!("Aborting fingerprint scan - early exit");
+        return Err(anyhow::anyhow!("Aborted"));
+    }
+    if enabled.waveform {
+        counter += 1;
+        app.status(
+            "Audio Content Search",
+            counter * 100 / total,
+            "Analyzing audio content for waveform analysis",
+        );
+
+        let _ = db.wave_search_chromaprint(&pref, &app).await;
+    }
+    {}
+    app.status("Final Checks", 100, "Search completed! Gathering Results");
+
+    println!("Search Ended");
+    Ok(db.records_2_frontend().await)
+}

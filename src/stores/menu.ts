@@ -54,6 +54,34 @@ const DEBUG_MODE = import.meta.env.DEV || false;
   export const showServerPopup = writable(false);
   export const showMetadataPopup = writable(false);
   export const showSearchPopup = writable(false);
+  export const showSearchFolderPopup = writable(false);
+
+  export function ServerPopup() {
+    showServerPopup.set(true);
+    showMetadataPopup.set(false);
+    showSearchFolderPopup.set(false);
+    showSearchPopup.set(false);
+  }
+  export function MetadataPopup() {
+    showServerPopup.set(false);
+    showMetadataPopup.set(true);
+    showSearchFolderPopup.set(false);
+    showSearchPopup.set(false);
+  }
+  export function SearchPopup() {
+    showServerPopup.set(false);
+    showMetadataPopup.set(false);
+    showSearchFolderPopup.set(false);
+    showSearchPopup.set(true);
+  }
+  export function SearchFolderPopup() {
+    showServerPopup.set(false);
+    showMetadataPopup.set(false);
+    showSearchFolderPopup.set(true);
+    showSearchPopup.set(false);
+  }
+
+
 
 export async function refreshMenu() {
   try {
@@ -639,7 +667,7 @@ const algoMenu = await Submenu.new({
         id: "server",
         text: "Connect to Server",
         accelerator: getHotkey("serverDatabase"),
-        action: () => showServerPopup.set(true),
+        action: () => ServerPopup(),
         enabled: DEBUG_MODE,
       },
 
@@ -693,18 +721,39 @@ const algoMenu = await Submenu.new({
         enabled: true,
         action: async () => {openDbFolder()},
       },
-      separator,
-      {
-        id: "metadata",
-        text: "Replace Metadata",
-        accelerator: getHotkey("replaceMetadata"),
-        action: () => showMetadataPopup.set(true),
-        enabled: DEBUG_MODE,
-      },
-      
       
     ],
   });
+
+  const searchMenu = await Submenu.new({
+    text: "Search",
+    items: [
+    
+      {
+        id: "databaseSearch",
+        text: "Database Search",
+        accelerator: getHotkey("searchPopup"),
+        action: () => SearchPopup(),
+        enabled: DEBUG_MODE,
+      },
+      {
+        id: "fileSearch",
+        text: "File System Search",
+        accelerator: getHotkey("searchFolders"),
+        action: () => SearchFolderPopup(),
+        enabled: DEBUG_MODE,
+      },
+      {
+        id: "metadata",
+        text: "Find/Replace Metadata",
+        accelerator: getHotkey("replaceMetadata"),
+        action: () => MetadataPopup(),
+        enabled: DEBUG_MODE,
+      },
+
+    ],
+  });
+
 
 const selectionMenu = await Submenu.new({
     text: "Selection",
@@ -876,7 +925,7 @@ const selectionMenu = await Submenu.new({
   });
 
   const menu = await Menu.new({
-    items: [appMenu, fileMenu, editMenu, viewMenu, algoMenu, optionsMenu, helpMenu],
+    items: [appMenu, fileMenu, editMenu, viewMenu, searchMenu, algoMenu, optionsMenu, helpMenu],
   });
 
   await menu.setAsAppMenu();

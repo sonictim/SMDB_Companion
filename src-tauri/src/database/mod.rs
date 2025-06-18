@@ -137,6 +137,16 @@ impl Database {
         println!("🆕 Creating new Database instance");
         println!("📁 Url: {}", url);
         println!("🔄 Is compare: {}", is_compare);
+        if url == "Folder Search" {
+            return Ok(Database {
+                url: "Folder Search".to_string(),
+                pool: None,
+                size: 0,
+                records: Vec::new(),
+                is_compare,
+                abort: Arc::new(AtomicBool::new(false)),
+            });
+        }
 
         let pool = Pool::connect(&url).await?;
         println!("🔌 Database connection established");
@@ -619,4 +629,32 @@ impl Database {
             ))
         }
     }
+    pub async fn fetch_filerecords_from_folders(
+        &mut self,
+        enabled: &Enabled,
+        pref: &Preferences,
+        app: &AppHandle,
+        folders: &[String],
+    ) -> R<()> {
+        self.records = folders
+            .iter()
+            .flat_map(|folder| {
+                get_files_from_folder(folder)
+                    .into_iter()
+                    .map(|path| FileRecord::new_from_path(path, enabled, pref))
+            })
+            .filter_map(|record| record)
+            .collect();
+
+        Ok(())
+    }
+}
+
+fn get_files_from_folder(folder: &str) -> Vec<PathBuf> {
+    walkdir::WalkDir::new(folder)
+        .into_iter()
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.file_type().is_file())
+        .map(|entry| entry.into_path())
+        .collect()
 }

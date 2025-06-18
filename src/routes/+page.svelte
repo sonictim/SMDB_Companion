@@ -14,6 +14,7 @@
   import RegistrationComponent from "../components/Registration.svelte";
   import SplitComponent from "../components/Split.svelte";
   import NoFrillsComponent from "../components/NoFrills.svelte";
+  import SearchFolderComponent from "../components/SearchFolders.svelte";
   import ServerConnect from "../components/ServerConnect.svelte";
   import SearchButton from "../components/search/SearchButton.svelte";
   import Algorithms from "../components/search/Algorithms.svelte";
@@ -34,6 +35,7 @@
     showServerPopup,
     showSearchPopup,
     showMetadataPopup,
+    showSearchFolderPopup,
   } from "../stores/menu";
   import { applyPreset } from "../stores/presets";
   import { hotkeysStore } from "../stores/hotkeys";
@@ -335,6 +337,13 @@
   <div class="popup-overlay" on:click={() => ($showMetadataPopup = false)}>
     <div class="popup" on:click|stopPropagation>
       <MetadataComponent />
+    </div>
+  </div>
+{/if}
+{#if $showSearchFolderPopup}
+  <div class="popup-overlay" on:click={() => ($showSearchFolderPopup = false)}>
+    <div class="popup" style="max-width: 800px;" on:click|stopPropagation>
+      <SearchFolderComponent />
     </div>
   </div>
 {/if}
