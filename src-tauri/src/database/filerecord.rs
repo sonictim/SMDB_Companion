@@ -54,8 +54,13 @@ impl PartialEq for FileRecord {
 impl Eq for FileRecord {}
 
 impl FileRecord {
-    pub fn new_from_path(path: PathBuf, enabled: &Enabled, pref: &Preferences) -> Option<Self> {
-        if pref.safe_folders.len() > 0
+    pub fn new_from_path(
+        path: PathBuf,
+        index: usize,
+        enabled: &Enabled,
+        pref: &Preferences,
+    ) -> Option<Self> {
+        if !pref.safe_folders.is_empty()
             && pref.safe_folders.iter().any(|folder| {
                 path.starts_with(folder) || path.starts_with(folder.trim_end_matches('/'))
             })
@@ -92,7 +97,7 @@ impl FileRecord {
         }
 
         let mut record = Self {
-            id: 0,
+            id: index,
             path,
             root: Arc::default(),
             duration: Arc::from(file_info.duration),
@@ -102,7 +107,7 @@ impl FileRecord {
             channels: file_info.channels as u32,
             bitdepth: file_info.bit_depth as u32,
             samplerate: file_info.sample_rate as u32,
-            description: Arc::from("description not set"),
+            description: Arc::from(file_info.description),
             dual_mono: None,
         };
 

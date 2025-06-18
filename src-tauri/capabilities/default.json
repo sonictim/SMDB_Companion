@@ -27,7 +27,12 @@
     "global-shortcut:allow-register",
     "global-shortcut:allow-unregister",
     "opener:allow-open-path",
-    "opener:allow-open-url"
+    "opener:allow-open-url",
+    "store:allow-load",
+    "store:allow-set",
+    "store:allow-get",
+    "store:allow-get-store"
+
     
   ]
 }

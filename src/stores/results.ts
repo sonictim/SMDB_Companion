@@ -3,9 +3,9 @@ import { writable, derived, get } from 'svelte/store';
 import { preferencesStore } from './preferences';
 import { getHotkey } from './hotkeys';
 import { invoke } from "@tauri-apps/api/core";
-import { getIsMac } from './utils';
+import { getIsMac, createLocalStore } from './utils';
 import { message, ask } from "@tauri-apps/plugin-dialog";
-
+import { Store, load } from '@tauri-apps/plugin-store';
 
 // Column configuration type
 export interface ColumnConfig {
@@ -132,6 +132,31 @@ export const gridTemplateColumnsStore = derived(
 
 // To using a regular writable store for grouped records
 export const resultsStore = writable<FileRecord[][]>([]);
+export const saveStore = Store.load('smdb-save-store');
+
+export async function saveResultsToStore() {
+  try {
+    (await saveStore).set('results', get(resultsStore));
+    console.log("Results saved to store");  
+    await message("Current Results successfully saved!");
+
+
+  }
+  catch (error) {
+    console.error("Failed to save results to store:", error);
+    await message("Failed to save current Results.\nError: " + error);
+  }
+}
+
+export async function loadResultsFromStore() {
+  const store = await saveStore;
+  const results = await store.get<FileRecord[][]>('results');
+  if (results) {
+    resultsStore.set(results);
+  } else {
+    resultsStore.set([]);
+  }
+}
 
 // Sort state stores
 export const sortColumnStore = writable<string>('');

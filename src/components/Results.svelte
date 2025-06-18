@@ -124,9 +124,9 @@
     <h2>Results:</h2>
     <span style="font-size: var(--font-size-lg)">
       {#if $isRemove}
-        {totalChecks} of {totalResultsCount} Records marked for Removal
+        {totalChecks} of {$resultsStore.length} Records marked for Removal
       {:else}
-        {totalResultsCount} Records found
+        {$resultsStore.length} Records found
       {/if}
     </span>
     <RemoveButton />

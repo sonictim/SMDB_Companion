@@ -17,7 +17,7 @@ import { message, ask } from "@tauri-apps/plugin-dialog";
 
 
 
-export const databaseStore = createSessionStore<Database | null>('database', null);
+export const databaseStore = createLocalStore<Database | null>('database', null);
 
 // Session store for available databases (resets on app restart)
 export const serverDatabasesStore = createSessionStore<string[]>('serverDatabases', []);
@@ -49,19 +49,21 @@ export async function setDatabase(url: string | null, is_compare: boolean) {
         // Get database path from Tauri
         const name = await invoke<string>("open_db", {url: url, isCompare: is_compare });
         console.log("Database opened:", name);
-        if (name !== "Folder Search") {
+        let size = 0;
+        let columns: string[] = [];
+        if (url !== "Folder Search") {
 
-          const size = await getSize();
+          size = await getSize();
           console.log("Database opened:", name, "Size:", size);
-          const columns = await fetchColumns(); 
+        columns = await fetchColumns(); 
         }
         const pref  = get(preferencesStore);
 
         let db = {
             url: url,
             name: name,
-            size: 0,
-            columns: [],
+            size: size,
+            columns: columns,
             isLoading: false,
             error: null
         }
@@ -70,6 +72,7 @@ export async function setDatabase(url: string | null, is_compare: boolean) {
         databaseStore.set(db);
         
         // Add to recent databases
+        if (url !== "Folder Search" && url !== "Select Database")
         addRecentDatabase({name: name, url: url});
         
         // Run various initialization tasks
@@ -176,6 +179,17 @@ export async function getSize(): Promise<number> {
         return 0;
     }
 }
+
+export function setDbSize(size: number): void {
+    // Update size in store if database exists
+    const currentDb = get(databaseStore);
+    if (currentDb) {
+        databaseStore.set({
+            ...currentDb,
+            size
+        });
+    }
+} 
 
 export async function fetchColumns(): Promise<string[]> {
     try {

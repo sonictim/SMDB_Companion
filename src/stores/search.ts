@@ -3,10 +3,10 @@ import { get } from 'svelte/store';
 import { open, } from "@tauri-apps/plugin-dialog";
 import { invoke } from '@tauri-apps/api/core';
 import { preferencesStore } from './preferences';
-import { viewStore, showResultsView, isRemove } from './menu';
+import { viewStore, showResultsView, isRemove, showSearchFolderPopup, isFilesOnly } from './menu';
 import { updateResultsStore } from './results';
 import type { FileRecord, SearchProgressState, Algorithm } from './types';
-import { databaseStore, setDatabase } from './database';
+import { databaseStore, setDatabase, setDbSize } from './database';
 import { showStatus, searchProgressStore, cancelSearch } from './status';
 import { confirm, message } from "@tauri-apps/plugin-dialog";
 
@@ -57,6 +57,7 @@ export function clearSearchFolders() {
 
 export async function toggleFolderSearch(): Promise<boolean> {
     console.log("Toggle Search");
+    isFilesOnly.set(true);
     isRemove.set(true);
     const currentSearching = get(showStatus);
     
@@ -78,6 +79,7 @@ export async function folderSearch(): Promise<boolean> {
     await setDatabase("Folder Search", false)
     // Set showStatus to true at the start of the search process
     showStatus.set(true);
+    showSearchFolderPopup.set(false);
     
     const preferences = get(preferencesStore);
     
@@ -141,6 +143,7 @@ export async function folderSearch(): Promise<boolean> {
         });
         
         console.log("Search Results:", result);
+        setDbSize(result.length);
         
         
         // If we have results, we'll navigate to the results page

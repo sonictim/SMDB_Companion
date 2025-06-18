@@ -19,6 +19,7 @@ import { hotkeysStore, defaultHotKeys, getHotkey } from './hotkeys';
 import {removeRecords} from './remove';
   import {
     resultsStore,
+    saveStore,
     filteredItemsStore,
     selectedItemsStore,
     currentFilterStore,
@@ -37,6 +38,8 @@ import {removeRecords} from './remove';
     filtersStore,
     manualFiltersStore,
     revealSelectedFiles,
+    saveResultsToStore,
+    loadResultsFromStore,
   } from "../stores/results";
     import {
     showStatus,
@@ -78,6 +81,13 @@ const DEBUG_MODE = import.meta.env.DEV || false;
     showServerPopup.set(false);
     showMetadataPopup.set(false);
     showSearchFolderPopup.set(true);
+    showSearchPopup.set(false);
+  }
+
+  export function clearPopups() {
+    showServerPopup.set(false);
+    showMetadataPopup.set(false);
+    showSearchFolderPopup.set(false);
     showSearchPopup.set(false);
   }
 
@@ -272,6 +282,24 @@ export async function openManual() {
 export async function openLicenseRecovery() {
   await openUrl("https://smdbc.com/recover-key.php");
 }
+
+export function toggleSearchBar() {
+  const currentView = get(viewStore);
+  if (currentView !== "split") {
+    viewStore.set("split");
+  }
+  else 
+    viewStore.set("results");
+  }
+export function toggleNoFrills() {
+  const currentView = get(viewStore);
+  if (currentView !== "nofrills") {
+    viewStore.set("nofrills");
+  }
+  else 
+    viewStore.set("results");
+  }
+
 
 
 
@@ -681,6 +709,20 @@ const algoMenu = await Submenu.new({
       
       separator,
       {
+        id: "saveResults",
+        text: "Save Results",
+        accelerator: getHotkey("saveResults"),
+        action: () => {saveResultsToStore()},
+      },
+      {
+        id: "loadResults",
+        text: "Load Results",
+        accelerator: getHotkey("loadResults"),
+        action: () => {loadResultsFromStore()},
+      },
+
+      separator,
+      {
         id: "searchDatabase",
         text: "Search Database",
         accelerator: getHotkey("searchDatabase"),
@@ -722,6 +764,7 @@ const algoMenu = await Submenu.new({
         action: async () => {openDbFolder()},
       },
       
+      
     ],
   });
 
@@ -732,24 +775,23 @@ const algoMenu = await Submenu.new({
       {
         id: "databaseSearch",
         text: "Database Search",
-        accelerator: getHotkey("searchPopup"),
+        accelerator: getHotkey("showDatabaseSearchWindow"),
         action: () => SearchPopup(),
-        enabled: DEBUG_MODE,
       },
       {
         id: "fileSearch",
         text: "File System Search",
-        accelerator: getHotkey("searchFolders"),
+        accelerator: getHotkey("showFileSystemSearchWindow"),
         action: () => SearchFolderPopup(),
-        enabled: DEBUG_MODE,
       },
       {
         id: "metadata",
         text: "Find/Replace Metadata",
-        accelerator: getHotkey("replaceMetadata"),
+        accelerator: getHotkey("showMmetadataFindReplaceWindow"),
         action: () => MetadataPopup(),
-        enabled: DEBUG_MODE,
       },
+      separator,
+      filtersMenu
 
     ],
   });
@@ -860,36 +902,29 @@ const selectionMenu = await Submenu.new({
       fullscreen, 
       separator,
       await CheckMenuItem.new({
-        id: "search-view",
-        text: "Search",
-        accelerator: getHotkey("showSearchView"),
-        checked: viewState === "search",
-        action: showSearchView,
-      }),
-      await CheckMenuItem.new({
-        id: "results-view",
-        text: "Results",
-        accelerator: getHotkey("showResultsView"),
-        checked: viewState === "results",
-        action: showResultsView,
-      }),
-      await CheckMenuItem.new({
-        id: "split-view",
-        text: "Split",
-        accelerator: getHotkey("showSplitView"),
+        id: "toggleSearchBar",
+        text: "Toggle Search Bar",
+        accelerator: getHotkey("toggleSearchBar"),
         checked: viewState === "split",
-        action: showSplitView,
+        action: toggleSearchBar,
       }),
+
       await CheckMenuItem.new({
         id: "nofrills-view",
-        text: "No Frills",
-        accelerator: getHotkey("showNoFrillsView"),
+        text: "Toggle No Frills",
+        accelerator: getHotkey("toggleNoFrills"),
         checked: viewState === "nofrills",
-        action: showNoFrillsView,
+        action: toggleNoFrills,
       }),
 
       separator,
-      filtersMenu
+      {
+        id: "advancedSearch",
+        text: "Advanced Search View",
+        accelerator: getHotkey("showAdvancedSearchView"),
+        action: () => {viewStore.set("search")}
+      },
+      
     ],
   });
 
@@ -948,6 +983,7 @@ const initialView = (() => {
 
 export const viewStore = createLocalStore<string>("view", initialView);
 export const isRemove = createSessionStore<boolean>("isRemove", true);
+export const isFilesOnly = createSessionStore<boolean>("isFilesOnly", true);
 
 // View state management function
 export function showSearchView() {

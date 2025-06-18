@@ -261,6 +261,7 @@ pub async fn remove_records(
     files: Vec<&str>,
     dual_mono: Vec<DualMono>,
     strip_dual_mono: bool,
+    files_only: bool,
 ) -> Result<String, String> {
     println!("Removing Records");
 
@@ -286,7 +287,7 @@ pub async fn remove_records(
         }
     }
 
-    if clone {
+    if clone && !files_only {
         app.status(
             "Database Cloning",
             20,
@@ -308,20 +309,21 @@ pub async fn remove_records(
             }
         }
     }
-
-    app.status("Record Removal", 30, "Removing Records from Database...");
-    match state.db.remove(&records, &app).await {
-        Ok(_) => {
-            app.status("Record Removal", 100, "Records Removed Successfully");
-        }
-        Err(e) => {
-            let error_msg = format!("Failed to remove records: {}", e);
-            // Check if it's a permission error
-            if is_permission_error_sqlx(&e) {
-                return Err(format!("PERMISSION_ERROR: {}", error_msg));
+    if !files_only {
+        app.status("Record Removal", 30, "Removing Records from Database...");
+        match state.db.remove(&records, &app).await {
+            Ok(_) => {
+                app.status("Record Removal", 100, "Records Removed Successfully");
             }
-            app.status("Record Removal", 100, &error_msg);
-            return Err(error_msg);
+            Err(e) => {
+                let error_msg = format!("Failed to remove records: {}", e);
+                // Check if it's a permission error
+                if is_permission_error_sqlx(&e) {
+                    return Err(format!("PERMISSION_ERROR: {}", error_msg));
+                }
+                app.status("Record Removal", 100, &error_msg);
+                return Err(error_msg);
+            }
         }
     }
 

@@ -26,6 +26,9 @@ importers:
       '@tauri-apps/plugin-os':
         specifier: ~2.2.1
         version: 2.2.1
+      '@tauri-apps/plugin-store':
+        specifier: ^2.2.1
+        version: 2.2.1
       internal-ip:
         specifier: ^8.0.0
         version: 8.0.0
@@ -344,6 +347,9 @@ packages:
 
   '@tauri-apps/plugin-os@2.2.1':
     resolution: {integrity: sha512-cNYpNri2CCc6BaNeB6G/mOtLvg8dFyFQyCUdf2y0K8PIAKGEWdEcu8DECkydU2B+oj4OJihDPD2de5K6cbVl9A==}
+
+  '@tauri-apps/plugin-store@2.2.1':
+    resolution: {integrity: sha512-/hPafeliMe0tMc8NB9tSlkAH+Ww3H7BGD8NycjfY6QBM//0jSoqCO1QGdngPxugeF5NgUNspsVkpvpTz1lLAVQ==}
 
   '@tsconfig/svelte@5.0.4':
     resolution: {integrity: sha512-BV9NplVgLmSi4mwKzD8BD/NQ8erOY/nUE/GpgWe2ckx+wIQF5RyRirn/QsSSCPeulVpc3RA/iJt6DpfTIZps0Q==}
@@ -997,6 +1003,10 @@ snapshots:
       '@tauri-apps/api': 2.5.0
 
   '@tauri-apps/plugin-os@2.2.1':
+    dependencies:
+      '@tauri-apps/api': 2.5.0
+
+  '@tauri-apps/plugin-store@2.2.1':
     dependencies:
       '@tauri-apps/api': 2.5.0
 

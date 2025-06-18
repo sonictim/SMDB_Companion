@@ -8,13 +8,16 @@
   import { metadataStore, replaceMetadata } from "../../stores/metadata";
   import { databaseStore } from "../../stores/database";
   import { removeRecords, removeSelectedRecords } from "../../stores/remove";
-  import { isRemove } from "../../stores/menu";
+  import { isRemove, isFilesOnly } from "../../stores/menu";
   import RegButton from "../registration/Button.svelte";
   import { isRegistered } from "../../stores/registration";
   import { cancelSearch, showStatus } from "../../stores/status";
 
   import { OctagonX, NotebookPenIcon, X } from "lucide-svelte";
   import type { Registration } from "../../stores/types";
+  import { preferencesStore } from "../../stores/preferences";
+
+  $: pref = $preferencesStore;
 
   $: metadata = $metadataStore;
   $: selectedItems = $selectedItemsStore;
@@ -35,7 +38,28 @@
     </button>
   {:else if $isRegistered}
     {#if $isRemove}
-      {#if selectedItems.size > 0}
+      {#if $isFilesOnly}
+        {#if selectedItems.size > 0}
+          <button class="cta-button cancel" on:click={removeSelectedRecords}>
+            <OctagonX size="18" />
+            Remove {selectedChecks} Selected Files
+          </button>
+          <button class="cta-button cancel" on:click={removeRecords}>
+            <OctagonX size="18" />
+            Remove all {totalChecks} Files
+          </button>
+        {:else if $preferencesStore.erase_files === "Keep"}
+          <button class="cta-button inactive">
+            <OctagonX size="18" />
+            Remove {totalChecks} Files
+          </button>
+        {:else}
+          <button class="cta-button cancel" on:click={removeRecords}>
+            <OctagonX size="18" />
+            Remove {totalChecks} Files
+          </button>
+        {/if}
+      {:else if selectedItems.size > 0}
         <button class="cta-button cancel" on:click={removeSelectedRecords}>
           <OctagonX size="18" />
           Remove {selectedChecks} Selected Records

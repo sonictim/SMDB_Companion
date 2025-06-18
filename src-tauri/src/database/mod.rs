@@ -299,6 +299,9 @@ impl Database {
     }
 
     pub fn get_name(&self) -> Option<&str> {
+        if self.url == "Folder Search" {
+            return Some("File System Search");
+        }
         let a = self.get_address()?;
         let a = a.split('/').last()?;
         if let Some(name) = a.strip_suffix(".sqlite") {
@@ -636,14 +639,29 @@ impl Database {
         app: &AppHandle,
         folders: &[String],
     ) -> R<()> {
-        self.records = folders
+        let files: Vec<PathBuf> = folders
             .iter()
-            .flat_map(|folder| {
-                get_files_from_folder(folder)
-                    .into_iter()
-                    .map(|path| FileRecord::new_from_path(path, enabled, pref))
+            .flat_map(|folder| get_files_from_folder(folder))
+            .collect();
+
+        let processed_count = AtomicUsize::new(0);
+        let total_files = files.len();
+
+        self.records = files
+            .par_iter()
+            .enumerate()
+            .filter_map(|(index, path)| {
+                let current = processed_count.fetch_add(1, Ordering::SeqCst) + 1;
+                if current % 100 == 0 || current == total_files {
+                    let progress = (current * 100) / total_files;
+                    app.substatus(
+                        "Processing Files",
+                        progress,
+                        &format!("Processed {}/{} files", current, total_files),
+                    );
+                }
+                FileRecord::new_from_path(path.clone(), index, enabled, pref)
             })
-            .filter_map(|record| record)
             .collect();
 
         Ok(())

@@ -36,10 +36,12 @@
     showSearchPopup,
     showMetadataPopup,
     showSearchFolderPopup,
+    clearPopups,
   } from "../stores/menu";
   import { applyPreset } from "../stores/presets";
   import { hotkeysStore } from "../stores/hotkeys";
   import type { Preset } from "../stores/types";
+  import { cancelSearch } from "../stores/status";
 
   // Component state
   let appInitialized = false;
@@ -54,6 +56,7 @@
   // Initialize all on mount
   onMount(async () => {
     try {
+      window.addEventListener("keydown", handleGlobalKeydown);
       // App initialization
       console.log("Starting app initialization");
       addMissingPrefs();
@@ -266,10 +269,27 @@
   // Clean up on component destruction
   onDestroy(() => {
     if (view === "results") view = "search";
+    window.removeEventListener("keydown", handleGlobalKeydown);
     if (presetChangedListener) presetChangedListener();
     if (preferencesChangedListener) preferencesChangedListener();
     if (hotkeyChangeListener) hotkeyChangeListener();
   });
+
+  function handleGlobalKeydown(event: KeyboardEvent) {
+    if (event.key === "Escape") {
+      // Close any open popups
+      clearPopups();
+      // cancelSearch();
+
+      // Add other popup stores here
+      // if ($otherPopupStore) {
+      //   otherPopupStore.set(false);
+      // }
+
+      // For Tauri windows, you could also close the window
+      // getCurrentWindow().close();
+    }
+  }
 </script>
 
 <svelte:head>

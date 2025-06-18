@@ -5,6 +5,7 @@
   import { TriangleAlert } from "lucide-svelte";
   import { open } from "@tauri-apps/plugin-dialog";
   import { isMacOS } from "../../stores/utils";
+  import { isFilesOnly } from "../../stores/menu";
 
   $: pref = $preferencesStore;
 
@@ -69,8 +70,8 @@
   });
 </script>
 
-{#if pref}
-  <div class="header" style="margin-top: 15px; margin-bottom: 0px">
+<div class="header" style="margin-top: 15px; margin-bottom: 0px">
+  {#if !$isFilesOnly}
     <span>
       <select
         class="select-field"
@@ -100,44 +101,56 @@
         />
       {/if}
     </span>
-    {#if algoEnabled("dual_mono")}
-      <span>
-        <select
-          class="select-field"
-          bind:value={pref.strip_dual_mono}
-          on:change={() => preferencesStore.set(pref)}
-        >
-          {#each [{ id: false, text: "Preserve Dual Mono" }, { id: true, text: "Strip Dual Mono" }] as option}
-            <option value={option.id}>{option.text}</option>
-          {/each}
-        </select>
-        {#if pref.strip_dual_mono}
-          <TriangleAlert
-            size="30"
-            class="blinking"
-            style="color: var(--warning-hover); margin-bottom: -10px"
-          />
-        {/if}
-      </span>
-    {/if}
+  {/if}
+  {#if algoEnabled("dual_mono")}
     <span>
-      {#if pref.erase_files === "Archive"}
-        <button class="cta-button small" on:click={selectArchiveFolder}
-          >Set</button
-        >
-      {/if}
-      <select class="select-field" bind:value={pref.erase_files}>
-        {#each [{ id: "Keep", text: "Keep Files on Disk" }, { id: "Archive", text: `Move to ${archiveFolderName}` }, { id: "Trash", text: "Move Files To Trash" }, { id: "Delete", text: "Permanently Delete Files" }] as option}
+      <select
+        class="select-field"
+        bind:value={pref.strip_dual_mono}
+        on:change={() => preferencesStore.set(pref)}
+      >
+        {#each [{ id: false, text: "Preserve Dual Mono" }, { id: true, text: "Strip Dual Mono" }] as option}
           <option value={option.id}>{option.text}</option>
         {/each}
       </select>
-      {#if pref.erase_files !== "Keep"}
+      {#if pref.strip_dual_mono}
         <TriangleAlert
           size="30"
-          class={pref.erase_files == "Delete" ? "blinking" : ""}
+          class="blinking"
           style="color: var(--warning-hover); margin-bottom: -10px"
         />
       {/if}
     </span>
-  </div>
-{/if}
+  {/if}
+  <span>
+    {#if pref.erase_files === "Archive"}
+      <button class="cta-button small" on:click={selectArchiveFolder}
+        >Set</button
+      >
+    {/if}
+    {#if $isFilesOnly && pref.erase_files === "Keep"}
+      <select
+        class="ellipsis : select-field"
+        bind:value={$preferencesStore.erase_files}
+      >
+        {#each [{ id: "Keep", text: "Keep Files on Disk" }, { id: "Archive", text: `Move to ${archiveFolderName}` }, { id: "Trash", text: "Move Files To Trash" }, { id: "Delete", text: "Permanently Delete Files" }] as option}
+          <option value={option.id}>{option.text}</option>
+        {/each}
+      </select>
+    {:else}
+      <select class="select-field" bind:value={$preferencesStore.erase_files}>
+        {#each [{ id: "Keep", text: "Keep Files on Disk" }, { id: "Archive", text: `Move to ${archiveFolderName}` }, { id: "Trash", text: "Move Files To Trash" }, { id: "Delete", text: "Permanently Delete Files" }] as option}
+          <option value={option.id}>{option.text}</option>
+        {/each}
+      </select>
+    {/if}
+
+    {#if pref.erase_files !== "Keep"}
+      <TriangleAlert
+        size="30"
+        class={pref.erase_files == "Delete" ? "blinking" : ""}
+        style="color: var(--warning-hover); margin-bottom: -10px"
+      />
+    {/if}
+  </span>
+</div>

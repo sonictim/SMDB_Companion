@@ -19,6 +19,7 @@
     "@tauri-apps/plugin-global-shortcut": "~2.2.0",
     "@tauri-apps/plugin-opener": "^2.2.6",
     "@tauri-apps/plugin-os": "~2.2.1",
+    "@tauri-apps/plugin-store": "^2.2.1",
     "internal-ip": "^8.0.0",
     "lucide-svelte": "^0.487.0",
     "svelte-headless-table": "^0.18.3",

@@ -16,6 +16,7 @@ import { databaseStore, setDatabase, } from "../stores/database";
 import { showSearchView } from "../stores/menu";
 import { showStatus } from "../stores/status";
 import { isMacOS } from './utils';
+import { isFilesOnly } from "../stores/menu";
 
   
 
@@ -135,6 +136,7 @@ import { isMacOS } from './utils';
             files: filesToRemove,
             dualMono: dualMono,
             stripDualMono: pref.strip_dual_mono,
+            filesOnly: get(isFilesOnly),
           });
           
           removeIdsFromResults(idsToRemove);
@@ -241,6 +243,7 @@ import { isMacOS } from './utils';
             files: filesToRemove,
             dualMono: dualMono,
             stripDualMono: pref.strip_dual_mono,
+            filesOnly: get(isFilesOnly),
           });
           removeIdsFromResults(idsToRemove);
           

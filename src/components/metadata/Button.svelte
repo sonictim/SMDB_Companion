@@ -5,11 +5,12 @@
   $: database = $databaseStore;
 
   import { metadataStore, findMetadata } from "../../stores/metadata";
-  import { showMetadataPopup } from "../../stores/menu";
+  import { isFilesOnly, showMetadataPopup } from "../../stores/menu";
 
   $: metadata = metadataStore;
 
   async function searchForMetadata() {
+    isFilesOnly.set(false); // Ensure we are not in files-only mode
     $showMetadataPopup = false;
     showStatus.set(true);
     await findMetadata();
