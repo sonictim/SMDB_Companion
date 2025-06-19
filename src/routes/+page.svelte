@@ -14,10 +14,11 @@
   import RegistrationComponent from "../components/Registration.svelte";
   import SplitComponent from "../components/Split.svelte";
   import NoFrillsComponent from "../components/NoFrills.svelte";
-  import SearchFolderComponent from "../components/SearchFolders.svelte";
-  import ServerConnect from "../components/ServerConnect.svelte";
-  import SearchButton from "../components/search/SearchButton.svelte";
-  import Algorithms from "../components/search/Algorithms.svelte";
+  import SearchFolderPopup from "../components/popups/SearchFolders.svelte";
+  import ServerConnectPopup from "../components/popups/ServerConnect.svelte";
+  import SearchPopup from "../components/popups/Search.svelte";
+  import MetadataPopup from "../components/popups/Metadata.svelte";
+  import RemovePopup from "../components/popups/Remove.svelte";
 
   // Stores and utilities
   import {
@@ -31,17 +32,16 @@
   import {
     initializeMenu,
     viewStore,
-    showSearchView,
-    showServerPopup,
-    showSearchPopup,
-    showMetadataPopup,
-    showSearchFolderPopup,
+    showPopup,
+    Popup,
     clearPopups,
+    RemovePopup as RP,
   } from "../stores/menu";
   import { applyPreset } from "../stores/presets";
   import { hotkeysStore } from "../stores/hotkeys";
   import type { Preset } from "../stores/types";
   import { cancelSearch } from "../stores/status";
+  import Remove from "../components/popups/Remove.svelte";
 
   // Component state
   let appInitialized = false;
@@ -277,9 +277,7 @@
 
   function handleGlobalKeydown(event: KeyboardEvent) {
     if (event.key === "Escape") {
-      // Close any open popups
       clearPopups();
-      // cancelSearch();
 
       // Add other popup stores here
       // if ($otherPopupStore) {
@@ -288,6 +286,9 @@
 
       // For Tauri windows, you could also close the window
       // getCurrentWindow().close();
+    }
+    if (event.key === "~") {
+      RP();
     }
   }
 </script>
@@ -346,43 +347,20 @@
     </main>
   </div>
 {/if}
-{#if $showServerPopup}
-  <div class="popup-overlay" on:click={() => ($showServerPopup = false)}>
-    <div class="popup" on:click|stopPropagation>
-      <ServerConnect />
-    </div>
-  </div>
-{/if}
-{#if $showMetadataPopup}
-  <div class="popup-overlay" on:click={() => ($showMetadataPopup = false)}>
-    <div class="popup" on:click|stopPropagation>
-      <MetadataComponent />
-    </div>
-  </div>
-{/if}
-{#if $showSearchFolderPopup}
-  <div class="popup-overlay" on:click={() => ($showSearchFolderPopup = false)}>
-    <div class="popup" style="max-width: 800px;" on:click|stopPropagation>
-      <SearchFolderComponent />
-    </div>
-  </div>
-{/if}
-{#if $showSearchPopup}
-  <div class="popup-overlay" on:click={() => ($showSearchPopup = false)}>
-    <div class="popup" on:click|stopPropagation>
-      <div class="block" style="height: 60%">
-        <SearchButton />
-
-        <div
-          class="grid"
-          style="grid-template-columns: repeat(1, 1fr);
-                  gap: 0.5rem;  
-                  margin-top: 20px;"
-        >
-          <Algorithms />
-        </div>
-      </div>
-    </div>
+{#if $showPopup}
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
+  <div class="popup-overlay" on:click={() => ($showPopup = false)}>
+    {#if $Popup === "server"}
+      <ServerConnectPopup />
+    {:else if $Popup === "searchFolder"}
+      <SearchFolderPopup />
+    {:else if $Popup === "search"}
+      <SearchPopup />
+    {:else if $Popup === "metadata"}
+      <MetadataPopup />
+    {:else if $Popup === "remove"}
+      <RemovePopup />
+    {/if}
   </div>
 {/if}
 
@@ -434,35 +412,10 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: rgba(0, 0, 0, 0.5);
+    background-color: rgba(0, 0, 0, 0.7);
     display: flex;
     justify-content: center;
     align-items: center;
     z-index: 1000;
-  }
-
-  .popup {
-    background-color: var(--primary-bg);
-    border: 1px solid var(--inactive-color);
-    border-radius: 8px;
-    padding: 24px;
-    max-width: 500px;
-    width: 90vw;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-    color: var(--text-color);
-  }
-
-  .popup button {
-    margin-top: 16px;
-    padding: 8px 16px;
-    background: var(--accent-color);
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-  }
-
-  .popup button:hover {
-    background: var(--hover-color);
   }
 </style>

@@ -1,0 +1,39 @@
+<script lang="ts">
+  import { Loader } from "lucide-svelte";
+  import { onMount, onDestroy } from "svelte";
+  import MetadataButton from "../metadata/Button.svelte";
+  import MetadataFields from "../metadata/Fields.svelte";
+
+  import {
+    showStatus,
+    searchProgressStore,
+    initializeSearchListeners,
+  } from "../../stores/status";
+
+  onMount(() => {
+    initializeSearchListeners().then(() => {
+      console.log("Search component mounted, showStatus:", $showStatus);
+    });
+
+    const unsubscribe = showStatus.subscribe((value) => {
+      console.log("showStatus changed:", value);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  });
+</script>
+
+<!-- svelte-ignore a11y-click-events-have-key-events -->
+<div class="popup" on:click|stopPropagation>
+  <div class="block" style="height: 100%">
+    <div class="header">
+      <h2>Replace Metadata</h2>
+      <MetadataButton />
+    </div>
+
+    <MetadataFields />
+    <!-- {/if} -->
+  </div>
+</div>

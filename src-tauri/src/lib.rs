@@ -262,7 +262,7 @@ impl Delete {
         );
 
         if valid_files.is_empty() {
-            app.substatus("Removing Files", 100, "No valid files to process");
+            app.substatus("Removing Files", 100, "No files to process");
             return Ok(());
         }
 

@@ -8,7 +8,7 @@
     showStatus,
     toggleSearch, // Import the moved functions
   } from "../../stores/status";
-  import { showSearchPopup } from "../../stores/menu";
+  import { showPopup } from "../../stores/menu";
 
   // Create a reactive variable that updates whenever preferences change
   $: anyAlgorithmEnabled = (() => {
@@ -54,7 +54,7 @@
   <button
     class="cta-button"
     on:click={async () => {
-      $showSearchPopup = false; // Close the search popup
+      $showPopup = false; // Close the search popup
       let result = await toggleSearch();
     }}
   >

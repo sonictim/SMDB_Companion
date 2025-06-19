@@ -121,14 +121,18 @@
 
 <div class="block results-container">
   <div class="header">
-    <h2>Results:</h2>
-    <span style="font-size: var(--font-size-lg)">
-      {#if $isRemove}
-        {totalChecks} of {$resultsStore.length} Records marked for Removal
-      {:else}
-        {$resultsStore.length} Records found
-      {/if}
-    </span>
+    <div class="container">
+      <div class="left-group">
+        <h2>Results:</h2>
+        <span style="font-size: var(--font-size-lg)">
+          {#if $isRemove}
+            {totalChecks} of {$resultsStore.length} Records marked for Removal
+          {:else}
+            {$resultsStore.length} Records found
+          {/if}
+        </span>
+      </div>
+    </div>
     <RemoveButton />
   </div>
   {#if $isRegistered}
@@ -223,5 +227,17 @@
     flex: 1;
     height: 100% !important;
     min-height: 250px;
+  }
+
+  .container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .left-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem; /* Space between h2 and span */
   }
 </style>

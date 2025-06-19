@@ -3,7 +3,7 @@ import { get } from 'svelte/store';
 import { open, } from "@tauri-apps/plugin-dialog";
 import { invoke } from '@tauri-apps/api/core';
 import { preferencesStore } from './preferences';
-import { viewStore, showResultsView, isRemove, showSearchFolderPopup, isFilesOnly } from './menu';
+import { viewStore, showResultsView, isRemove, isFilesOnly, showPopup } from './menu';
 import { updateResultsStore } from './results';
 import type { FileRecord, SearchProgressState, Algorithm } from './types';
 import { databaseStore, setDatabase, setDbSize } from './database';
@@ -79,7 +79,7 @@ export async function folderSearch(): Promise<boolean> {
     await setDatabase("Folder Search", false)
     // Set showStatus to true at the start of the search process
     showStatus.set(true);
-    showSearchFolderPopup.set(false);
+    showPopup.set(false);
     
     const preferences = get(preferencesStore);
     

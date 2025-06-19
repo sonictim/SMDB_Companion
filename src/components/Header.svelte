@@ -9,10 +9,9 @@
   import {
     togglePreferencesWindow,
     viewStore,
-    showSearchView,
     showResultsView,
     showSplitView,
-    showSearchPopup,
+    SearchPopup,
   } from "../stores/menu";
 
   // Bind the local variables to viewStore
@@ -22,7 +21,7 @@
     if (view === "split") {
       showResultsView();
     } else {
-      $showSearchPopup = true;
+      SearchPopup();
       // showSplitView();
     }
   }
@@ -51,7 +50,7 @@
           showSplitView();
         } else {
           // Just show search view
-          // $showSearchPopup = true;
+          // searchPopup();
           toggleSplitView();
           // showSearchView();
         }

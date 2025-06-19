@@ -215,7 +215,7 @@ async fn run_search(
     app.status("Final Checks", 100, "Search completed! Gathering Results");
 
     println!("Search Ended");
-    Ok(db.records_2_frontend().await)
+    Ok(db.records_2_frontend(&app).await)
 }
 
 #[tauri::command]
@@ -351,7 +351,8 @@ pub async fn remove_records(
     }
 
     println!("Remove Ended");
-    app.status("Final Checks", 100, "Success! Removal is complete");
+    app.status("Final Checks", 100, "Success!");
+    app.substatus("Final Checks", 100, " Removal is complete");
 
     Ok(state.db.url.clone())
 }
@@ -1164,5 +1165,5 @@ async fn run_search_file_system(
     app.status("Final Checks", 100, "Search completed! Gathering Results");
 
     println!("Search Ended");
-    Ok(db.records_2_frontend().await)
+    Ok(db.records_2_frontend(&app).await)
 }

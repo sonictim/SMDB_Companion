@@ -8,7 +8,7 @@ import { clearResults, currentFilterStore, selectedItemsStore } from './results'
 import type { Database, Server } from './types';
 import { open, } from "@tauri-apps/plugin-dialog";
 import { openPath } from "@tauri-apps/plugin-opener";
-import { viewStore, showSearchView, showSearchPopup } from './menu';
+import { viewStore,  SearchPopup } from './menu';
 import { platform } from '@tauri-apps/plugin-os';
 import { homeDir } from '@tauri-apps/api/path';
 import { showStatus, resetSearchProgress } from './status';
@@ -126,7 +126,7 @@ export async function openDatabase(is_compare: boolean){
         console.log("Selected database path:", path);
         setDatabase(path, is_compare);
         if (get(viewStore) === "results" && path !== "Select Database")
-          showSearchPopup.set(true);
+          SearchPopup();
         
 
     }

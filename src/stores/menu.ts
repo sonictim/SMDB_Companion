@@ -54,41 +54,33 @@ import { show } from "@tauri-apps/api/app";
 const DEBUG_MODE = import.meta.env.DEV || false;
 
 
-  export const showServerPopup = writable(false);
-  export const showMetadataPopup = writable(false);
-  export const showSearchPopup = writable(false);
-  export const showSearchFolderPopup = writable(false);
+  export const showPopup = writable(false);
+  export const Popup = writable("search");
+
 
   export function ServerPopup() {
-    showServerPopup.set(true);
-    showMetadataPopup.set(false);
-    showSearchFolderPopup.set(false);
-    showSearchPopup.set(false);
+     Popup.set("server");
+     showPopup.set(true);
   }
   export function MetadataPopup() {
-    showServerPopup.set(false);
-    showMetadataPopup.set(true);
-    showSearchFolderPopup.set(false);
-    showSearchPopup.set(false);
+    Popup.set("metadata");
+    showPopup.set(true);
   }
   export function SearchPopup() {
-    showServerPopup.set(false);
-    showMetadataPopup.set(false);
-    showSearchFolderPopup.set(false);
-    showSearchPopup.set(true);
+    Popup.set("search");
+    showPopup.set(true);
   }
   export function SearchFolderPopup() {
-    showServerPopup.set(false);
-    showMetadataPopup.set(false);
-    showSearchFolderPopup.set(true);
-    showSearchPopup.set(false);
+    Popup.set("searchFolder");
+    showPopup.set(true);
+  }
+  export function RemovePopup() {
+    Popup.set("remove");
+    showPopup.set(true);
   }
 
   export function clearPopups() {
-    showServerPopup.set(false);
-    showMetadataPopup.set(false);
-    showSearchFolderPopup.set(false);
-    showSearchPopup.set(false);
+    showPopup.set(false);
   }
 
 

@@ -178,12 +178,23 @@ impl Database {
         println!("all done!");
     }
 
-    pub async fn records_2_frontend(&self) -> Vec<Vec<FileRecordFrontend>> {
+    pub async fn records_2_frontend(&self, app: &AppHandle) -> Vec<Vec<FileRecordFrontend>> {
         // First convert all records to frontend format
+        app.substatus(
+            "Converting Records",
+            0,
+            "Converting records to frontend format",
+        );
         let frontend: Vec<FileRecordFrontend> = self
             .records
             .par_iter()
-            .map(|record| {
+            .enumerate()
+            .map(|(i, record)| {
+                app.substatus(
+                    "Final Checks",
+                    i * 100 / self.records.len(),
+                    "Cleaning up records",
+                );
                 let mut algorithm: Vec<_> = record.algorithm.iter().cloned().collect();
                 algorithm.sort_by(|a, b| {
                     if a == &A::Waveforms {
@@ -208,12 +219,18 @@ impl Database {
             })
             .collect();
 
+        app.substatus("Converting Records", 100, "Conversion complete");
         // Group records efficiently
         let mut results = Vec::new();
         let mut current_group = Vec::new();
         let mut first_in_group = true;
-
+        let mut i = 0;
         for record in frontend {
+            app.substatus(
+                "Final Checks",
+                i * 100 / self.records.len(),
+                "Grouping records for results",
+            );
             // If this record has Keep and isn't the first record being processed
             // (which would make current_group empty), end the current group
             if record.algorithm.contains(&A::Keep) && !first_in_group {
