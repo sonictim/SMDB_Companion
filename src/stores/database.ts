@@ -120,13 +120,14 @@ export async function setDatabase(url: string | null, is_compare: boolean) {
 }
 
 
-export async function openDatabase(is_compare: boolean){
+export async function openDatabase(is_compare: boolean) : Promise<string | void> {
     let path = await openSqliteFile();
     if (path !== "sqlite://null" && path !== null) {
         console.log("Selected database path:", path);
-        setDatabase(path, is_compare);
+        await setDatabase(path, is_compare);
         if (get(viewStore) === "results" && path !== "Select Database")
           SearchPopup();
+        return path;
         
 
     }

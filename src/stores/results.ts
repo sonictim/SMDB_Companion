@@ -166,6 +166,7 @@ export const sortDirectionStore = writable<'asc' | 'desc'>('asc');
 export const selectedItemsStore = writable<Set<number>>(new Set());
 export const lastSelectedIndexStore = writable<number>(-1);
 export const enableSelectionsStore = writable<boolean>(true);
+export const removeSelected = writable<boolean>(false);
 
 // Scroll position store to preserve table position during data changes
 export const scrollPositionStore = writable<number>(0);
@@ -696,4 +697,9 @@ const noResults = {
       console.warn("No valid paths to reveal.");
     }
 
+  }
+
+  export function countDualMonoFiles(): number {
+    const filtered = get(filteredItemsStore);
+    return filtered.filter(item => item.algorithm.includes("DualMono")).length;
   }

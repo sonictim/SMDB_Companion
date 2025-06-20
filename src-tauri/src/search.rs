@@ -1,5 +1,7 @@
 // use rayon::slice::ChunkBy;
 
+use ffcodex_lib::dprintln;
+
 pub use crate::prelude::*;
 
 impl Database {
@@ -180,6 +182,7 @@ impl Database {
 
     pub async fn records_2_frontend(&self, app: &AppHandle) -> Vec<Vec<FileRecordFrontend>> {
         // First convert all records to frontend format
+        dprintln!("Converting Records to Frontend Format");
         app.substatus(
             "Converting Records",
             0,
@@ -190,11 +193,18 @@ impl Database {
             .par_iter()
             .enumerate()
             .map(|(i, record)| {
-                app.substatus(
-                    "Final Checks",
-                    i * 100 / self.records.len(),
-                    "Cleaning up records",
-                );
+                if i % RECORD_DIVISOR == 0 {
+                    app.substatus(
+                        "Converting Records",
+                        i * 100 / self.records.len(),
+                        &format!("Converting Records: {}/{}", i, self.records.len()),
+                    );
+                }
+                // dprintln!(
+                //     "Converting Record {}: {}",
+                //     i,
+                //     record.get_filename().to_string()
+                // );
                 let mut algorithm: Vec<_> = record.algorithm.iter().cloned().collect();
                 algorithm.sort_by(|a, b| {
                     if a == &A::Waveforms {
@@ -220,17 +230,22 @@ impl Database {
             .collect();
 
         app.substatus("Converting Records", 100, "Conversion complete");
+        dprintln!("Conversion to Frontend Format Complete");
         // Group records efficiently
         let mut results = Vec::new();
         let mut current_group = Vec::new();
         let mut first_in_group = true;
-        let mut i = 0;
-        for record in frontend {
-            app.substatus(
-                "Final Checks",
-                i * 100 / self.records.len(),
-                "Grouping records for results",
-            );
+        for (i, record) in frontend.into_iter().enumerate() {
+            if i % RECORD_DIVISOR == 0 {
+                // Update status every RECORD_DIVISOR iterations
+                app.status(
+                    "Final Checks",
+                    i * 100 / self.records.len(),
+                    &format!("Grouping records for results: {}/{}", i, self.records.len()),
+                );
+            }
+
+            // dprintln!("Processing Record {}: {}", i, record.filename.to_string());
             // If this record has Keep and isn't the first record being processed
             // (which would make current_group empty), end the current group
             if record.algorithm.contains(&A::Keep) && !first_in_group {
@@ -244,11 +259,13 @@ impl Database {
             current_group.push(record);
             first_in_group = false;
         }
+        dprintln!("Finalizing Groups");
 
         // Don't forget to add the last group
         if !current_group.is_empty() {
             results.push(current_group);
         }
+        dprintln!("Returning Results");
 
         results
     }

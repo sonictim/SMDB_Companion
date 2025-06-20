@@ -12,6 +12,7 @@
     showResultsView,
     showSplitView,
     SearchPopup,
+    SearchFolderPopup,
   } from "../stores/menu";
 
   // Bind the local variables to viewStore
@@ -21,8 +22,7 @@
     if (view === "split") {
       showResultsView();
     } else {
-      SearchPopup();
-      // showSplitView();
+      showSplitView();
     }
   }
 </script>
@@ -43,16 +43,15 @@
   </div>
   <div class="top-bar-right">
     <button
-      class="nav-link {view === 'search' || view === 'split' ? 'active' : ''}"
+      class="nav-link {view === 'search' ? 'active' : ''}"
       on:click={(action) => {
         if (action.metaKey) {
           // Toggle results view on/off while keeping search view on
-          showSplitView();
-        } else {
-          // Just show search view
-          // searchPopup();
           toggleSplitView();
-          // showSearchView();
+        } else {
+          if ($databaseStore?.name === "File System Search")
+            SearchFolderPopup();
+          else SearchPopup();
         }
         // view = "search";
         console.log("Search tab clicked", view);

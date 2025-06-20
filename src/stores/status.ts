@@ -8,7 +8,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { preferencesStore } from './preferences';
 import { resultsStore, updateResultsStore } from './results';
 import { databaseStore, setDatabase } from './database';
-import { viewStore, showResultsView, isRemove, isFilesOnly } from './menu';
+import { viewStore, showResultsView, isRemove, isFilesOnly, showPopup } from './menu';
 import { confirm, message } from "@tauri-apps/plugin-dialog";
 
 
@@ -104,6 +104,7 @@ export async function toggleSearch(): Promise<boolean> {
     const currentSearching = get(showStatus);
     
     if (!currentSearching) {
+        showPopup.set(false);
        return await search();
     } else {
         cancelSearch();

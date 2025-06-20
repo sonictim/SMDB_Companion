@@ -16,7 +16,7 @@ import { databaseStore, setDatabase, } from "../stores/database";
 import { showSearchView } from "../stores/menu";
 import { showStatus } from "../stores/status";
 import { isMacOS } from './utils';
-import { isFilesOnly } from "../stores/menu";
+import { isFilesOnly, showPopup } from "../stores/menu";
 
   
 
@@ -119,6 +119,8 @@ import { isFilesOnly } from "../stores/menu";
     if (idsToRemove.length > 0 || dualMono.length > 0) {
       const confirmed = await confirmDialog();
       if (confirmed) {
+        showPopup.set(false);
+
         showStatus.set(true)
         try {
 
@@ -227,6 +229,7 @@ import { isFilesOnly } from "../stores/menu";
     if (idsToRemove.length > 0 || dualMono.length > 0) {
       const confirmed = await confirmDialog();
       if (confirmed) {
+        showPopup.set(false);
         showStatus.set(true)
         try {
           let deleteParam;

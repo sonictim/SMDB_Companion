@@ -159,7 +159,7 @@
   }
 </script>
 
-<div class="input-group2" style="margin-left: 110px; margin-top: 40px;">
+<div class="input-group2" style=" margin-top: 40px;">
   <label for="case-sensitive">
     {#if $isRegistered}
       <Smile style="color: var(--topbar-color)" />
@@ -221,8 +221,12 @@
 </div>
 
 {#if $attemptFailed}
-  <p style="margin-left: 110px; color: var(--topbar-color)">
+  <p style="margin-left: 70px; color: var(--topbar-color)">
     Registration Attempt Failed. Please double check your credentials.
+  </p>
+  <p style="margin-left: 70px; color: var(--topbar-color)">
+    Consider copy and pasting each field from the email you received after
+    purchase.
   </p>
 {/if}
 

@@ -11,6 +11,7 @@
   import RemoveButton from "./results/removeButton.svelte";
   import Status from "./Status.svelte";
   import Form from "./registration/Form.svelte";
+  import RegButton from "./registration/Button.svelte";
 
   // Icon imports
   import {
@@ -20,17 +21,24 @@
     OctagonX,
     TriangleAlert,
     Loader,
+    X,
   } from "lucide-svelte";
 
   // Store imports
   import { preferencesStore } from "../stores/preferences";
   import { isRegistered } from "../stores/registration";
-  import { showStatus, searchProgressStore } from "../stores/status";
-  import { isRemove } from "../stores/menu";
+  import {
+    showStatus,
+    searchProgressStore,
+    cancelSearch,
+  } from "../stores/status";
+  import { isRemove, RemovePopup } from "../stores/menu";
   import {
     resultsStore,
     filteredItemsStore,
     totalChecksStore,
+    countDualMonoFiles,
+    selectedItemsStore,
   } from "../stores/results";
 
   // Store subscriptions
@@ -123,17 +131,47 @@
   <div class="header">
     <div class="container">
       <div class="left-group">
-        <h2>Results:</h2>
-        <span style="font-size: var(--font-size-lg)">
-          {#if $isRemove}
-            {totalChecks} of {$resultsStore.length} Records marked for Removal
-          {:else}
-            {$resultsStore.length} Records found
-          {/if}
-        </span>
+        {#if $resultsStore.length > 0}
+          <h2>Results:</h2>
+          <span style="font-size: var(--font-size-lg)">
+            {#if $isRemove}
+              <h2>{totalChecks}</h2>
+              Records marked for Removal
+              <h2>{countDualMonoFiles()}</h2>
+              Records marked as Dual Mono
+              {#if $selectedItemsStore.size > 0}
+                <h2>{$selectedItemsStore.size}</h2>
+                Records Selected
+              {/if}
+            {:else}
+              <h2>{$resultsStore.length}</h2>
+              Records found
+            {/if}
+          </span>
+        {/if}
       </div>
     </div>
-    <RemoveButton />
+    {#if $isRegistered}
+      {#if $showStatus}
+        <button
+          class="cta-button cancel"
+          on:click={async () => {
+            let result = await cancelSearch();
+          }}
+        >
+          <X size={18} />
+          <span>Cancel</span>
+        </button>
+      {:else}
+        <button class="cta-button cancel" on:click={() => RemovePopup()}>
+          <OctagonX size="18" />
+          <!-- Process {totalChecks + countDualMonoFiles()} Records -->
+          Process Records
+        </button>
+      {/if}
+    {:else}
+      <RegButton />
+    {/if}
   </div>
   {#if $isRegistered}
     {#if $preferencesStore.showToolbars}
@@ -145,34 +183,23 @@
         </Toolbar>
       </span>
     {/if}
-    <div class="block inner results-content">
+    <div class="block inner">
       {#if $showStatus}
         <Status />
-      {:else if loading}
-        <p class="ellipsis">Loading data...</p>
-      {:else if processing}
-        <div class="block inner">
-          <span>
-            <Loader
-              size={24}
-              class="spinner ml-2"
-              style="color: var(--accent-color)"
-            />
-            {removeMessage}
-          </span>
-          <div class="progress-container">
-            <div class="progress-bar" style="width: {removeProgress}%"></div>
-          </div>
-        </div>
       {:else}
         <Table />
       {/if}
     </div>
-    {#if $preferencesStore.showToolbars}
+    <!-- {#if $preferencesStore.showToolbars}
       <RemoveBar />
-    {/if}
+    {/if} -->
   {:else}
-    <p>Registration Required to View Results</p>
+    <span>
+      <h2 style="margin-top: 20px; display: inline">
+        Registration Required to View Detailed Results or Process Records
+      </h2>
+      <!-- <p style="display: inline">(But Search is Fully Functional)</p> -->
+    </span>
     <Form />
   {/if}
 </div>
@@ -239,5 +266,8 @@
     display: flex;
     align-items: center;
     gap: 0.5rem; /* Space between h2 and span */
+  }
+  h2 {
+    display: inline;
   }
 </style>

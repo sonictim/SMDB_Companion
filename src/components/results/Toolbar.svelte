@@ -42,9 +42,9 @@
     <button class="small-button" on:click={clearSelected}
       >Clear Selections</button
     >
-    {#if selectedItems.size > 0}
+    <!-- {#if selectedItems.size > 0}
       <p style="margin-left: 10px">({selectedItems.size} selected)</p>
-    {/if}
+    {/if} -->
     {#if processingBatch}
       <div class="batch-processing">
         <Loader size={24} class="spinner" />

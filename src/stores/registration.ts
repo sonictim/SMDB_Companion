@@ -24,7 +24,8 @@ export async function checkRegistered() {
   try {
     const isRegistered = await invoke<boolean>("check_reg", { data: reg });
     console.log("Registration:", isRegistered);
-    attemptFailed.set(!isRegistered);
+    // Don't set attemptFailed here - this is just checking status, not an attempt
+    // attemptFailed.set(!isRegistered);
     console.log("Attempt Failed:", get(attemptFailed));
     return isRegistered;
   } catch (error) {

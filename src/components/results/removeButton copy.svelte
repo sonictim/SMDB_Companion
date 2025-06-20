@@ -1,0 +1,65 @@
+<!-- filepath: /Users/tfarrell/Documents/CODE/SMDB_Companion/src/components/ResultsSkinny.svelte -->
+<script lang="ts">
+  import {
+    selectedItemsStore,
+    totalChecksStore,
+    selectedChecksStore,
+  } from "../../stores/results";
+  import { metadataStore, replaceMetadata } from "../../stores/metadata";
+  import { databaseStore } from "../../stores/database";
+  import { removeRecords, removeSelectedRecords } from "../../stores/remove";
+  import { isRemove, isFilesOnly } from "../../stores/menu";
+  import RegButton from "../registration/Button.svelte";
+  import { isRegistered } from "../../stores/registration";
+  import { cancelSearch, showStatus } from "../../stores/status";
+
+  import { OctagonX, NotebookPenIcon, X } from "lucide-svelte";
+  import { preferencesStore } from "../../stores/preferences";
+
+  $: metadata = $metadataStore;
+  $: selectedItems = $selectedItemsStore;
+  $: totalChecks = $totalChecksStore;
+  $: selectedChecks = $selectedChecksStore;
+</script>
+
+{#if $showStatus}
+  <button
+    class="cta-button cancel"
+    on:click={async () => {
+      let result = await cancelSearch();
+    }}
+  >
+    <X size={18} />
+    <span>Cancel Search</span>
+  </button>
+{:else if $isRegistered}
+  {#if $isRemove}
+    {#if selectedItems.size > 0}
+      <button class="cta-button cancel" on:click={removeSelectedRecords}>
+        <OctagonX size="18" />
+        Remove {selectedChecks} of {selectedItems.size} Selected Records
+      </button>
+      <button class="cta-button cancel" on:click={removeRecords}>
+        <OctagonX size="18" />
+        Remove all {totalChecks} Records
+      </button>
+    {:else if $databaseStore == null || $databaseStore.name == "" || $databaseStore.name == "Select Database"}
+      <button class="cta-button inactive">
+        <OctagonX size="18" />
+        Remove {totalChecks} Records
+      </button>
+    {:else}
+      <button class="cta-button cancel" on:click={removeRecords}>
+        <OctagonX size="18" />
+        Remove {totalChecks} Records
+      </button>
+    {/if}
+  {:else}
+    <button class="cta-button cancel" on:click={replaceMetadata}>
+      <NotebookPenIcon size="18" />
+      <span>Replace '{metadata.find}' with '{metadata?.replace || ""}'</span>
+    </button>
+  {/if}
+{:else}
+  <RegButton />
+{/if}

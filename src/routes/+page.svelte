@@ -352,9 +352,7 @@
   <div class="popup-overlay" on:click={() => ($showPopup = false)}>
     {#if $Popup === "server"}
       <ServerConnectPopup />
-    {:else if $Popup === "searchFolder"}
-      <SearchFolderPopup />
-    {:else if $Popup === "search"}
+    {:else if $Popup === "searchFolder" || $Popup === "search"}
       <SearchPopup />
     {:else if $Popup === "metadata"}
       <MetadataPopup />
