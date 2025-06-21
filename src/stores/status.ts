@@ -8,7 +8,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { preferencesStore } from './preferences';
 import { resultsStore, updateResultsStore } from './results';
 import { databaseStore, setDatabase } from './database';
-import { viewStore, showResultsView, isRemove, isFilesOnly, showPopup } from './menu';
+import { viewStore, showResultsView, isRemove, isFilesOnly, showPopup, showSplitView } from './menu';
 import { confirm, message } from "@tauri-apps/plugin-dialog";
 
 
@@ -122,6 +122,8 @@ export async function search(): Promise<boolean> {
     if (db === null) return false;
     await setDatabase(db.url, false)
     // Set showStatus to true at the start of the search process
+    const view = get(viewStore);
+    if (get(viewStore) === "registration") showSplitView();
     showStatus.set(true);
     
     const preferences = get(preferencesStore);
@@ -189,7 +191,8 @@ export async function search(): Promise<boolean> {
         
         // If we have results, we'll navigate to the results page
         if (result && result.length > 0) {
-            if (get(viewStore) === "search") showResultsView();
+            const view = get(viewStore);
+            if (view !== "results" && view !== "split") showSplitView();
             updateResultsStore(result);
             showStatus.set(false);
             

@@ -7,6 +7,7 @@
   import { onMount } from "svelte";
   import { Loader } from "lucide-svelte";
   import { algoEnabled } from "../stores/algorithms";
+  import { isFilesOnly } from "../stores/menu";
 
   onMount(() => {
     initializeSearchListeners();
@@ -29,7 +30,18 @@
     </div>
 
     {#if $preferencesStore.store_waveforms}
-      {#if algoEnabled("dual_mono") || algoEnabled("waveform")}
+      {#if isFilesOnly}
+        <h3 class="tooltip-trigger" style="margin: 0;">
+          Progress Save Unavailable
+          <span
+            class="tooltip-text"
+            style="position: absolute; top: 100%; left: 50%; transform: translateX(-50%); margin-top: 5px; height: 60px;"
+          >
+            There is no database to save progress too. Consider saving your
+            results from the File Menu.
+          </span>
+        </h3>
+      {:else if algoEnabled("dual_mono") || algoEnabled("waveform")}
         <h3 class="tooltip-trigger" style="margin: 0;">
           Progress Save Enabled
           <span

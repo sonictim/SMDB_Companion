@@ -35,6 +35,7 @@
     countDualMonoFiles,
     selectedItemsStore,
   } from "../stores/results";
+  import { algoEnabled } from "../stores/algorithms";
 
   $: totalChecks = $totalChecksStore;
 
@@ -73,8 +74,10 @@
               {#if $isRemove}
                 <h2>{totalChecks}</h2>
                 Records marked for Removal
-                <h2>{countDualMonoFiles()}</h2>
-                Records marked as Dual Mono
+                {#if algoEnabled("dual_mono") || countDualMonoFiles() > 0}
+                  <h2>{countDualMonoFiles()}</h2>
+                  Records marked as Dual Mono
+                {/if}
                 {#if $selectedItemsStore.size > 0}
                   <h2>{$selectedItemsStore.size}</h2>
                   Records Selected
