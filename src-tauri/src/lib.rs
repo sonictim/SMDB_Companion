@@ -331,39 +331,42 @@ impl Delete {
 
                     let source_path = std::path::Path::new(file);
 
-                    // Process the path based on OS
-                    let processed_path = if cfg!(target_os = "windows") {
-                        // Remove drive letter on Windows (e.g., "C:\folder\file.wav" -> "\folder\file.wav")
-                        if let Some(path_str) = source_path.to_str() {
+                    // Create a relative path for the archive by removing root/drive components
+                    let relative_path = if let Some(path_str) = source_path.to_str() {
+                        if cfg!(target_os = "windows") {
+                            // Windows: Remove drive letter (e.g., "C:\folder\file.wav" -> "folder\file.wav")
                             if path_str.len() >= 3 && path_str.chars().nth(1) == Some(':') {
-                                // Remove drive letter and colon (e.g., "C:" -> "")
-                                &path_str[2..]
+                                // Skip drive letter, colon, and leading separator
+                                let without_drive = &path_str[2..];
+                                without_drive.trim_start_matches(['\\', '/'])
                             } else {
-                                path_str
+                                path_str.trim_start_matches(['\\', '/'])
                             }
                         } else {
-                            file
-                        }
-                    } else if cfg!(target_os = "macos") {
-                        // Remove /Volumes prefix on macOS for removable drives
-                        if let Some(path_str) = source_path.to_str() {
+                            // macOS/Linux: Handle /Volumes for removable drives or regular paths
                             if path_str.starts_with("/Volumes/") {
-                                // Remove "/Volumes" prefix (e.g., "/Volumes/Drive/folder/file.wav" -> "/Drive/folder/file.wav")
-                                &path_str[8..] // Remove "/Volumes" (8 characters)
+                                // Remove "/Volumes/" and get the drive name + path
+                                let without_volumes = &path_str[9..]; // Remove "/Volumes/"
+                                without_volumes
+                            } else if path_str.starts_with("/") {
+                                // Regular absolute path, remove leading slash
+                                &path_str[1..]
                             } else {
+                                // Already relative
                                 path_str
                             }
-                        } else {
-                            file
                         }
                     } else {
-                        // For other platforms, use the original path
-                        file
+                        // Fallback: use just the filename if path conversion fails
+                        source_path
+                            .file_name()
+                            .unwrap_or_default()
+                            .to_str()
+                            .unwrap_or("unknown_file")
                     };
 
-                    // Create the destination path
-                    let dest_path = std::path::Path::new(archive_folder)
-                        .join(processed_path.trim_start_matches(['/', '\\']));
+                    // Create the destination path using the relative path
+                    let dest_path = std::path::Path::new(archive_folder).join(relative_path);
 
                     // Ensure the destination directory exists
                     if let Some(dest_dir) = dest_path.parent() {
@@ -385,10 +388,14 @@ impl Delete {
                         }
                     }
 
-                    // Move the file
+                    // Try rename first (fast, same-drive), then fallback to copy+delete
                     match std::fs::rename(file, &dest_path) {
                         Ok(_) => {
-                            println!("Successfully archived: {} -> {}", file, dest_path.display());
+                            println!(
+                                "Successfully archived (rename): {} -> {}",
+                                file,
+                                dest_path.display()
+                            );
                             app.substatus(
                                 "Removing Files",
                                 10 + (i * 90 / valid_files.len()),
@@ -401,19 +408,71 @@ impl Delete {
                                 ),
                             );
                         }
-                        Err(e) => {
-                            eprintln!("Failed to archive file {}: {}", file, e);
-                            app.substatus(
-                                "Removing Files",
-                                10 + (i * 90 / valid_files.len()),
-                                &format!(
-                                    "Error archiving: {}",
-                                    source_path
-                                        .file_name()
-                                        .unwrap_or_default()
-                                        .to_string_lossy()
-                                ),
+                        Err(rename_err) => {
+                            // Rename failed (likely cross-drive), try copy + delete
+                            println!(
+                                "Rename failed for {}: {}. Trying copy+delete...",
+                                file, rename_err
                             );
+
+                            match std::fs::copy(file, &dest_path) {
+                                Ok(_) => {
+                                    // Copy succeeded, now delete original
+                                    match std::fs::remove_file(file) {
+                                        Ok(_) => {
+                                            println!(
+                                                "Successfully archived (copy+delete): {} -> {}",
+                                                file,
+                                                dest_path.display()
+                                            );
+                                            app.substatus(
+                                                "Removing Files",
+                                                10 + (i * 90 / valid_files.len()),
+                                                &format!(
+                                                    "Archived: {}",
+                                                    source_path
+                                                        .file_name()
+                                                        .unwrap_or_default()
+                                                        .to_string_lossy()
+                                                ),
+                                            );
+                                        }
+                                        Err(delete_err) => {
+                                            eprintln!(
+                                                "Failed to delete original file after copy {}: {}",
+                                                file, delete_err
+                                            );
+                                            // Clean up the copied file since we couldn't delete the original
+                                            let _ = std::fs::remove_file(&dest_path);
+                                            app.substatus(
+                                                "Removing Files",
+                                                10 + (i * 90 / valid_files.len()),
+                                                &format!(
+                                                    "Error: Failed to delete original after copy: {}",
+                                                    source_path
+                                                        .file_name()
+                                                        .unwrap_or_default()
+                                                        .to_string_lossy()
+                                                ),
+                                            );
+                                        }
+                                    }
+                                }
+                                Err(copy_err) => {
+                                    eprintln!("Failed to copy file {}: {}", file, copy_err);
+                                    app.substatus(
+                                        "Removing Files",
+                                        10 + (i * 90 / valid_files.len()),
+                                        &format!(
+                                            "Error archiving: {}",
+                                            source_path
+                                                .file_name()
+                                                .unwrap_or_default()
+                                                .to_string_lossy()
+                                        ),
+                                    );
+                                }
+                            }
                         }
                     }
                 }

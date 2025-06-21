@@ -199,7 +199,7 @@
       id="email-input"
       bind:value={localReg.email}
       on:input={(e) => updateField("email", e.currentTarget.value)}
-      on:blur={(e) => updateField("name", e.currentTarget.value.trim())}
+      on:blur={(e) => updateField("email", e.currentTarget.value.trim())}
       placeholder="Enter Registration Email"
       class="input-field"
       disabled={!inputsEnabled}
@@ -215,7 +215,7 @@
       id="license-input"
       bind:value={localReg.license}
       on:input={(e) => updateField("license", e.currentTarget.value)}
-      on:blur={(e) => updateField("name", e.currentTarget.value.trim())}
+      on:blur={(e) => updateField("license", e.currentTarget.value.trim())}
       placeholder="Enter License number"
       class="input-field"
       disabled={!inputsEnabled}

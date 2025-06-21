@@ -93,7 +93,9 @@ impl Database {
 
             let mut key = Vec::new();
             for m in &pref.match_criteria {
-                if &**m == "Filename" && (enabled.filename || enabled.audiosuite) {
+                if &**m == "Filename" {
+                    // Always use the processed root field for filename matching
+                    // regardless of whether filename/audiosuite algorithms are enabled
                     key.push(record.root.clone());
                 } else {
                     let value = record.data.get(m).cloned().unwrap_or_else(|| Arc::from(""));
