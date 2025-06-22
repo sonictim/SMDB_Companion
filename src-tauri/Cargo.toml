@@ -1,6 +1,6 @@
 [package]
 name = "SMDB_Companion"
-version = "1.5.11"
+version = "1.5.12"
 description = "Soundminer Database Cleanup Tool"
 authors = ["Tim Farrell"]
 edition = "2024"

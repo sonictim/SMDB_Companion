@@ -118,6 +118,7 @@ export async function toggleSearch(): Promise<boolean> {
  */
 export async function search(): Promise<boolean> {
 
+    isFilesOnly.set(false);
     let db = get(databaseStore);
     if (db === null) return false;
     await setDatabase(db.url, false)

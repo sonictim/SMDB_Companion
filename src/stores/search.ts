@@ -74,6 +74,7 @@ export async function toggleFolderSearch(): Promise<boolean> {
  * @returns {Promise<string>} The next active tab to navigate to
  */
 export async function folderSearch(): Promise<boolean> {
+    isFilesOnly.set(true);
 
    
     await setDatabase("Folder Search", false)
