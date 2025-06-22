@@ -271,7 +271,11 @@ pub async fn remove_records(
 
     if strip_dual_mono {
         app.status("Dual Mono Processing", 0, "Stripping Dual Mono Records...");
-        match state.db.clean_multi_mono(&app, &dual_mono).await {
+        match state
+            .db
+            .clean_multi_mono(&app, &dual_mono, files_only)
+            .await
+        {
             Ok(_) => {
                 app.status("Dual Mono Processing", 100, "Dual Mono Records Stripped");
             }

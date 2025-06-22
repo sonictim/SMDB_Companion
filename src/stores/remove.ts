@@ -250,7 +250,7 @@ import { isFilesOnly, showPopup } from "../stores/menu";
           });
           removeIdsFromResults(idsToRemove);
           
-          if (dualMono.length > 0 && pref.strip_dual_mono) {
+          if (dualMono.length > 0 && pref.strip_dual_mono && !isFilesOnly) {
             await message(
               "Dual Mono files converted to Mono!\n\nRecords marked as dirty in Soundminer. For safety, open Soundminer and run the following:\n'Database -> Show Dirty'\nPress: 'CMD + A' to select all\n'Database -> Embed Selected'\n'Database -> Rebuild Waveforms for Selected'"
             );

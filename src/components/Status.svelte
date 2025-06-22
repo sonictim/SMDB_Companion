@@ -37,8 +37,9 @@
             class="tooltip-text"
             style="position: absolute; top: 100%; left: 50%; transform: translateX(-50%); margin-top: 5px; height: 60px;"
           >
-            There is no database to save progress too. Consider saving your
-            results from the File Menu.
+            In a File System Search, there is no database to save progress too.
+            You can save your results from the File Menu after the process
+            completes.
           </span>
         </h3>
       {:else if algoEnabled("dual_mono") || algoEnabled("waveform")}

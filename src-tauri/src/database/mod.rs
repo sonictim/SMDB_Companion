@@ -397,6 +397,7 @@ impl Database {
         &self,
         app: &AppHandle,
         records: &Vec<DualMono>,
+        files_only: bool,
     ) -> Result<(), sqlx::Error> {
         use std::sync::Mutex;
 
@@ -485,7 +486,7 @@ impl Database {
         );
 
         // Only update database if we have SUCCESSFUL records to update
-        if !successful_ids.is_empty() {
+        if !successful_ids.is_empty() && !files_only {
             match self
                 .update_channel_count_to_mono(app, &successful_ids)
                 .await
@@ -507,6 +508,13 @@ impl Database {
                     Err(e)
                 }
             }
+        } else if files_only {
+            app.substatus(
+                "Stripping Multi-Mono",
+                100,
+                &format!("Processed {} files, {} failures", success, failed),
+            );
+            Ok(())
         } else {
             app.substatus(
                 "Stripping Multi-Mono",
