@@ -4,7 +4,6 @@ use crate::*;
 use anyhow::Result;
 use base64::{Engine as _, engine::general_purpose};
 use bit_set::BitSet;
-use sqlx::pool;
 
 impl FileRecord {
     pub fn get_chromaprint_fingerprint(&mut self) -> Option<String> {
@@ -17,7 +16,7 @@ impl FileRecord {
             //     fingerprint
             // );
             if !fingerprint.is_empty() && fingerprint != "FAILED" {
-                self.fingerprint = Some(Arc::from(fingerprint.as_str()));
+                self.fingerprint = Some(String::from(fingerprint.as_str()));
                 return Some(fingerprint);
             }
         }
@@ -67,7 +66,7 @@ impl FileRecord {
     //             let bytes: Vec<u8> = fingerprint.iter().flat_map(|&x| x.to_le_bytes()).collect();
     //             let encoded = general_purpose::STANDARD.encode(&bytes);
     //             if !encoded.is_empty() {
-    //                 self.fingerprint = Some(Arc::from(encoded.as_str()));
+    //                 self.fingerprint = Some(String::from(encoded.as_str()));
     //                 return Some(encoded);
     //             }
     //         }
@@ -89,7 +88,7 @@ impl FileRecord {
     //         let hash = hasher.finalize();
     //         println!("Generated PCM hash for: {}", self.get_filename());
     //         let fingerprint = format!("PCM:{}", general_purpose::STANDARD.encode(hash));
-    //         self.fingerprint = Some(Arc::from(fingerprint.as_str()));
+    //         self.fingerprint = Some(String::from(fingerprint.as_str()));
     //         return Some(fingerprint);
     //     }
 
@@ -138,7 +137,7 @@ impl Database {
             .records
             .iter()
             .filter(|record| {
-                record.fingerprint.is_none() || record.fingerprint == Some(Arc::from("FAILED"))
+                record.fingerprint.is_none() || record.fingerprint == Some(String::from("FAILED"))
             })
             .count();
         if total_records == 0 {
@@ -171,7 +170,7 @@ impl Database {
                     let path = PathBuf::from(record.get_filepath());
                     if self.abort.load(Ordering::SeqCst)
                         || (record.fingerprint.is_some()
-                            && record.fingerprint != Some(Arc::from("FAILED")))
+                            && record.fingerprint != Some(String::from("FAILED")))
                         || !path.exists()
                     // || !path.is_file()
                     {
@@ -759,7 +758,7 @@ impl Database {
             .cloned()
             .collect();
 
-        let mut file_groups: HashMap<Arc<str>, Vec<FileRecord>> =
+        let mut file_groups: HashMap<String, Vec<FileRecord>> =
             HashMap::with_capacity(self.records.len() / 2);
 
         // Group records by waveform
@@ -877,7 +876,7 @@ impl Database {
             );
 
             // Group PCM hash records by hash value
-            let mut hash_groups: HashMap<Arc<str>, Vec<FileRecord>> = HashMap::new();
+            let mut hash_groups: HashMap<String, Vec<FileRecord>> = HashMap::new();
 
             for (i, record) in pcm_hash_records.iter().enumerate() {
                 if i % RECORD_DIVISOR == 0 {
@@ -967,7 +966,8 @@ impl Database {
                         }
 
                         if let Some(raw_fp) = &record.fingerprint {
-                            if let Ok(fp_bytes) = general_purpose::STANDARD.decode(raw_fp.as_ref())
+                            if let Ok(fp_bytes) =
+                                general_purpose::STANDARD.decode(raw_fp.as_ref() as &str)
                             {
                                 // Decode fingerprint...
                                 let mut fp = Vec::with_capacity(fp_bytes.len() / 4);

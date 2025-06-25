@@ -43,7 +43,7 @@ impl Pool {
         }
     }
 
-    pub async fn fetch_columns(&self) -> Result<Vec<Arc<str>>, sqlx::Error> {
+    pub async fn fetch_columns(&self) -> Result<Vec<String>, sqlx::Error> {
         match self {
             Pool::Mysql(pool) => mysql::fetch_columns_mysql(pool).await,
             Pool::Sqlite(pool) => sqlite::fetch_columns_sqlite(pool).await,
@@ -280,11 +280,11 @@ impl Database {
         Ok(db)
     }
 
-    // pub fn get_path(&self) -> Option<Arc<str>> {
+    // pub fn get_path(&self) -> Option<String> {
     //     if let Some(path) = &self.path {
     //         if let Some(path_str) = path.to_str() {
     //             println!("🛤️  Database path: {}", path_str);
-    //             return Some(Arc::from(path_str));
+    //             return Some(String::from(path_str));
     //         } else {
     //             println!("❌ Failed to convert path to string");
     //         }
@@ -583,7 +583,7 @@ impl Database {
         .await
     }
 
-    pub async fn fetch_columns(&self) -> Result<Vec<Arc<str>>, sqlx::Error> {
+    pub async fn fetch_columns(&self) -> Result<Vec<String>, sqlx::Error> {
         if let Some(pool) = self.pool.as_ref() {
             println!("🔍 Fetching columns from database");
             pool.fetch_columns().await

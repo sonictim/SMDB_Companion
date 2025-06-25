@@ -14,16 +14,16 @@ pub fn get_current_version() -> String {
 }
 
 #[tauri::command]
-pub async fn get_reg(data: Registration) -> Result<Arc<str>, String> {
+pub async fn get_reg(data: Registration) -> Result<String, String> {
     Ok(generate_license_key(&data.name, &data.email))
 }
 
 #[tauri::command]
 pub async fn check_reg(data: Registration) -> Result<bool, String> {
     Ok(
-        generate_license_key(&data.name, &data.email) == Arc::from(data.license.to_uppercase())
+        generate_license_key(&data.name, &data.email) == String::from(data.license.to_uppercase())
             || generate_license_key_old(&data.name, &data.email)
-                == Arc::from(data.license.to_uppercase()),
+                == String::from(data.license.to_uppercase()),
     )
 }
 
@@ -32,7 +32,7 @@ pub async fn open_db(
     state: State<'_, Mutex<AppState>>,
     url: String,
     is_compare: bool,
-) -> Result<Arc<str>, String> {
+) -> Result<String, String> {
     let mut state = state.lock().await;
     state.db = Database::new(url, is_compare)
         .await
@@ -40,21 +40,23 @@ pub async fn open_db(
     if let Some(name) = state.db.get_name() {
         return Ok(name.into());
     }
-    Ok(Arc::from("Select Database"))
+    Ok(String::from("Select Database"))
 }
 #[tauri::command]
-pub async fn close_db(state: State<'_, Mutex<AppState>>) -> Result<Arc<str>, String> {
+pub async fn close_db(state: State<'_, Mutex<AppState>>) -> Result<String, String> {
     let mut state = state.lock().await;
     state.db = Database::default();
-    Ok(Arc::from("Select Database"))
+    Ok(String::from("Select Database"))
 }
 
 #[tauri::command]
-pub async fn get_db_name(state: State<'_, Mutex<AppState>>) -> Result<Arc<str>, String> {
+pub async fn get_db_name(state: State<'_, Mutex<AppState>>) -> Result<String, String> {
     println!("Get DB Name");
     let state = state.lock().await;
 
-    Ok(Arc::from(state.db.get_name().unwrap_or("Select Database")))
+    Ok(String::from(
+        state.db.get_name().unwrap_or("Select Database"),
+    ))
 }
 
 #[tauri::command]
@@ -222,7 +224,7 @@ async fn run_search(
 pub async fn clear_fingerprints(
     state: State<'_, Mutex<AppState>>,
     app: AppHandle,
-) -> Result<Arc<str>, String> {
+) -> Result<String, String> {
     println!("Clearing Fingerprints");
     let state = state.lock().await;
     let _ = state.db.remove_column(&app, "_fingerprint").await;
@@ -230,7 +232,7 @@ pub async fn clear_fingerprints(
     if let Some(name) = state.db.get_name() {
         Ok(name.into())
     } else {
-        Ok(Arc::from("Select Database"))
+        Ok(String::from("Select Database"))
     }
 }
 #[tauri::command]
@@ -787,8 +789,8 @@ pub async fn get_results(
             });
             FileRecordFrontend {
                 id: record.id,
-                path: Arc::from(record.get_path()),
-                filename: Arc::from(record.get_filename()),
+                path: String::from(record.get_path()),
+                filename: String::from(record.get_filename()),
                 algorithm,
                 duration: record.duration.clone(),
                 description: record.description.clone(),
@@ -803,7 +805,7 @@ pub async fn get_results(
 }
 
 #[tauri::command]
-pub async fn get_columns(state: State<'_, Mutex<AppState>>) -> Result<Vec<Arc<str>>, String> {
+pub async fn get_columns(state: State<'_, Mutex<AppState>>) -> Result<Vec<String>, String> {
     let state = state.lock().await;
     state.db.fetch_columns().await.map_err(|e| e.to_string())
 }

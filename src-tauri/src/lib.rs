@@ -204,7 +204,7 @@ fn checkduration(duration: &str, min_dur: f64) -> bool {
     }
 }
 
-fn checktags(name: &str, tags: &Vec<Arc<str>>) -> bool {
+fn checktags(name: &str, tags: &Vec<String>) -> bool {
     for tag in tags {
         if name.contains(&**tag) {
             return true;
@@ -344,13 +344,12 @@ impl Delete {
                             }
                         } else {
                             // macOS/Linux: Handle /Volumes for removable drives or regular paths
-                            if path_str.starts_with("/Volumes/") {
+                            if let Some(without_volumes) = path_str.strip_prefix("/Volumes/") {
                                 // Remove "/Volumes/" and get the drive name + path
-                                let without_volumes = &path_str[9..]; // Remove "/Volumes/"
                                 without_volumes
-                            } else if path_str.starts_with("/") {
+                            } else if let Some(without_slash) = path_str.strip_prefix('/') {
                                 // Regular absolute path, remove leading slash
-                                &path_str[1..]
+                                without_slash
                             } else {
                                 // Already relative
                                 path_str
@@ -485,37 +484,36 @@ impl Delete {
     }
 }
 
-fn get_column_as_string_sqlite(row: &SqliteRow, column: &str) -> Option<Arc<str>> {
-    // Try getting as text first (most common case)
+fn get_column_as_string_sqlite(row: &SqliteRow, column: &str) -> Option<String> {
     if let Ok(value) = row.try_get::<&str, _>(column) {
-        return Some(Arc::from(value));
+        return Some(String::from(value));
     }
 
     // Then try numeric types
     if let Ok(value) = row.try_get::<i64, _>(column) {
-        return Some(Arc::from(value.to_string()));
+        return Some(value.to_string());
     }
 
     if let Ok(value) = row.try_get::<f64, _>(column) {
-        return Some(Arc::from(value.to_string()));
+        return Some(value.to_string());
     }
 
     // Handle null or other types
     None
 }
-fn get_column_as_string_mysql(row: &MySqlRow, column: &str) -> Option<Arc<str>> {
+fn get_column_as_string_mysql(row: &MySqlRow, column: &str) -> Option<String> {
     // Try getting as text first (most common case)
     if let Ok(value) = row.try_get::<&str, _>(column) {
-        return Some(Arc::from(value));
+        return Some(String::from(value));
     }
 
     // Then try numeric types
     if let Ok(value) = row.try_get::<i64, _>(column) {
-        return Some(Arc::from(value.to_string()));
+        return Some(value.to_string());
     }
 
     if let Ok(value) = row.try_get::<f64, _>(column) {
-        return Some(Arc::from(value.to_string()));
+        return Some(value.to_string());
     }
 
     // Handle null or other types

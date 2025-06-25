@@ -99,8 +99,8 @@ export async function initializeSearchListeners(): Promise<void> {
  */
 export async function toggleSearch(): Promise<boolean> {
     console.log("Toggle Search");
-    isRemove.set(true);
-    isFilesOnly.set(false);
+    await isRemove.set(true);
+    await isFilesOnly.set(false);
     const currentSearching = get(showStatus);
     
     if (!currentSearching) {

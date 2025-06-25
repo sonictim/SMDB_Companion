@@ -31,7 +31,7 @@ pub async fn fetch_filerecords_sqlite(
     Ok(records)
 }
 
-pub async fn fetch_columns_sqlite(pool: &SqlitePool) -> Result<Vec<Arc<str>>, sqlx::Error> {
+pub async fn fetch_columns_sqlite(pool: &SqlitePool) -> Result<Vec<String>, sqlx::Error> {
     let query = format!("PRAGMA table_info({});", SQLITE_TABLE);
     // Query for table info using PRAGMA
     let mut columns = sqlx::query(&query)
@@ -47,7 +47,7 @@ pub async fn fetch_columns_sqlite(pool: &SqlitePool) -> Result<Vec<Arc<str>>, sq
                 None
             }
         })
-        .collect::<Vec<Arc<str>>>();
+        .collect::<Vec<String>>();
     columns.sort();
 
     Ok(columns)

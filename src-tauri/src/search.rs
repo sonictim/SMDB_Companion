@@ -70,7 +70,7 @@ impl Database {
     pub fn dupe_search(&mut self, pref: &Preferences, enabled: &Enabled, app: &AppHandle) {
         println!("Starting Duplicate Search");
 
-        let mut file_groups: HashMap<Vec<Arc<str>>, Vec<FileRecord>> =
+        let mut file_groups: HashMap<Vec<String>, Vec<FileRecord>> =
             HashMap::with_capacity(self.records.len() / 2);
 
         let total = self.records.len();
@@ -93,14 +93,22 @@ impl Database {
 
             let mut key = Vec::new();
             for m in &pref.match_criteria {
-                if &**m == "Filename" {
-                    // Always use the processed root field for filename matching
-                    // regardless of whether filename/audiosuite algorithms are enabled
-                    key.push(record.root.clone());
-                } else {
-                    let value = record.data.get(m).cloned().unwrap_or_else(|| Arc::from(""));
-                    key.push(value);
-                }
+                dprintln!("Matching on: {}", m);
+                let v = match &**m {
+                    "Filename" => record.root.clone(),
+                    "Duration" => record.duration.clone(),
+                    "Bitdepth" => record.bitdepth.to_string(),
+                    "Samplerate" => record.samplerate.to_string(),
+                    "Channels" => record.channels.to_string(),
+                    "Description" => record.description.clone(),
+                    _ => record
+                        .data
+                        .get(m)
+                        .cloned()
+                        .unwrap_or_else(|| String::from("")),
+                };
+                dprintln!("Value: {}", v);
+                key.push(v);
             }
             file_groups.entry(key).or_default().push(record.clone());
         }
@@ -219,8 +227,8 @@ impl Database {
                 });
                 FileRecordFrontend {
                     id: record.id,
-                    path: Arc::from(record.get_path()),
-                    filename: Arc::from(record.get_filename()),
+                    path: String::from(record.get_path()),
+                    filename: String::from(record.get_filename()),
                     algorithm,
                     duration: record.duration.clone(),
                     description: record.description.clone(),

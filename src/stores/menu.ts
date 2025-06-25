@@ -975,7 +975,7 @@ const initialView = (() => {
 
 export const viewStore = createLocalStore<string>("view", initialView);
 export const isRemove = createSessionStore<boolean>("isRemove", true);
-export const isFilesOnly = createSessionStore<boolean>("isFilesOnly", true);
+export const isFilesOnly = createSessionStore<boolean>("isFilesOnly", false);
 
 // View state management function
 export function showSearchView() {

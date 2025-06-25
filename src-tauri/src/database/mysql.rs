@@ -319,7 +319,7 @@ pub async fn remove_column_mysql(pool: &MySqlPool, remove: &str) -> Result<(), s
     Ok(())
 }
 
-pub async fn fetch_columns_mysql(pool: &MySqlPool) -> Result<Vec<Arc<str>>, sqlx::Error> {
+pub async fn fetch_columns_mysql(pool: &MySqlPool) -> Result<Vec<String>, sqlx::Error> {
     let query = format!("SHOW COLUMNS FROM {}", MYSQL_TABLE);
 
     let mut columns = sqlx::query(&query)
@@ -335,7 +335,7 @@ pub async fn fetch_columns_mysql(pool: &MySqlPool) -> Result<Vec<Arc<str>>, sqlx
                 None
             }
         })
-        .collect::<Vec<Arc<str>>>();
+        .collect::<Vec<String>>();
     columns.sort();
 
     Ok(columns)

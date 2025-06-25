@@ -4,7 +4,7 @@ pub use OrderOperator as O;
 use chrono::{Duration, NaiveDateTime};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::{cmp::Ordering, collections::HashSet, sync::Arc};
+use std::{cmp::Ordering, collections::HashSet};
 
 #[derive(Default, Serialize, Deserialize, Clone)]
 pub struct RemovePreferences {
@@ -17,11 +17,11 @@ pub struct RemovePreferences {
 
 #[derive(Default, Debug, Serialize, Deserialize, Clone)]
 pub struct Preferences {
-    pub columns: Vec<Arc<str>>,
-    pub match_criteria: Vec<Arc<str>>,
+    pub columns: Vec<String>,
+    pub match_criteria: Vec<String>,
     pub ignore_filetype: bool,
-    pub tags: Vec<Arc<str>>,
-    pub autoselects: Vec<Arc<str>>,
+    pub tags: Vec<String>,
+    pub autoselects: Vec<String>,
     pub preservation_order: Vec<PreservationLogic>,
     pub display_all_records: bool,
     pub waveform_search_type: WaveformMatchType,
@@ -45,14 +45,14 @@ impl Preferences {
 
         vec.sort_by(|a, b| {
             let a_root = if self.ignore_filetype {
-                a.get_filestem() == a.root.as_ref()
+                a.get_filestem() == &a.root
             } else {
-                a.get_filename() == a.root.as_ref()
+                a.get_filename() == &a.root
             };
             let b_root = if self.ignore_filetype {
-                b.get_filestem() == b.root.as_ref()
+                b.get_filestem() == &b.root
             } else {
-                b.get_filename() == b.root.as_ref()
+                b.get_filename() == &b.root
             };
             // Reverse the comparison to prioritize matches
             a_root.cmp(&b_root).reverse()
@@ -75,7 +75,7 @@ impl Preferences {
         false
     }
 
-    pub fn get_data_requirements(&self) -> Arc<str> {
+    pub fn get_data_requirements(&self) -> String {
         let mut set: HashSet<&str> = HashSet::new();
         for m in &self.match_criteria {
             set.insert(m);
@@ -84,15 +84,15 @@ impl Preferences {
             let m = &m.column;
             set.insert(m);
         }
-        Arc::from(set.iter().copied().collect::<Vec<_>>().join(","))
+        String::from(set.iter().copied().collect::<Vec<_>>().join(","))
     }
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize, Clone)]
 pub struct PreservationLogic {
-    pub column: Arc<str>,
+    pub column: String,
     pub operator: OrderOperator,
-    pub variable: Arc<str>,
+    pub variable: String,
 }
 impl PreservationLogic {
     fn sort(&self, vec: &mut [FileRecord]) {
@@ -318,12 +318,12 @@ pub enum OrderOperator {
 
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub struct Registration {
-    pub name: Arc<str>,
-    pub email: Arc<str>,
-    pub license: Arc<str>,
+    pub name: String,
+    pub email: String,
+    pub license: String,
 }
 
-pub fn generate_license_key(name: &str, email: &str) -> Arc<str> {
+pub fn generate_license_key(name: &str, email: &str) -> String {
     let salt = "Valhalla Delay";
     let mut hasher = Sha256::new();
     hasher.update(format!("{}{}{}", name.to_lowercase(), email.to_lowercase(), salt).as_bytes());
@@ -356,7 +356,7 @@ pub fn generate_license_key(name: &str, email: &str) -> Arc<str> {
     formatted.into()
 }
 
-pub fn generate_license_key_old(name: &str, email: &str) -> Arc<str> {
+pub fn generate_license_key_old(name: &str, email: &str) -> String {
     let salt = "Valhalla Delay";
     let mut hasher = Sha256::new();
     hasher.update(format!("{}{}{}", name, email, salt).as_bytes());

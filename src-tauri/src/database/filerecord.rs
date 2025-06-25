@@ -1,17 +1,19 @@
+use ffcodex_lib::dprintln;
+
 pub use crate::prelude::*;
 
 #[derive(Serialize, Deserialize, Clone)] // Need Deserialize to receive it back
 pub struct FileRecordFrontend {
     pub id: usize,
-    pub path: Arc<str>,
-    pub filename: Arc<str>,
+    pub path: String,
+    pub filename: String,
     pub algorithm: Vec<Algorithm>,
     pub channels: u32,
     pub bitdepth: u32,
     pub samplerate: u32,
-    pub duration: Arc<str>,
-    pub description: Arc<str>,
-    // data: HashMap<Arc<str>, Arc<str>>,
+    pub duration: String,
+    pub description: String,
+    // data: HashMap<String, String>,
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
@@ -24,17 +26,17 @@ pub struct DualMono {
 #[derive(Default, Debug, Serialize, Clone)]
 pub struct FileRecord {
     pub id: usize,
-    pub path: std::path::PathBuf,          // Made private
-    pub root: Arc<str>,                    // Made private
-    pub duration: Arc<str>,                // Made private
-    pub samplerate: u32,                   // Made private
-    pub bitdepth: u32,                     // Made private
-    pub channels: u32,                     // Made private
-    pub description: Arc<str>,             // Made private
-    pub data: HashMap<Arc<str>, Arc<str>>, // Made private
-    pub fingerprint: Option<Arc<str>>,     // Made private
-    pub dual_mono: Option<bool>,           // Made private
-    pub algorithm: HashSet<Algorithm>,     // Made private
+    pub path: std::path::PathBuf,      // Made private
+    pub root: String,                  // Made private
+    pub duration: String,              // Made private
+    pub samplerate: u32,               // Made private
+    pub bitdepth: u32,                 // Made private
+    pub channels: u32,                 // Made private
+    pub description: String,           // Made private
+    pub data: HashMap<String, String>, // Made private
+    pub fingerprint: Option<String>,   // Made private
+    pub dual_mono: Option<bool>,       // Made private
+    pub algorithm: HashSet<Algorithm>, // Made private
 }
 impl Hash for FileRecord {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -99,15 +101,15 @@ impl FileRecord {
         let mut record = Self {
             id: index,
             path,
-            root: Arc::default(),
-            duration: Arc::from(file_info.duration),
+            root: String::default(),
+            duration: file_info.duration,
             data: HashMap::new(),
             fingerprint: None,
             algorithm,
             channels: file_info.channels as u32,
             bitdepth: file_info.bit_depth as u32,
             samplerate: file_info.sample_rate as u32,
-            description: Arc::from(file_info.description),
+            description: file_info.description,
             dual_mono: None,
         };
 
@@ -135,7 +137,7 @@ impl FileRecord {
             path = p;
         }
 
-        if pref.safe_folders.len() > 0
+        if !pref.safe_folders.is_empty()
             && pref.safe_folders.iter().any(|folder| {
                 path.starts_with(folder) || path.starts_with(folder.trim_end_matches('/'))
             })
@@ -184,6 +186,7 @@ impl FileRecord {
                 data.insert(column.clone(), value);
             }
         }
+        dprintln!("Data after match_criteria: {:?}", data);
 
         // Gather columns from preservation logic
         for logic in &pref.preservation_order {
@@ -198,7 +201,7 @@ impl FileRecord {
         let fingerprint = if f.is_empty() || !pref.fetch_waveforms {
             None
         } else {
-            Some(Arc::from(f))
+            Some(String::from(f))
         };
 
         let mut dual_mono = None;
@@ -215,15 +218,15 @@ impl FileRecord {
         let mut record = Self {
             id,
             path,
-            root: Arc::default(),
-            duration: Arc::from(duration_str),
+            root: String::default(),
+            duration: String::from(duration_str),
             data,
             fingerprint,
             algorithm,
             channels,
             bitdepth,
             samplerate,
-            description: Arc::from(description),
+            description: String::from(description),
             dual_mono,
         };
 
@@ -313,7 +316,7 @@ impl FileRecord {
         let fingerprint = if f.is_empty() || !pref.fetch_waveforms {
             None
         } else {
-            Some(Arc::from(f))
+            Some(String::from(f))
         };
 
         let mut dual_mono = None;
@@ -330,15 +333,15 @@ impl FileRecord {
         let mut record = Self {
             id,
             path,
-            root: Arc::default(),
-            duration: Arc::from(duration_str),
+            root: String::default(),
+            duration: String::from(duration_str),
             data,
             fingerprint,
             algorithm,
             channels: channels as u32,
             bitdepth: bitdepth as u32,
             samplerate: samplerate as u32,
-            description: Arc::from(description),
+            description: String::from(description),
             dual_mono,
         };
 
@@ -373,9 +376,9 @@ impl FileRecord {
 
         // Minimize string allocations for root
         self.root = if pref.ignore_filetype {
-            Arc::from(name.as_ref())
+            String::from(name.as_ref())
         } else {
-            Arc::from(format!("{}.{}", name.as_ref(), self.get_extension()))
+            String::from(format!("{}.{}", name.as_ref(), self.get_extension()))
         };
     }
 
@@ -453,9 +456,9 @@ impl FileRecord {
         }
 
         self.root = if pref.ignore_filetype {
-            Arc::from(name)
+            String::from(name)
         } else {
-            Arc::from(format!("{}.{}", name, self.get_extension()))
+            String::from(format!("{}.{}", name, self.get_extension()))
         };
         println!("Final Root: {}", self.root);
     }
