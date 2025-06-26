@@ -187,7 +187,7 @@ async fn run_search(
 
         app.substatus("Duplicate Search", 10, "Sorting Records");
 
-        db.records.sort_by(|a, b| a.root.cmp(&b.root));
+        // db.records.sort_by(|a, b| a.root.cmp(&b.root));
     }
     if enabled.dual_mono {
         counter += 1;
@@ -1141,7 +1141,7 @@ async fn run_search_file_system(
 
         app.substatus("Duplicate Search", 10, "Sorting Records");
 
-        db.records.sort_by(|a, b| a.root.cmp(&b.root));
+        // db.records.sort_by(|a, b| a.root.cmp(&b.root));
     }
     if enabled.dual_mono {
         counter += 1;
