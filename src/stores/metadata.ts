@@ -43,7 +43,7 @@ export async function findMetadata() {
       `Finding: ${metaValue.find}, Replacing: ${metaValue.replace}, Case Sensitive: ${metaValue.case_sensitive}, Column: ${metaValue.column}`
     );
 
-    await invoke<FileRecord[]>("find", {
+    await invoke<FileRecord[]>("find_metadata", {
       find: metaValue.find,
       column: metaValue.column,
       caseSensitive: metaValue.case_sensitive,

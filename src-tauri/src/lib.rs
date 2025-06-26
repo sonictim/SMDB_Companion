@@ -55,7 +55,7 @@ pub fn run() {
             get_db_size,
             get_records_size,
             search,
-            find,
+            find_metadata,
             replace_metadata,
             remove_records,
             get_results,

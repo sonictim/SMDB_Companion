@@ -394,7 +394,7 @@ fn is_permission_error_str(error_str: &str) -> bool {
 }
 
 #[tauri::command]
-pub async fn find(
+pub async fn find_metadata(
     state: State<'_, Mutex<AppState>>,
     app: AppHandle,
     find: String,
